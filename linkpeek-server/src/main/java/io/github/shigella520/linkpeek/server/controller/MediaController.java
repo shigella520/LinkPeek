@@ -1,6 +1,7 @@
 package io.github.shigella520.linkpeek.server.controller;
 
 import io.github.shigella520.linkpeek.server.service.PreviewService;
+import io.github.shigella520.linkpeek.server.stats.service.StatisticsRecorder;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -25,9 +26,11 @@ import java.nio.file.Path;
 @Tag(name = "Media", description = "缩略图与视频代理接口")
 public class MediaController {
     private final PreviewService previewService;
+    private final StatisticsRecorder statisticsRecorder;
 
-    public MediaController(PreviewService previewService) {
+    public MediaController(PreviewService previewService, StatisticsRecorder statisticsRecorder) {
         this.previewService = previewService;
+        this.statisticsRecorder = statisticsRecorder;
     }
 
     @GetMapping("/thumb/{previewKey}.jpg")
@@ -43,7 +46,15 @@ public class MediaController {
             @Parameter(description = "预览资源的 opaque 标识，不暴露平台内部 ID")
             @PathVariable String previewKey
     ) {
-        Path path = previewService.ensureThumbnail(previewKey);
+        long startedAt = System.nanoTime();
+        PreviewService.ThumbnailResult result = previewService.ensureThumbnailResult(previewKey);
+        statisticsRecorder.recordThumbnailServed(
+                previewKey,
+                result.metadata(),
+                result.cacheHit(),
+                elapsedMillis(startedAt)
+        );
+        Path path = result.path();
         FileSystemResource resource = new FileSystemResource(path);
         return ResponseEntity.ok()
                 .contentType(MediaType.IMAGE_JPEG)
@@ -66,5 +77,9 @@ public class MediaController {
         return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED)
                 .contentType(MediaType.TEXT_PLAIN)
                 .body("Video proxy is not implemented in this release.");
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 }

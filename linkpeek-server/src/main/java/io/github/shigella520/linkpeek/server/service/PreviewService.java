@@ -45,23 +45,30 @@ public class PreviewService {
     }
 
     public Path ensureThumbnail(String previewKeyValue) {
+        return ensureThumbnailResult(previewKeyValue).path();
+    }
+
+    public ThumbnailResult ensureThumbnailResult(String previewKeyValue) {
         PreviewKey previewKey = new PreviewKey(previewKeyValue);
         Optional<Path> cached = cacheManager.getThumbnailPath(previewKey);
         if (cached.isPresent()) {
-            return cached.get();
+            return new ThumbnailResult(cached.get(), true, cacheManager.getMetadata(previewKey).orElse(null));
         }
 
         ReentrantLock lock = cacheManager.lockFor(previewKey);
         lock.lock();
         try {
-            return cacheManager.getThumbnailPath(previewKey)
-                    .orElseGet(() -> downloadThumbnail(previewKey));
+            Optional<Path> lockedCached = cacheManager.getThumbnailPath(previewKey);
+            if (lockedCached.isPresent()) {
+                return new ThumbnailResult(lockedCached.get(), true, cacheManager.getMetadata(previewKey).orElse(null));
+            }
+            return downloadThumbnail(previewKey);
         } finally {
             lock.unlock();
         }
     }
 
-    private Path downloadThumbnail(PreviewKey previewKey) {
+    private ThumbnailResult downloadThumbnail(PreviewKey previewKey) {
         PreviewMetadata metadata = cacheManager.getMetadata(previewKey)
                 .orElseThrow(() -> new MetadataNotFoundException("Preview metadata is missing or expired."));
         PreviewProvider provider = providerRegistry.getById(metadata.providerId())
@@ -71,7 +78,7 @@ public class PreviewService {
         try {
             Path downloaded = provider.downloadThumbnail(metadata, targetPath);
             cacheManager.evictIfNeeded();
-            return downloaded;
+            return new ThumbnailResult(downloaded, false, metadata);
         } catch (IOException exception) {
             throw new IllegalStateException("Failed to store thumbnail in cache", exception);
         }
@@ -89,6 +96,13 @@ public class PreviewService {
             ResolvedPreview resolvedPreview,
             PreviewMetadata metadata,
             boolean cacheHit
+    ) {
+    }
+
+    public record ThumbnailResult(
+            Path path,
+            boolean cacheHit,
+            PreviewMetadata metadata
     ) {
     }
 }

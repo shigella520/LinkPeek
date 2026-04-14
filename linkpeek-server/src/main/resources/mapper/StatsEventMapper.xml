@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.shigella520.linkpeek.server.stats.persistence.StatsEventMapper">
+    <insert id="insertEvent" parameterType="io.github.shigella520.linkpeek.server.stats.model.StatisticsEventRecord">
+        INSERT INTO stats_event (
+            occurred_at,
+            event_type,
+            preview_key,
+            provider_id,
+            http_status,
+            cache_hit,
+            duration_ms,
+            client_type,
+            error_code
+        )
+        VALUES (
+            #{occurredAt},
+            #{eventType},
+            #{previewKey},
+            #{providerId},
+            #{httpStatus},
+            #{cacheHit},
+            #{durationMs},
+            #{clientType},
+            #{errorCode}
+        )
+    </insert>
+
+    <delete id="deleteEventsOlderThan">
+        DELETE FROM stats_event
+        WHERE occurred_at &lt; #{threshold}
+    </delete>
+
+    <delete id="deleteOrphanLinks">
+        DELETE FROM stats_link
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM stats_event event
+            WHERE event.preview_key = stats_link.preview_key
+        )
+    </delete>
+</mapper>

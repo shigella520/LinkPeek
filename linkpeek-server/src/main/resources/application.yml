@@ -14,7 +14,8 @@ logging:
 springdoc:
   packages-to-scan: io.github.shigella520.linkpeek.server.controller
   paths-to-match:
-    - /
+    - /api/**
+    - /dashboard
     - /preview
     - /media/**
   swagger-ui:
@@ -22,11 +23,19 @@ springdoc:
     operations-sorter: alpha
     tags-sorter: alpha
 
+mybatis:
+  mapper-locations: classpath:/mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
 linkpeek:
   base-url: ${BASE_URL:http://localhost:8080}
+  web-icon-path: ${WEB_ICON_PATH:}
   cache-dir: ${CACHE_DIR:/data/cache}
+  stats-db-path: ${STATS_DB_PATH:/data/stats/linkpeek.db}
   cache-ttl-seconds: ${CACHE_TTL_SECONDS:86400}
   cache-max-size-gb: ${CACHE_MAX_SIZE_GB:10}
+  stats-retention-days: ${STATS_RETENTION_DAYS:180}
   download-timeout: ${DOWNLOAD_TIMEOUT:120s}
   log-level: ${LOG_LEVEL:INFO}
   video-max-quality: ${VIDEO_MAX_QUALITY:480}

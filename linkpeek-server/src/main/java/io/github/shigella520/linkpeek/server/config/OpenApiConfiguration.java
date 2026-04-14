@@ -13,7 +13,7 @@ public class OpenApiConfiguration {
         return new OpenAPI()
                 .info(new Info()
                         .title("LinkPeek API")
-                        .description("通用链接预览服务接口，当前提供预览入口、健康检查与媒体代理路由。")
+                        .description("通用链接预览服务接口，当前提供预览入口、健康检查、媒体代理与统计看板数据接口。")
                         .version("0.1.0-SNAPSHOT")
                         .license(new License()
                                 .name("MIT")

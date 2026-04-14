@@ -1,0 +1,113 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.shigella520.linkpeek.server.stats.persistence.DashboardStatsMapper">
+    <select id="selectWindowSummary" resultType="io.github.shigella520.linkpeek.server.stats.persistence.row.WindowSummaryRow">
+        SELECT
+            COALESCE(SUM(CASE WHEN event_type = 'PREVIEW_CREATED' THEN 1 ELSE 0 END), 0) AS create_count,
+            COALESCE(SUM(CASE WHEN event_type = 'PREVIEW_OPENED' THEN 1 ELSE 0 END), 0) AS open_count,
+            COALESCE(SUM(CASE WHEN event_type = 'PREVIEW_FAILED' THEN 1 ELSE 0 END), 0) AS failed_count,
+            COUNT(*) AS all_preview_requests,
+            COUNT(DISTINCT CASE
+                WHEN event_type IN ('PREVIEW_CREATED', 'PREVIEW_OPENED') THEN preview_key
+            END) AS unique_link_count
+        FROM stats_event
+        WHERE occurred_at >= #{start}
+          AND occurred_at &lt; #{end}
+          AND event_type IN ('PREVIEW_CREATED', 'PREVIEW_OPENED', 'PREVIEW_FAILED')
+    </select>
+
+    <select id="countNewLinks" resultType="long">
+        SELECT COUNT(*)
+        FROM stats_link
+        WHERE first_seen_at >= #{start}
+          AND first_seen_at &lt; #{end}
+    </select>
+
+    <select id="selectGrowthTrend" resultType="io.github.shigella520.linkpeek.server.stats.persistence.row.DailyEventCountRow">
+        SELECT
+            strftime('%Y-%m-%d', occurred_at / 1000, 'unixepoch', 'localtime') AS day_bucket,
+            event_type,
+            COUNT(*) AS total_count
+        FROM stats_event
+        WHERE occurred_at >= #{start}
+          AND occurred_at &lt; #{end}
+          AND event_type IN ('PREVIEW_CREATED', 'PREVIEW_OPENED')
+        GROUP BY day_bucket, event_type
+        ORDER BY day_bucket ASC
+    </select>
+
+    <select id="selectFailureBreakdown" resultType="io.github.shigella520.linkpeek.server.stats.persistence.row.FailureCountRow">
+        SELECT
+            COALESCE(error_code, 'OTHER') AS error_code,
+            COUNT(*) AS total_count
+        FROM stats_event
+        WHERE occurred_at >= #{start}
+          AND occurred_at &lt; #{end}
+          AND event_type = 'PREVIEW_FAILED'
+        GROUP BY COALESCE(error_code, 'OTHER')
+    </select>
+
+    <select id="selectTopLinks" resultType="io.github.shigella520.linkpeek.server.stats.persistence.row.TopLinkRow">
+        SELECT
+            link.preview_key,
+            link.title,
+            link.canonical_url,
+            link.provider_id,
+            COALESCE(SUM(CASE WHEN event.event_type = 'PREVIEW_CREATED' THEN 1 ELSE 0 END), 0) AS created_count,
+            COALESCE(SUM(CASE WHEN event.event_type = 'PREVIEW_OPENED' THEN 1 ELSE 0 END), 0) AS opened_count,
+            link.first_seen_at,
+            link.last_seen_at
+        FROM stats_link link
+        JOIN stats_event event ON event.preview_key = link.preview_key
+        WHERE event.occurred_at >= #{start}
+          AND event.occurred_at &lt; #{end}
+          AND event.event_type IN ('PREVIEW_CREATED', 'PREVIEW_OPENED')
+        GROUP BY
+            link.preview_key,
+            link.title,
+            link.canonical_url,
+            link.provider_id,
+            link.first_seen_at,
+            link.last_seen_at
+        ORDER BY opened_count DESC, created_count DESC, link.last_seen_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectHeatmap" resultType="io.github.shigella520.linkpeek.server.stats.persistence.row.HeatmapCountRow">
+        SELECT
+            CAST(strftime('%w', occurred_at / 1000, 'unixepoch', 'localtime') AS INTEGER) AS weekday,
+            CAST(strftime('%H', occurred_at / 1000, 'unixepoch', 'localtime') AS INTEGER) AS hour,
+            COUNT(*) AS total_count
+        FROM stats_event
+        WHERE occurred_at >= #{start}
+          AND occurred_at &lt; #{end}
+          AND event_type IN ('PREVIEW_CREATED', 'PREVIEW_OPENED')
+        GROUP BY weekday, hour
+        ORDER BY weekday ASC, hour ASC
+    </select>
+
+    <select id="selectNewVsReturningTrend" resultType="io.github.shigella520.linkpeek.server.stats.persistence.row.NewReturningCountRow">
+        WITH daily_links AS (
+            SELECT
+                strftime('%Y-%m-%d', event.occurred_at / 1000, 'unixepoch', 'localtime') AS day_bucket,
+                event.preview_key,
+                strftime('%Y-%m-%d', link.first_seen_at / 1000, 'unixepoch', 'localtime') AS first_seen_day
+            FROM stats_event event
+            JOIN stats_link link ON link.preview_key = event.preview_key
+            WHERE event.occurred_at >= #{start}
+              AND event.occurred_at &lt; #{end}
+              AND event.event_type IN ('PREVIEW_CREATED', 'PREVIEW_OPENED')
+              AND event.preview_key IS NOT NULL
+            GROUP BY day_bucket, event.preview_key
+        )
+        SELECT
+            day_bucket,
+            SUM(CASE WHEN first_seen_day = day_bucket THEN 1 ELSE 0 END) AS new_link_count,
+            SUM(CASE WHEN first_seen_day &lt; day_bucket THEN 1 ELSE 0 END) AS returning_link_count
+        FROM daily_links
+        GROUP BY day_bucket
+        ORDER BY day_bucket ASC
+    </select>
+</mapper>

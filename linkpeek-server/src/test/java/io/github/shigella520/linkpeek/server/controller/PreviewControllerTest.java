@@ -14,6 +14,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.HttpHeaders;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,10 +41,20 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @AutoConfigureMockMvc
 class PreviewControllerTest {
     private static final Path TEST_CACHE_DIR;
+    private static final Path TEST_STATS_DIR;
+    private static final Path TEST_STATS_DB;
+    private static final Path TEST_WEB_ICON;
 
     static {
         try {
             TEST_CACHE_DIR = Files.createTempDirectory("linkpeek-server-cache");
+            TEST_STATS_DIR = Files.createTempDirectory("linkpeek-server-stats");
+            TEST_STATS_DB = TEST_STATS_DIR.resolve("linkpeek-test.db");
+            TEST_WEB_ICON = TEST_STATS_DIR.resolve("favicon.svg");
+            Files.writeString(
+                    TEST_WEB_ICON,
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"#0a84ff\"/></svg>"
+            );
         } catch (IOException exception) {
             throw new ExceptionInInitializerError(exception);
         }
@@ -52,12 +63,17 @@ class PreviewControllerTest {
     @DynamicPropertySource
     static void properties(DynamicPropertyRegistry registry) {
         registry.add("linkpeek.cache-dir", () -> TEST_CACHE_DIR.toString());
+        registry.add("linkpeek.stats-db-path", () -> TEST_STATS_DB.toString());
         registry.add("linkpeek.base-url", () -> "https://preview.example.com");
+        registry.add("linkpeek.web-icon-path", () -> TEST_WEB_ICON.toString());
         registry.add("management.endpoints.web.exposure.include", () -> "health");
     }
 
     @Autowired
     private MockMvc mockMvc;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @MockBean
     private PreviewProviderRegistry previewProviderRegistry;
@@ -77,6 +93,8 @@ class PreviewControllerTest {
                     }
                 });
         Files.createDirectories(TEST_CACHE_DIR);
+        jdbcTemplate.execute("DELETE FROM stats_event");
+        jdbcTemplate.execute("DELETE FROM stats_link");
 
         testPreviewProvider = new TestPreviewProvider();
         when(previewProviderRegistry.findSupporting(argThat(supportedUrl())))
@@ -98,11 +116,27 @@ class PreviewControllerTest {
                         throw new RuntimeException(exception);
                     }
                 });
+        Files.walk(TEST_STATS_DIR)
+                .sorted(Comparator.reverseOrder())
+                .forEach(path -> {
+                    try {
+                        Files.deleteIfExists(path);
+                    } catch (IOException exception) {
+                        throw new RuntimeException(exception);
+                    }
+                });
+    }
+
+    @Test
+    void rootRedirectsToDashboard() throws Exception {
+        mockMvc.perform(get("/"))
+                .andExpect(status().isFound())
+                .andExpect(header().string(HttpHeaders.LOCATION, "/dashboard"));
     }
 
     @Test
     void healthEndpointReturnsOk() throws Exception {
-        mockMvc.perform(get("/"))
+        mockMvc.perform(get("/api/health"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("ok"));
     }
@@ -133,6 +167,37 @@ class PreviewControllerTest {
                             "Expected 200 or 302 for /doc.html but got " + status
                     );
                 });
+    }
+
+    @Test
+    void dashboardPageAndAssetsAreExposed() throws Exception {
+        mockMvc.perform(get("/dashboard"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
+                .andExpect(content().string(containsString("LinkPeek Dashboard")))
+                .andExpect(content().string(containsString("Copy LinkPeek URL")))
+                .andExpect(content().string(containsString("link-builder-input")))
+                .andExpect(content().string(containsString("/favicon.ico")))
+                .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")));
+
+        mockMvc.perform(get("/dashboard/styles.css"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/css"));
+
+        mockMvc.perform(get("/dashboard/app.js"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("application/javascript")));
+
+        mockMvc.perform(get("/webjars/echarts/5.5.1/dist/echarts.min.js"))
+                .andExpect(status().isOk());
+    }
+
+    @Test
+    void faviconEndpointReturnsConfiguredIcon() throws Exception {
+        mockMvc.perform(get("/favicon.ico"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("image/svg+xml")))
+                .andExpect(content().string(containsString("<svg")));
     }
 
     @Test
@@ -188,6 +253,39 @@ class PreviewControllerTest {
                         .param("url", "https://unsupported.example.com/post/1")
                         .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void dashboardStatsEndpointAggregatesPreviewEvents() throws Exception {
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "Mozilla/5.0"))
+                .andExpect(status().isFound());
+
+        mockMvc.perform(get("/preview")
+                        .param("url", "notaurl")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/stats/dashboard")
+                        .param("range", "30d"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.overview.createCount.value").value(1))
+                .andExpect(jsonPath("$.overview.openCount.value").value(1))
+                .andExpect(jsonPath("$.failureBreakdown.invalid").value(1))
+                .andExpect(jsonPath("$.topLinks[0].canonicalUrl").value("https://video.example.com/watch/abc"));
+    }
+
+    @Test
+    void dashboardStatsEndpointRejectsInvalidRange() throws Exception {
+        mockMvc.perform(get("/api/stats/dashboard")
+                        .param("range", "12h"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

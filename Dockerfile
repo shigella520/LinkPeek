@@ -9,7 +9,7 @@ FROM eclipse-temurin:17-jre
 WORKDIR /app
 COPY --from=build /workspace/linkpeek-server/target/linkpeek-server-0.1.0-SNAPSHOT.jar /app/app.jar
 
-VOLUME /data/cache
+VOLUME /data
 EXPOSE 8080
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.shigella520.linkpeek.server.stats.persistence.StatsLinkMapper">
+    <insert id="upsertLink" parameterType="io.github.shigella520.linkpeek.server.stats.model.StatisticsLinkRecord">
+        INSERT INTO stats_link (
+            preview_key,
+            provider_id,
+            canonical_url,
+            title,
+            site_name,
+            first_seen_at,
+            last_seen_at
+        )
+        VALUES (
+            #{previewKey},
+            #{providerId},
+            #{canonicalUrl},
+            #{title},
+            #{siteName},
+            #{firstSeenAt},
+            #{lastSeenAt}
+        )
+        ON CONFLICT(preview_key) DO UPDATE SET
+            provider_id = COALESCE(excluded.provider_id, stats_link.provider_id),
+            canonical_url = COALESCE(NULLIF(excluded.canonical_url, ''), stats_link.canonical_url),
+            title = CASE
+                WHEN excluded.title IS NOT NULL AND excluded.title != '' THEN excluded.title
+                ELSE stats_link.title
+            END,
+            site_name = CASE
+                WHEN excluded.site_name IS NOT NULL AND excluded.site_name != '' THEN excluded.site_name
+                ELSE stats_link.site_name
+            END,
+            first_seen_at = MIN(stats_link.first_seen_at, excluded.first_seen_at),
+            last_seen_at = MAX(stats_link.last_seen_at, excluded.last_seen_at)
+    </insert>
+</mapper>

@@ -9,9 +9,12 @@ import java.util.List;
 @ConfigurationProperties(prefix = "linkpeek")
 public class LinkPeekProperties {
     private String baseUrl = "http://localhost:8080";
+    private String webIconPath;
     private Path cacheDir = Path.of("/data/cache");
+    private Path statsDbPath = Path.of("/data/stats/linkpeek.db");
     private long cacheTtlSeconds = 86400;
     private double cacheMaxSizeGb = 10.0;
+    private int statsRetentionDays = 180;
     private Duration downloadTimeout = Duration.ofSeconds(120);
     private String logLevel = "INFO";
     private int videoMaxQuality = 480;
@@ -30,6 +33,14 @@ public class LinkPeekProperties {
         this.baseUrl = baseUrl;
     }
 
+    public String getWebIconPath() {
+        return webIconPath;
+    }
+
+    public void setWebIconPath(String webIconPath) {
+        this.webIconPath = webIconPath;
+    }
+
     public Path getCacheDir() {
         return cacheDir;
     }
@@ -46,12 +57,28 @@ public class LinkPeekProperties {
         this.cacheTtlSeconds = cacheTtlSeconds;
     }
 
+    public Path getStatsDbPath() {
+        return statsDbPath;
+    }
+
+    public void setStatsDbPath(Path statsDbPath) {
+        this.statsDbPath = statsDbPath;
+    }
+
     public double getCacheMaxSizeGb() {
         return cacheMaxSizeGb;
     }
 
     public void setCacheMaxSizeGb(double cacheMaxSizeGb) {
         this.cacheMaxSizeGb = cacheMaxSizeGb;
+    }
+
+    public int getStatsRetentionDays() {
+        return statsRetentionDays;
+    }
+
+    public void setStatsRetentionDays(int statsRetentionDays) {
+        this.statsRetentionDays = statsRetentionDays;
     }
 
     public Duration getDownloadTimeout() {
