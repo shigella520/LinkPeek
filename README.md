@@ -4,6 +4,10 @@
 
 当前首个正式版本采用 `Spring Boot 3.x + Maven` 多模块结构，对外统一暴露 `GET /preview?url=...` 入口，内部通过 provider SPI 解析目标链接并输出预览 HTML。
 
+[在线体验 Live Demo](https://linkpeek.cloud.jianyutan.com/dashboard)
+
+![LinkPeek Dashboard 预览](docs/preview.png)
+
 ## 功能特点
 
 - 基于 `Java 17`、`Spring Boot 3.x`、`Maven` 实现，适合作为正式开源项目长期维护。
