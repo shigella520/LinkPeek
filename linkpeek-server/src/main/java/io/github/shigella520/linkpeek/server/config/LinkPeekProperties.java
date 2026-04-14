@@ -1,0 +1,88 @@
+package io.github.shigella520.linkpeek.server.config;
+
+import org.springframework.boot.context.properties.ConfigurationProperties;
+
+import java.nio.file.Path;
+import java.time.Duration;
+import java.util.List;
+
+@ConfigurationProperties(prefix = "linkpeek")
+public class LinkPeekProperties {
+    private String baseUrl = "http://localhost:8080";
+    private Path cacheDir = Path.of("/data/cache");
+    private long cacheTtlSeconds = 86400;
+    private double cacheMaxSizeGb = 10.0;
+    private Duration downloadTimeout = Duration.ofSeconds(120);
+    private String logLevel = "INFO";
+    private int videoMaxQuality = 480;
+    private List<String> crawlerSignatures = List.of(
+            "facebookexternalhit",
+            "Facebot",
+            "Twitterbot",
+            "Applebot"
+    );
+
+    public String getBaseUrl() {
+        return baseUrl;
+    }
+
+    public void setBaseUrl(String baseUrl) {
+        this.baseUrl = baseUrl;
+    }
+
+    public Path getCacheDir() {
+        return cacheDir;
+    }
+
+    public void setCacheDir(Path cacheDir) {
+        this.cacheDir = cacheDir;
+    }
+
+    public long getCacheTtlSeconds() {
+        return cacheTtlSeconds;
+    }
+
+    public void setCacheTtlSeconds(long cacheTtlSeconds) {
+        this.cacheTtlSeconds = cacheTtlSeconds;
+    }
+
+    public double getCacheMaxSizeGb() {
+        return cacheMaxSizeGb;
+    }
+
+    public void setCacheMaxSizeGb(double cacheMaxSizeGb) {
+        this.cacheMaxSizeGb = cacheMaxSizeGb;
+    }
+
+    public Duration getDownloadTimeout() {
+        return downloadTimeout;
+    }
+
+    public void setDownloadTimeout(Duration downloadTimeout) {
+        this.downloadTimeout = downloadTimeout;
+    }
+
+    public String getLogLevel() {
+        return logLevel;
+    }
+
+    public void setLogLevel(String logLevel) {
+        this.logLevel = logLevel;
+    }
+
+    public int getVideoMaxQuality() {
+        return videoMaxQuality;
+    }
+
+    public void setVideoMaxQuality(int videoMaxQuality) {
+        this.videoMaxQuality = videoMaxQuality;
+    }
+
+    public List<String> getCrawlerSignatures() {
+        return crawlerSignatures;
+    }
+
+    public void setCrawlerSignatures(List<String> crawlerSignatures) {
+        this.crawlerSignatures = crawlerSignatures;
+    }
+}

@@ -1,0 +1,19 @@
+services:
+  linkpeek:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      BASE_URL: https://preview.example.com
+      CACHE_DIR: /data/cache
+      CACHE_TTL_SECONDS: 86400
+      CACHE_MAX_SIZE_GB: 10
+      DOWNLOAD_TIMEOUT: 120s
+      VIDEO_MAX_QUALITY: 480
+      LOG_LEVEL: INFO
+    volumes:
+      - linkpeek_cache:/data/cache
+    restart: unless-stopped
+
+volumes:
+  linkpeek_cache:

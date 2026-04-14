@@ -1,0 +1,37 @@
+server:
+  port: ${PORT:8080}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    root: ${LOG_LEVEL:INFO}
+
+springdoc:
+  packages-to-scan: io.github.shigella520.linkpeek.server.controller
+  paths-to-match:
+    - /
+    - /preview
+    - /media/**
+  swagger-ui:
+    path: /doc.html
+    operations-sorter: alpha
+    tags-sorter: alpha
+
+linkpeek:
+  base-url: ${BASE_URL:http://localhost:8080}
+  cache-dir: ${CACHE_DIR:/data/cache}
+  cache-ttl-seconds: ${CACHE_TTL_SECONDS:86400}
+  cache-max-size-gb: ${CACHE_MAX_SIZE_GB:10}
+  download-timeout: ${DOWNLOAD_TIMEOUT:120s}
+  log-level: ${LOG_LEVEL:INFO}
+  video-max-quality: ${VIDEO_MAX_QUALITY:480}
+  crawler-signatures:
+    - facebookexternalhit
+    - Facebot
+    - Twitterbot
+    - Applebot
