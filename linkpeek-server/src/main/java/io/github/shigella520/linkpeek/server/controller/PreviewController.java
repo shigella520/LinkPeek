@@ -7,6 +7,9 @@ import io.github.shigella520.linkpeek.core.util.CrawlerMatcher;
 import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
 import io.github.shigella520.linkpeek.server.render.HtmlPageRenderer;
 import io.github.shigella520.linkpeek.server.service.PreviewService;
+import io.github.shigella520.linkpeek.server.stats.model.StatisticsClientType;
+import io.github.shigella520.linkpeek.server.stats.model.StatisticsErrorCode;
+import io.github.shigella520.linkpeek.server.stats.service.StatisticsRecorder;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -38,17 +41,20 @@ public class PreviewController {
     private final HtmlPageRenderer htmlPageRenderer;
     private final CrawlerMatcher crawlerMatcher;
     private final LinkPeekProperties properties;
+    private final StatisticsRecorder statisticsRecorder;
 
     public PreviewController(
             PreviewService previewService,
             HtmlPageRenderer htmlPageRenderer,
             CrawlerMatcher crawlerMatcher,
-            LinkPeekProperties properties
+            LinkPeekProperties properties,
+            StatisticsRecorder statisticsRecorder
     ) {
         this.previewService = previewService;
         this.htmlPageRenderer = htmlPageRenderer;
         this.crawlerMatcher = crawlerMatcher;
         this.properties = properties;
+        this.statisticsRecorder = statisticsRecorder;
     }
 
     @GetMapping(value = "/preview", produces = MediaType.TEXT_HTML_VALUE)
@@ -79,32 +85,65 @@ public class PreviewController {
     ) {
         long startedAt = System.nanoTime();
         String userAgent = request.getHeader(HttpHeaders.USER_AGENT);
+        StatisticsClientType clientType = resolveClientType(userAgent);
+        PreviewService.ResolvedPreview resolvedPreview = null;
 
         try {
-            PreviewService.ResolvedPreview resolvedPreview = previewService.prepare(url);
+            resolvedPreview = previewService.prepare(url);
             if (shouldRedirect(userAgent, renderModeHeader)) {
-                return redirectResponse(resolvedPreview.sourceUrl(), resolvedPreview.previewKey().value(), resolvedPreview.provider().getId(), startedAt);
+                long durationMs = elapsedMillis(startedAt);
+                statisticsRecorder.recordPreviewOpened(resolvedPreview, clientType, 302, durationMs);
+                return redirectResponse(resolvedPreview.sourceUrl(), resolvedPreview.previewKey().value(), resolvedPreview.provider().getId(), durationMs);
             }
 
             PreviewService.PreviewLoadResult result = previewService.loadPreview(resolvedPreview);
             String body = htmlPageRenderer.renderPreview(result.metadata(), result.resolvedPreview().previewKey(), properties.getBaseUrl());
+            long durationMs = elapsedMillis(startedAt);
+            statisticsRecorder.recordPreviewCreated(result, clientType, 200, durationMs);
             log.info(
                     "preview_served previewKey={} provider={} cacheHit={} durationMs={} status={}",
                     result.resolvedPreview().previewKey().value(),
                     result.metadata().providerId(),
                     result.cacheHit(),
-                    elapsedMillis(startedAt),
+                    durationMs,
                     200
             );
             return ResponseEntity.ok()
                     .contentType(MediaType.TEXT_HTML)
                     .body(body);
         } catch (InvalidPreviewUrlException exception) {
-            return errorResponse(HttpStatus.BAD_REQUEST, "Invalid URL", exception.getMessage(), startedAt, null);
+            return errorResponse(
+                    HttpStatus.BAD_REQUEST,
+                    "Invalid URL",
+                    exception.getMessage(),
+                    startedAt,
+                    null,
+                    resolvedPreview,
+                    clientType,
+                    StatisticsErrorCode.INVALID_URL
+            );
         } catch (UnsupportedPreviewUrlException exception) {
-            return errorResponse(HttpStatus.UNPROCESSABLE_ENTITY, "Unsupported URL", exception.getMessage(), startedAt, null);
+            return errorResponse(
+                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    "Unsupported URL",
+                    exception.getMessage(),
+                    startedAt,
+                    null,
+                    resolvedPreview,
+                    clientType,
+                    StatisticsErrorCode.UNSUPPORTED_URL
+            );
         } catch (PreviewException exception) {
-            return errorResponse(HttpStatus.BAD_GATEWAY, "Preview Error", exception.getMessage(), startedAt, exception);
+            return errorResponse(
+                    HttpStatus.BAD_GATEWAY,
+                    "Preview Error",
+                    exception.getMessage(),
+                    startedAt,
+                    exception,
+                    resolvedPreview,
+                    clientType,
+                    StatisticsErrorCode.UPSTREAM_ERROR
+            );
         }
     }
 
@@ -117,13 +156,13 @@ public class PreviewController {
         };
     }
 
-    private ResponseEntity<String> redirectResponse(URI redirectUrl, String previewKey, String providerId, long startedAt) {
+    private ResponseEntity<String> redirectResponse(URI redirectUrl, String previewKey, String providerId, long durationMs) {
         log.info(
                 "preview_redirected previewKey={} provider={} cacheHit={} durationMs={} status={}",
                 previewKey,
                 providerId,
                 false,
-                elapsedMillis(startedAt),
+                durationMs,
                 302
         );
         return ResponseEntity.status(HttpStatus.FOUND)
@@ -131,13 +170,25 @@ public class PreviewController {
                 .build();
     }
 
-    private ResponseEntity<String> errorResponse(HttpStatus status, String title, String message, long startedAt, Throwable cause) {
+    private ResponseEntity<String> errorResponse(
+            HttpStatus status,
+            String title,
+            String message,
+            long startedAt,
+            Throwable cause,
+            PreviewService.ResolvedPreview resolvedPreview,
+            StatisticsClientType clientType,
+            StatisticsErrorCode errorCode
+    ) {
         long durationMs = elapsedMillis(startedAt);
+        statisticsRecorder.recordPreviewFailed(resolvedPreview, clientType, status.value(), durationMs, errorCode);
+        String previewKey = resolvedPreview == null ? "n/a" : resolvedPreview.previewKey().value();
+        String providerId = resolvedPreview == null ? "n/a" : resolvedPreview.provider().getId();
         if (cause == null) {
             log.info(
                     "preview_failed previewKey={} provider={} cacheHit={} durationMs={} status={} message={}",
-                    "n/a",
-                    "n/a",
+                    previewKey,
+                    providerId,
                     false,
                     durationMs,
                     status.value(),
@@ -146,8 +197,8 @@ public class PreviewController {
         } else {
             log.warn(
                     "preview_failed previewKey={} provider={} cacheHit={} durationMs={} status={} message={}",
-                    "n/a",
-                    "n/a",
+                    previewKey,
+                    providerId,
                     false,
                     durationMs,
                     status.value(),
@@ -162,6 +213,10 @@ public class PreviewController {
 
     private long elapsedMillis(long startedAt) {
         return (System.nanoTime() - startedAt) / 1_000_000;
+    }
+
+    private StatisticsClientType resolveClientType(String userAgent) {
+        return crawlerMatcher.matches(userAgent) ? StatisticsClientType.CRAWLER : StatisticsClientType.BROWSER;
     }
 
     private enum RenderMode {

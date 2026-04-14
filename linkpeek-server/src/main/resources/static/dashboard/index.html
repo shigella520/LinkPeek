@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LinkPeek Dashboard</title>
+    <link rel="stylesheet" href="/dashboard/styles.css">
+</head>
+<body>
+<div class="page-shell">
+    <div class="backdrop-grid"></div>
+    <div class="backdrop-glow backdrop-glow-left"></div>
+    <div class="backdrop-glow backdrop-glow-right"></div>
+
+    <header class="topbar reveal">
+        <div class="brand-mark">
+            <span class="brand-dot"></span>
+            <span>LinkPeek Analytics</span>
+        </div>
+        <div class="topbar-meta">
+            <a
+                class="icon-link github-link"
+                href="https://github.com/shigella520/LinkPeek"
+                target="_blank"
+                rel="noreferrer"
+                aria-label="Open LinkPeek on GitHub"
+                title="GitHub"
+            >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 1.5C6.2 1.5 1.5 6.3 1.5 12.2c0 4.7 3 8.7 7.2 10.1.5.1.7-.2.7-.5v-1.9c-2.9.7-3.5-1.2-3.5-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1 1.6 1 .9 1.5 2.3 1 2.8.8.1-.7.4-1 .6-1.3-2.3-.3-4.8-1.2-4.8-5.3 0-1.2.4-2.2 1-3-.1-.2-.4-1.3.1-2.8 0 0 .9-.3 3 .9a10.2 10.2 0 0 1 5.5 0c2.1-1.2 3-.9 3-.9.6 1.5.2 2.6.1 2.8.7.8 1 1.8 1 3 0 4.1-2.5 5-4.8 5.3.4.3.7.9.7 1.9v2.7c0 .3.2.7.7.5a10.7 10.7 0 0 0 7.2-10C22.5 6.3 17.8 1.5 12 1.5Z"/>
+                </svg>
+            </a>
+            <span class="topbar-pill" id="timezone">-</span>
+        </div>
+    </header>
+
+    <section class="hero reveal">
+        <div class="hero-copy">
+            <p class="eyebrow">Live Dashboard</p>
+            <h1>LinkPeek Analytics</h1>
+            <div class="hero-controls">
+                <div class="range-switch" id="range-switch">
+                    <button type="button" data-range="7d">7D</button>
+                    <button type="button" data-range="30d" class="is-active">30D</button>
+                    <button type="button" data-range="90d">90D</button>
+                    <button type="button" data-range="180d">180D</button>
+                </div>
+                <div class="hero-status">
+                    <span class="status-indicator"></span>
+                    <span id="generated-at">加载中</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="hero-stage">
+            <div class="hero-stage-panel">
+                <div class="hero-stage-head">
+                    <span class="hero-stage-label">Live Signal</span>
+                    <span class="hero-stage-chip">Auto refresh · 30s</span>
+                </div>
+                <div class="hero-orbit orbit-one"></div>
+                <div class="hero-orbit orbit-two"></div>
+                <div class="hero-pulse hero-pulse-a"></div>
+                <div class="hero-pulse hero-pulse-b"></div>
+
+                <div class="floating-chip floating-chip-primary">
+                    <span>创建数</span>
+                    <strong id="create-count">0</strong>
+                    <em id="create-count-trend">-</em>
+                </div>
+                <div class="floating-chip floating-chip-secondary">
+                    <span>打开数</span>
+                    <strong id="open-count">0</strong>
+                    <em id="open-count-trend">-</em>
+                </div>
+                <div class="floating-chip floating-chip-accent">
+                    <span>预览成功率</span>
+                    <strong id="preview-success-rate">0%</strong>
+                    <em>实时聚合</em>
+                </div>
+
+                <div class="glass-stack">
+                    <article class="glass-card hero-metric hero-metric-wide">
+                        <p>独立链接</p>
+                        <strong id="unique-link-count">0</strong>
+                        <span id="unique-link-count-trend">-</span>
+                    </article>
+                    <article class="glass-card hero-metric">
+                        <p>新增链接</p>
+                        <strong id="new-link-count">0</strong>
+                        <span id="new-link-count-trend">-</span>
+                    </article>
+                    <article class="glass-card hero-metric">
+                        <p>创建率</p>
+                        <strong id="create-rate">0%</strong>
+                        <span>预览请求转化</span>
+                    </article>
+                    <article class="glass-card hero-metric">
+                        <p>打开 / 创建比</p>
+                        <strong id="open-create-ratio">0%</strong>
+                        <span>点击深度</span>
+                    </article>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <main class="story-shell">
+        <section class="story-row reveal">
+            <div class="story-aside">
+                <span class="story-index">01</span>
+                <h2>规模总览</h2>
+                <p>
+                    先看全局体量。顶部数字负责回答“这段时间到底发生了多少次有效预览”，
+                    趋势图负责回答“增长有没有延续”。
+                </p>
+            </div>
+            <div class="story-content">
+                <div class="metric-strip">
+                    <article class="story-metric-card">
+                        <span>创建</span>
+                        <strong id="create-count-inline">0</strong>
+                        <em id="create-count-inline-trend">-</em>
+                    </article>
+                    <article class="story-metric-card">
+                        <span>打开</span>
+                        <strong id="open-count-inline">0</strong>
+                        <em id="open-count-inline-trend">-</em>
+                    </article>
+                    <article class="story-metric-card">
+                        <span>独立链接</span>
+                        <strong id="unique-link-count-inline">0</strong>
+                        <em id="unique-link-count-inline-trend">-</em>
+                    </article>
+                    <article class="story-metric-card">
+                        <span>新增链接</span>
+                        <strong id="new-link-count-inline">0</strong>
+                        <em id="new-link-count-inline-trend">-</em>
+                    </article>
+                </div>
+                <section class="content-card chart-card">
+                    <div class="card-head">
+                        <div>
+                            <p class="card-kicker">Overview</p>
+                            <h3>创建与打开趋势</h3>
+                        </div>
+                        <span class="card-note">按日聚合</span>
+                    </div>
+                    <div class="chart chart-large" id="growth-chart"></div>
+                </section>
+            </div>
+        </section>
+
+        <section class="story-row reveal">
+            <div class="story-aside">
+                <span class="story-index">02</span>
+                <h2>转化分析</h2>
+                <p>
+                    把请求链路拆开看。漏斗解释成功和失败的体量结构，错误分布解释瓶颈主要集中在哪一层。
+                </p>
+            </div>
+            <div class="story-content story-grid-two">
+                <section class="content-card">
+                    <div class="card-head">
+                        <div>
+                            <p class="card-kicker">Conversion</p>
+                            <h3>链路漏斗</h3>
+                        </div>
+                    </div>
+                    <div class="funnel-metrics">
+                        <div class="funnel-pill">
+                            <span>预览成功率</span>
+                            <strong id="preview-success-rate-inline">0%</strong>
+                        </div>
+                        <div class="funnel-pill">
+                            <span>创建率</span>
+                            <strong id="create-rate-inline">0%</strong>
+                        </div>
+                        <div class="funnel-pill">
+                            <span>打开 / 创建比</span>
+                            <strong id="open-create-ratio-inline">0%</strong>
+                        </div>
+                    </div>
+                    <div class="chart chart-medium" id="funnel-chart"></div>
+                </section>
+
+                <section class="content-card">
+                    <div class="card-head">
+                        <div>
+                            <p class="card-kicker">Failure</p>
+                            <h3>错误类型分布</h3>
+                        </div>
+                    </div>
+                    <div class="chart chart-medium" id="failure-chart"></div>
+                </section>
+            </div>
+        </section>
+
+        <section class="story-row reveal">
+            <div class="story-aside">
+                <span class="story-index">03</span>
+                <h2>内容洞察</h2>
+                <p>
+                    最后回答“哪些链接在持续被打开”和“活跃发生在什么时间段”。
+                    热门链接、回访趋势和热力图会一起把内容热度轮廓勾出来。
+                </p>
+            </div>
+            <div class="story-content">
+                <div class="story-grid-two">
+                    <section class="content-card">
+                        <div class="card-head">
+                            <div>
+                                <p class="card-kicker">Discovery</p>
+                                <h3>新增 vs 回访</h3>
+                            </div>
+                        </div>
+                        <div class="chart chart-medium" id="new-returning-chart"></div>
+                    </section>
+
+                    <section class="content-card">
+                        <div class="card-head">
+                            <div>
+                                <p class="card-kicker">Rhythm</p>
+                                <h3>7x24 活跃热力图</h3>
+                            </div>
+                        </div>
+                        <div class="chart chart-medium" id="heatmap-chart"></div>
+                    </section>
+                </div>
+
+                <section class="content-card table-card">
+                    <div class="card-head">
+                        <div>
+                            <p class="card-kicker">Hot Links</p>
+                            <h3>热门链接 Top 10</h3>
+                        </div>
+                        <span class="card-note">按打开数优先排序</span>
+                    </div>
+                    <div class="table-shell">
+                        <table>
+                            <thead>
+                            <tr>
+                                <th>标题</th>
+                                <th>Provider</th>
+                                <th>创建</th>
+                                <th>打开</th>
+                                <th>首次出现</th>
+                                <th>最近活跃</th>
+                            </tr>
+                            </thead>
+                            <tbody id="top-links-body">
+                            <tr>
+                                <td colspan="6" class="empty-row">暂无数据</td>
+                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+            </div>
+        </section>
+    </main>
+</div>
+
+<script src="/webjars/echarts/5.5.1/dist/echarts.min.js"></script>
+<script src="/dashboard/app.js"></script>
+</body>
+</html>

@@ -10,6 +10,8 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
                                       |                 -> canonical URL + metadata
                                       |
                                       -> disk cache -> metadata/thumb files
+                                      |
+                                      -> sqlite stats -> dashboard/api
 ```
 
 ## 模块边界
@@ -17,7 +19,7 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
 - `linkpeek-core`：定义所有模块共享的核心类型与契约。
 - `linkpeek-provider-bilibili`：提供 Bilibili 的具体 `PreviewProvider` 实现。
 - `linkpeek-provider-template`：提供新增 provider 的最小骨架示例。
-- `linkpeek-server`：负责 HTTP 路由、运行时配置、缓存、日志和 HTML 渲染。
+- `linkpeek-server`：负责 HTTP 路由、运行时配置、缓存、日志、SQLite 统计聚合和 HTML 渲染。
 
 ## 请求流程
 
@@ -25,9 +27,10 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
 2. provider registry 通过 `supports(URI)` 选择匹配的 provider。
 3. provider 将原始链接规范化为 canonical URL。
 4. 服务端根据 canonical URL 计算稳定的 `PreviewKey`。
-5. 对爬虫请求解析元数据并返回 Open Graph HTML。
-6. 对普通浏览器请求直接跳转到原始链接，不触发上游元数据抓取。
-7. 缩略图请求基于缓存元数据和 provider 自身的下载逻辑处理。
+5. 对爬虫请求解析元数据并返回 Open Graph HTML，同时记录创建事件。
+6. 对普通浏览器请求直接跳转到原始链接，同时记录打开事件。
+7. 缩略图请求基于缓存元数据和 provider 自身的下载逻辑处理，并记录缩略图服务事件。
+8. 统计看板通过 `/api/stats/dashboard` 聚合 SQLite 中的事件数据，再由 `/dashboard` 页面展示。
 
 ## 缓存设计
 
@@ -36,3 +39,10 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
 - 预留视频缓存：`CACHE_DIR/video/{previewKey}.mp4`
 
 元数据和缩略图都使用 TTL 控制新鲜度；淘汰策略采用基于最后修改时间的近似 LRU。
+
+## 统计设计
+
+- 事件库默认使用 `/data/stats/linkpeek.db`。
+- 统计写入直接发生在 Web 控制器和媒体代理分支，不依赖离线日志回放。
+- 当前看板只展示三层指标：规模总览、转化分析、内容洞察。
+- 根路径 `/` 固定跳转到 `/dashboard`；轻量探活迁移到 `/api/health`。

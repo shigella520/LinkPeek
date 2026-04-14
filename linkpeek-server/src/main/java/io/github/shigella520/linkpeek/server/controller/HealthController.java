@@ -10,7 +10,7 @@ import java.util.Map;
 @RestController
 @Tag(name = "Health", description = "服务健康检查接口")
 public class HealthController {
-    @GetMapping("/")
+    @GetMapping("/api/health")
     @Operation(summary = "服务探活", description = "返回轻量 JSON，用于本地或外部探活。")
     public Map<String, String> health() {
         return Map.of("status", "ok");
