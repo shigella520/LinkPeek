@@ -6,6 +6,8 @@
 
 [在线体验 Live Demo](https://linkpeek.cloud.jianyutan.com/dashboard)
 
+[快捷指令 Shortcut](https://www.icloud.com/shortcuts/dc6b85dc0d2244caa0a6a9a730a283e1)
+
 ![LinkPeek Dashboard 预览](docs/preview.png)
 
 ## 功能特点
