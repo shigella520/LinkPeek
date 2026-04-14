@@ -42,12 +42,69 @@
 
     function init() {
         bindRangeSwitch();
+        bindLinkBuilder();
         bindParallax();
         initRevealObserver();
         initCharts();
         loadDashboard();
         window.addEventListener("resize", resizeCharts);
         window.setInterval(loadDashboard, REFRESH_INTERVAL_MS);
+    }
+
+    function bindLinkBuilder() {
+        const input = document.getElementById("link-builder-input");
+        const button = document.getElementById("link-builder-button");
+        const output = document.getElementById("link-builder-output");
+        const feedback = document.getElementById("link-builder-feedback");
+        if (!input || !button || !output || !feedback) {
+            return;
+        }
+
+        const refresh = () => {
+            const previewUrl = buildPreviewUrl(input.value.trim());
+            output.textContent = previewUrl || "https://your-linkpeek-host/preview?url=...";
+            output.classList.toggle("is-ready", Boolean(previewUrl));
+            button.disabled = !previewUrl;
+
+            if (!input.value.trim()) {
+                setBuilderFeedback(feedback, "Paste any http/https URL to generate a share link.", "");
+                return;
+            }
+            if (!previewUrl) {
+                setBuilderFeedback(feedback, "Please enter a valid http/https URL.", "is-error");
+                return;
+            }
+            setBuilderFeedback(feedback, "Ready to copy.", "is-ready");
+        };
+
+        input.addEventListener("input", refresh);
+        input.addEventListener("keydown", (event) => {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                button.click();
+            }
+        });
+        button.addEventListener("click", async () => {
+            const previewUrl = buildPreviewUrl(input.value.trim());
+            if (!previewUrl) {
+                setBuilderFeedback(feedback, "Please enter a valid http/https URL.", "is-error");
+                return;
+            }
+
+            try {
+                await copyToClipboard(previewUrl);
+                output.textContent = previewUrl;
+                output.classList.add("is-ready");
+                button.classList.add("is-copied");
+                window.setTimeout(() => button.classList.remove("is-copied"), 1400);
+                setBuilderFeedback(feedback, "Copied LinkPeek URL to clipboard.", "is-success");
+            } catch (error) {
+                console.error("Failed to copy LinkPeek URL", error);
+                setBuilderFeedback(feedback, "Copy failed. Please copy the generated URL manually.", "is-error");
+            }
+        });
+
+        refresh();
     }
 
     function bindRangeSwitch() {
@@ -579,10 +636,57 @@
         Object.values(state.charts).forEach((chart) => chart.resize());
     }
 
+    function buildPreviewUrl(value) {
+        if (!value) {
+            return "";
+        }
+
+        try {
+            const sourceUrl = new URL(value);
+            if (sourceUrl.protocol !== "http:" && sourceUrl.protocol !== "https:") {
+                return "";
+            }
+            const previewUrl = new URL("/preview", window.location.origin);
+            previewUrl.searchParams.set("url", sourceUrl.toString());
+            return previewUrl.toString();
+        } catch (error) {
+            return "";
+        }
+    }
+
+    async function copyToClipboard(value) {
+        if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+            await navigator.clipboard.writeText(value);
+            return;
+        }
+
+        const input = document.createElement("textarea");
+        input.value = value;
+        input.setAttribute("readonly", "readonly");
+        input.style.position = "absolute";
+        input.style.left = "-9999px";
+        document.body.appendChild(input);
+        input.select();
+        const copied = document.execCommand("copy");
+        document.body.removeChild(input);
+
+        if (!copied) {
+            throw new Error("execCommand copy failed");
+        }
+    }
+
     function setText(id, value) {
         const node = document.getElementById(id);
         if (node) {
             node.textContent = value;
+        }
+    }
+
+    function setBuilderFeedback(node, text, stateClass) {
+        node.textContent = text;
+        node.classList.remove("is-ready", "is-success", "is-error");
+        if (stateClass) {
+            node.classList.add(stateClass);
         }
     }
 

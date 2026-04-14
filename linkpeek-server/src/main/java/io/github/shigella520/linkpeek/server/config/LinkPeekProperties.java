@@ -9,6 +9,7 @@ import java.util.List;
 @ConfigurationProperties(prefix = "linkpeek")
 public class LinkPeekProperties {
     private String baseUrl = "http://localhost:8080";
+    private String webIconPath;
     private Path cacheDir = Path.of("/data/cache");
     private Path statsDbPath = Path.of("/data/stats/linkpeek.db");
     private long cacheTtlSeconds = 86400;
@@ -30,6 +31,14 @@ public class LinkPeekProperties {
 
     public void setBaseUrl(String baseUrl) {
         this.baseUrl = baseUrl;
+    }
+
+    public String getWebIconPath() {
+        return webIconPath;
+    }
+
+    public void setWebIconPath(String webIconPath) {
+        this.webIconPath = webIconPath;
     }
 
     public Path getCacheDir() {

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Dashboard</title>
+    <link rel="icon" href="/favicon.ico">
     <link rel="stylesheet" href="/dashboard/styles.css">
 </head>
 <body>
@@ -15,7 +16,7 @@
     <header class="topbar reveal">
         <div class="brand-mark">
             <span class="brand-dot"></span>
-            <span>LinkPeek Analytics</span>
+            <span class="brand-text">LinkPeek Dashboard</span>
         </div>
         <div class="topbar-meta">
             <a
@@ -37,7 +38,7 @@
     <section class="hero reveal">
         <div class="hero-copy">
             <p class="eyebrow">Live Dashboard</p>
-            <h1>LinkPeek Analytics</h1>
+            <h1>LinkPeek Dashboard</h1>
             <div class="hero-controls">
                 <div class="range-switch" id="range-switch">
                     <button type="button" data-range="7d">7D</button>
@@ -50,6 +51,36 @@
                     <span id="generated-at">加载中</span>
                 </div>
             </div>
+
+            <section class="link-builder" aria-labelledby="link-builder-title">
+                <div class="link-builder-head">
+                    <div>
+                        <p class="link-builder-kicker">Share Builder</p>
+                        <h2 id="link-builder-title">Create a LinkPeek URL</h2>
+                    </div>
+                    <span class="link-builder-badge">Copy to clipboard</span>
+                </div>
+                <label class="link-builder-field" for="link-builder-input">
+                    <span>Source URL</span>
+                    <input
+                        id="link-builder-input"
+                        type="url"
+                        inputmode="url"
+                        placeholder="https://www.bilibili.com/video/BV..."
+                        autocomplete="off"
+                        spellcheck="false"
+                    >
+                </label>
+                <div class="link-builder-actions">
+                    <button id="link-builder-button" type="button" disabled>Copy LinkPeek URL</button>
+                    <span id="link-builder-feedback" role="status" aria-live="polite">
+                        Paste any http/https URL to generate a share link.
+                    </span>
+                </div>
+                <div class="link-builder-output" id="link-builder-output">
+                    https://your-linkpeek-host/preview?url=...
+                </div>
+            </section>
         </div>
 
         <div class="hero-stage">

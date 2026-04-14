@@ -30,6 +30,7 @@ mybatis:
 
 linkpeek:
   base-url: ${BASE_URL:http://localhost:8080}
+  web-icon-path: ${WEB_ICON_PATH:}
   cache-dir: ${CACHE_DIR:/data/cache}
   stats-db-path: ${STATS_DB_PATH:/data/stats/linkpeek.db}
   cache-ttl-seconds: ${CACHE_TTL_SECONDS:86400}

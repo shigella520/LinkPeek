@@ -43,12 +43,18 @@ class PreviewControllerTest {
     private static final Path TEST_CACHE_DIR;
     private static final Path TEST_STATS_DIR;
     private static final Path TEST_STATS_DB;
+    private static final Path TEST_WEB_ICON;
 
     static {
         try {
             TEST_CACHE_DIR = Files.createTempDirectory("linkpeek-server-cache");
             TEST_STATS_DIR = Files.createTempDirectory("linkpeek-server-stats");
             TEST_STATS_DB = TEST_STATS_DIR.resolve("linkpeek-test.db");
+            TEST_WEB_ICON = TEST_STATS_DIR.resolve("favicon.svg");
+            Files.writeString(
+                    TEST_WEB_ICON,
+                    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"#0a84ff\"/></svg>"
+            );
         } catch (IOException exception) {
             throw new ExceptionInInitializerError(exception);
         }
@@ -59,6 +65,7 @@ class PreviewControllerTest {
         registry.add("linkpeek.cache-dir", () -> TEST_CACHE_DIR.toString());
         registry.add("linkpeek.stats-db-path", () -> TEST_STATS_DB.toString());
         registry.add("linkpeek.base-url", () -> "https://preview.example.com");
+        registry.add("linkpeek.web-icon-path", () -> TEST_WEB_ICON.toString());
         registry.add("management.endpoints.web.exposure.include", () -> "health");
     }
 
@@ -167,7 +174,10 @@ class PreviewControllerTest {
         mockMvc.perform(get("/dashboard"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
-                .andExpect(content().string(containsString("LinkPeek Analytics")))
+                .andExpect(content().string(containsString("LinkPeek Dashboard")))
+                .andExpect(content().string(containsString("Copy LinkPeek URL")))
+                .andExpect(content().string(containsString("link-builder-input")))
+                .andExpect(content().string(containsString("/favicon.ico")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")));
 
         mockMvc.perform(get("/dashboard/styles.css"))
@@ -180,6 +190,14 @@ class PreviewControllerTest {
 
         mockMvc.perform(get("/webjars/echarts/5.5.1/dist/echarts.min.js"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void faviconEndpointReturnsConfiguredIcon() throws Exception {
+        mockMvc.perform(get("/favicon.ico"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("image/svg+xml")))
+                .andExpect(content().string(containsString("<svg")));
     }
 
     @Test

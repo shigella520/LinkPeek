@@ -32,6 +32,7 @@ docker compose up -d --build
 建议启动前至少配置：
 
 - `BASE_URL`：服务对外可访问的地址，例如 `https://preview.example.com`
+- `WEB_ICON_PATH`：网页 favicon 文件路径，例如 `/data/favicon.svg` 或 `/data/favicon.ico`
 - `CACHE_DIR`：缓存目录，默认 `/data/cache`
 - `STATS_DB_PATH`：统计数据库路径，默认 `/data/stats/linkpeek.db`
 - `CACHE_MAX_SIZE_GB`：缓存空间上限，默认 `10`
@@ -45,6 +46,7 @@ docker build -t linkpeek .
 docker run --rm \
   -p 8080:8080 \
   -e BASE_URL=https://preview.example.com \
+  -e WEB_ICON_PATH=/data/favicon.svg \
   -e CACHE_DIR=/data/cache \
   -e STATS_DB_PATH=/data/stats/linkpeek.db \
   -e CACHE_MAX_SIZE_GB=10 \
@@ -114,6 +116,12 @@ curl https://preview.example.com/api/health
 
 ```json
 {"status":"ok"}
+```
+
+获取网页 favicon：
+
+```bash
+curl -I https://preview.example.com/favicon.ico
 ```
 
 打开统计看板：
@@ -222,6 +230,16 @@ LinkPeek/
 #### `GET /api/health`
 
 轻量健康检查接口。
+
+#### `GET /favicon.ico`
+
+返回当前 Web 页面使用的 favicon。
+
+说明：
+
+- 可通过环境变量 `WEB_ICON_PATH` 指定图标文件路径
+- 支持常见的 `svg`、`png`、`ico` 等格式，返回时自动带上对应 Content-Type
+- 未配置时会回退到应用内置默认图标
 
 #### `GET /actuator/health`
 
