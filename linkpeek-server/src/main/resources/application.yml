@@ -39,6 +39,9 @@ linkpeek:
   download-timeout: ${DOWNLOAD_TIMEOUT:120s}
   log-level: ${LOG_LEVEL:INFO}
   video-max-quality: ${VIDEO_MAX_QUALITY:480}
+  preview-warmup-enabled: ${PREVIEW_WARMUP_ENABLED:true}
+  preview-warmup-threads: ${PREVIEW_WARMUP_THREADS:2}
+  preview-warmup-queue-capacity: ${PREVIEW_WARMUP_QUEUE_CAPACITY:64}
   crawler-signatures:
     - facebookexternalhit
     - Facebot

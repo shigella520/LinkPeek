@@ -12,6 +12,8 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
                                       -> disk cache -> metadata/thumb files
                                       |
                                       -> sqlite stats -> dashboard/api
+                                      |
+                                      -> bounded warmup executor -> metadata cache + stats link title
 ```
 
 ## 模块边界
@@ -28,9 +30,11 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
 3. provider 将原始链接规范化为 canonical URL。
 4. 服务端根据 canonical URL 计算稳定的 `PreviewKey`。
 5. 对爬虫请求解析元数据并返回 Open Graph HTML，同时记录创建事件。
-6. 对普通浏览器请求直接跳转到原始链接，同时记录打开事件。
-7. 缩略图请求基于缓存元数据和 provider 自身的下载逻辑处理，并记录缩略图服务事件。
-8. 统计看板通过 `/api/stats/dashboard` 聚合 SQLite 中的事件数据，再由 `/dashboard` 页面展示。
+6. 对普通浏览器请求立即记录打开事件并跳转到原始链接。
+7. 如果普通浏览器请求命中的元数据尚未缓存，服务会投递有界后台任务异步预热元数据，用于补齐统计看板中的标题。
+8. 异步预热使用固定线程池、有限队列和按 `PreviewKey` 的单飞去重，队列满或重复任务会跳过，不阻塞浏览器跳转。
+9. 缩略图请求基于缓存元数据和 provider 自身的下载逻辑处理，并记录缩略图服务事件。
+10. 统计看板通过 `/api/stats/dashboard` 聚合 SQLite 中的事件数据，再由 `/dashboard` 页面展示。
 
 ## 缓存设计
 

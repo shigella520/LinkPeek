@@ -20,6 +20,7 @@
 - 提供内部缩略图代理路由，`og:image` 指向服务自身地址，便于统一控制。
 - 保留视频代理路由占位，但目前明确返回 `501 Not Implemented`，不引入外部二进制依赖。
 - 内置 `SQLite + MyBatis` 统计子系统，自动采集创建、打开、失败和缩略图命中事件。
+- 普通浏览器打开会立即跳转，并通过有界后台任务异步补齐统计标题。
 - 自带统计页，适合自部署后直接查看运营数据。
 - 使用多模块组织方式，便于后续扩展更多 provider。
 
@@ -42,6 +43,8 @@ docker compose up -d --build
 - `CACHE_DIR`：缓存目录，默认 `/data/cache`
 - `STATS_DB_PATH`：统计数据库路径，默认 `/data/stats/linkpeek.db`
 - `CACHE_MAX_SIZE_GB`：缓存空间上限，默认 `10`
+- `PREVIEW_WARMUP_THREADS`：普通浏览器打开后的异步标题预热线程数，默认 `2`
+- `PREVIEW_WARMUP_QUEUE_CAPACITY`：异步标题预热队列上限，默认 `64`
 - 将整个 `/data` 做持久化挂载，统一保存缓存和统计库文件
 
 ### 方式二：使用 `docker run`
@@ -56,6 +59,8 @@ docker run --rm \
   -e CACHE_DIR=/data/cache \
   -e STATS_DB_PATH=/data/stats/linkpeek.db \
   -e CACHE_MAX_SIZE_GB=10 \
+  -e PREVIEW_WARMUP_THREADS=2 \
+  -e PREVIEW_WARMUP_QUEUE_CAPACITY=64 \
   -v "$PWD/data:/data" \
   linkpeek
 ```
@@ -203,14 +208,24 @@ LinkPeek/
   爬虫请求          普通浏览器请求
       |               |
       v               v
- 查缓存 / 抓元数据      302 跳转到原始链接
-      |
+ 查缓存 / 抓元数据      记录打开事件
+      |               |
+      |               +--> 立即返回 302 跳转原始链接
+      |               |
+      |               +--> 本地无元数据时投递有界异步预热
+      |                    |
+      |                    v
+      |              后台抓标题并更新统计维表
       v
  渲染 Open Graph HTML + 记录统计事件
       |
       v
  缩略图通过 /media/thumb/{previewKey}.jpg 按需下载与缓存
 ```
+
+普通浏览器请求记录打开事件后会立即返回 `302` 跳转；如果本地还没有元数据，
+服务会投递一个有界后台任务异步抓取标题并更新统计维表。异步预热使用固定线程池、
+有限队列和按 `PreviewKey` 的单飞去重，避免高并发打开时重复抓取或占满资源。
 
 ### 当前版本设计原则
 
@@ -237,6 +252,9 @@ LinkPeek/
 | `STATS_RETENTION_DAYS` | `180` | 统计事件保留天数 |
 | `DOWNLOAD_TIMEOUT` | `120s` | 上游请求超时时间 |
 | `VIDEO_MAX_QUALITY` | `480` | 为未来视频能力预留，首版暂不启用 |
+| `PREVIEW_WARMUP_ENABLED` | `true` | 是否启用普通浏览器打开后的异步元数据预热 |
+| `PREVIEW_WARMUP_THREADS` | `2` | 异步元数据预热线程数 |
+| `PREVIEW_WARMUP_QUEUE_CAPACITY` | `64` | 异步元数据预热队列上限，队列满时跳过本次预热 |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 
 ### 新增 provider
