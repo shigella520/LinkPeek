@@ -15,6 +15,7 @@
 ## 功能特点
 
 - 提供 `Bilibili` provider，支持标准视频链接和 `b23.tv` 短链。
+- 提供 `V2EX` provider，支持标准话题链接和带 `#reply` 锚点的话题链接，并为话题统一生成渐变标题卡片缩略图。
 - 对爬虫请求返回 Open Graph HTML，对普通浏览器请求执行 `302` 跳转回原始链接。
 - 提供本地磁盘缓存，缓存元数据和缩略图，减少重复抓取。
 - 提供内部缩略图代理路由，`og:image` 指向服务自身地址，便于统一控制。
@@ -35,6 +36,8 @@ docker compose up -d --build
 ```
 
 默认监听 `8080` 端口。
+
+运行镜像内已预装 `Noto Sans CJK`，确保 V2EX 标题卡片里的中文在 Docker 环境中正常渲染。
 
 建议启动前至少配置：
 
@@ -103,6 +106,18 @@ https://preview.example.com/preview?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2
 https://preview.example.com/preview?url=https%3A%2F%2Fb23.tv%2F5ox9FJX
 ```
 
+也支持 `V2EX` 话题链接：
+
+```text
+https://preview.example.com/preview?url=https%3A%2F%2Fwww.v2ex.com%2Ft%2F1206093
+```
+
+对于带回复锚点的话题链接也会自动规范化：
+
+```text
+https://preview.example.com/preview?url=https%3A%2F%2Fwww.v2ex.com%2Ft%2F1205886%23reply45
+```
+
 行为说明：
 
 - 当 iMessage 或其他爬虫访问该链接时，服务返回 Open Graph HTML。
@@ -161,6 +176,8 @@ LinkPeek/
 │   └── 通用领域模型、错误模型、URL 规范化、provider SPI
 ├── linkpeek-provider-bilibili/
 │   └── Bilibili URL 识别、短链解析、元数据抓取、缩略图下载
+├── linkpeek-provider-v2ex/
+│   └── V2EX 话题 URL 识别、canonical 化、元数据抓取、缩略图下载
 ├── linkpeek-provider-template/
 │   └── provider 开发模板
 ├── linkpeek-server/
@@ -180,6 +197,7 @@ LinkPeek/
 
 - `linkpeek-core`：定义 `PreviewProvider`、`PreviewMetadata`、`PreviewKey` 等核心抽象。
 - `linkpeek-provider-bilibili`：封装 Bilibili 平台相关逻辑，不把平台细节泄漏到 Web 层。
+- `linkpeek-provider-v2ex`：封装 V2EX 话题页解析、回复锚点归一化和缩略图下载逻辑。
 - `linkpeek-provider-template`：提供新增 provider 的最小骨架示例。
 - `linkpeek-server`：负责 HTTP 接口、爬虫识别、缓存、OG HTML 输出、SQLite 统计和 Dashboard 页面。
 
@@ -287,6 +305,8 @@ CACHE_DIR=$PWD/.cache/linkpeek \
 STATS_DB_PATH=$PWD/.data/linkpeek/stats.db \
 ./mvnw -pl linkpeek-server -am spring-boot:run
 ```
+
+如果你是在非 Docker 环境本地运行，并且要测试 V2EX 标题卡片，请确保系统已安装可用的中文字体（例如 `Noto Sans CJK SC`）。
 
 如果你想显式指定端口，也可以这样启动：
 
