@@ -18,6 +18,9 @@ public class LinkPeekProperties {
     private Duration downloadTimeout = Duration.ofSeconds(120);
     private String logLevel = "INFO";
     private int videoMaxQuality = 480;
+    private boolean previewWarmupEnabled = true;
+    private int previewWarmupThreads = 2;
+    private int previewWarmupQueueCapacity = 64;
     private List<String> crawlerSignatures = List.of(
             "facebookexternalhit",
             "Facebot",
@@ -103,6 +106,30 @@ public class LinkPeekProperties {
 
     public void setVideoMaxQuality(int videoMaxQuality) {
         this.videoMaxQuality = videoMaxQuality;
+    }
+
+    public boolean isPreviewWarmupEnabled() {
+        return previewWarmupEnabled;
+    }
+
+    public void setPreviewWarmupEnabled(boolean previewWarmupEnabled) {
+        this.previewWarmupEnabled = previewWarmupEnabled;
+    }
+
+    public int getPreviewWarmupThreads() {
+        return previewWarmupThreads;
+    }
+
+    public void setPreviewWarmupThreads(int previewWarmupThreads) {
+        this.previewWarmupThreads = previewWarmupThreads;
+    }
+
+    public int getPreviewWarmupQueueCapacity() {
+        return previewWarmupQueueCapacity;
+    }
+
+    public void setPreviewWarmupQueueCapacity(int previewWarmupQueueCapacity) {
+        this.previewWarmupQueueCapacity = previewWarmupQueueCapacity;
     }
 
     public List<String> getCrawlerSignatures() {

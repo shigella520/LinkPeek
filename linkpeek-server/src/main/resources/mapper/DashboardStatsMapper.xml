@@ -64,6 +64,8 @@
         WHERE event.occurred_at >= #{start}
           AND event.occurred_at &lt; #{end}
           AND event.event_type IN ('PREVIEW_CREATED', 'PREVIEW_OPENED')
+          AND link.title IS NOT NULL
+          AND link.title != ''
         GROUP BY
             link.preview_key,
             link.title,

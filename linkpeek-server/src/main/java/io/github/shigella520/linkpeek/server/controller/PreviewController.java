@@ -7,6 +7,7 @@ import io.github.shigella520.linkpeek.core.util.CrawlerMatcher;
 import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
 import io.github.shigella520.linkpeek.server.render.HtmlPageRenderer;
 import io.github.shigella520.linkpeek.server.service.PreviewService;
+import io.github.shigella520.linkpeek.server.service.PreviewWarmupService;
 import io.github.shigella520.linkpeek.server.stats.model.StatisticsClientType;
 import io.github.shigella520.linkpeek.server.stats.model.StatisticsErrorCode;
 import io.github.shigella520.linkpeek.server.stats.service.StatisticsRecorder;
@@ -42,19 +43,22 @@ public class PreviewController {
     private final CrawlerMatcher crawlerMatcher;
     private final LinkPeekProperties properties;
     private final StatisticsRecorder statisticsRecorder;
+    private final PreviewWarmupService previewWarmupService;
 
     public PreviewController(
             PreviewService previewService,
             HtmlPageRenderer htmlPageRenderer,
             CrawlerMatcher crawlerMatcher,
             LinkPeekProperties properties,
-            StatisticsRecorder statisticsRecorder
+            StatisticsRecorder statisticsRecorder,
+            PreviewWarmupService previewWarmupService
     ) {
         this.previewService = previewService;
         this.htmlPageRenderer = htmlPageRenderer;
         this.crawlerMatcher = crawlerMatcher;
         this.properties = properties;
         this.statisticsRecorder = statisticsRecorder;
+        this.previewWarmupService = previewWarmupService;
     }
 
     @GetMapping(value = "/preview", produces = MediaType.TEXT_HTML_VALUE)
@@ -91,9 +95,21 @@ public class PreviewController {
         try {
             resolvedPreview = previewService.prepare(url);
             if (shouldRedirect(userAgent, renderModeHeader)) {
+                var cachedPreview = previewService.getCachedPreview(resolvedPreview);
                 long durationMs = elapsedMillis(startedAt);
-                statisticsRecorder.recordPreviewOpened(resolvedPreview, clientType, 302, durationMs);
-                return redirectResponse(resolvedPreview.sourceUrl(), resolvedPreview.previewKey().value(), resolvedPreview.provider().getId(), durationMs);
+                if (cachedPreview.isPresent()) {
+                    statisticsRecorder.recordPreviewOpened(cachedPreview.get(), clientType, 302, durationMs);
+                } else {
+                    statisticsRecorder.recordPreviewOpened(resolvedPreview, clientType, 302, durationMs);
+                    previewWarmupService.schedule(resolvedPreview);
+                }
+                return redirectResponse(
+                        resolvedPreview.sourceUrl(),
+                        resolvedPreview.previewKey().value(),
+                        resolvedPreview.provider().getId(),
+                        cachedPreview.isPresent(),
+                        durationMs
+                );
             }
 
             PreviewService.PreviewLoadResult result = previewService.loadPreview(resolvedPreview);
@@ -156,12 +172,18 @@ public class PreviewController {
         };
     }
 
-    private ResponseEntity<String> redirectResponse(URI redirectUrl, String previewKey, String providerId, long durationMs) {
+    private ResponseEntity<String> redirectResponse(
+            URI redirectUrl,
+            String previewKey,
+            String providerId,
+            boolean cacheHit,
+            long durationMs
+    ) {
         log.info(
                 "preview_redirected previewKey={} provider={} cacheHit={} durationMs={} status={}",
                 previewKey,
                 providerId,
-                false,
+                cacheHit,
                 durationMs,
                 302
         );

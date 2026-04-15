@@ -25,6 +25,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -226,6 +227,8 @@ class PreviewControllerTest {
                         .header(HttpHeaders.USER_AGENT, "Mozilla/5.0"))
                 .andExpect(status().isFound())
                 .andExpect(header().string(HttpHeaders.LOCATION, "https://video.example.com/watch/abc"));
+
+        awaitLinkTitle("Stub title");
     }
 
     @Test
@@ -290,6 +293,23 @@ class PreviewControllerTest {
     }
 
     @Test
+    void browserRedirectPreloadsMetadataForDashboardTitles() throws Exception {
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "Mozilla/5.0"))
+                .andExpect(status().isFound());
+
+        awaitLinkTitle("Stub title");
+
+        mockMvc.perform(get("/api/stats/dashboard")
+                        .param("range", "30d"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.overview.openCount.value").value(1))
+                .andExpect(jsonPath("$.topLinks[0].title").value("Stub title"))
+                .andExpect(jsonPath("$.topLinks[0].canonicalUrl").value("https://video.example.com/watch/abc"));
+    }
+
+    @Test
     void dashboardStatsEndpointRejectsInvalidRange() throws Exception {
         mockMvc.perform(get("/api/stats/dashboard")
                         .param("range", "12h"))
@@ -331,6 +351,22 @@ class PreviewControllerTest {
 
     private static ArgumentMatcher<URI> supportedUrl() {
         return uri -> uri != null && "video.example.com".equals(uri.getHost());
+    }
+
+    private void awaitLinkTitle(String expectedTitle) throws InterruptedException {
+        long deadline = System.nanoTime() + 2_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            List<String> titles = jdbcTemplate.queryForList(
+                    "SELECT title FROM stats_link WHERE preview_key = ?",
+                    String.class,
+                    key().value()
+            );
+            if (!titles.isEmpty() && expectedTitle.equals(titles.get(0))) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected async warmup to store title: " + expectedTitle);
     }
 
     private static void writeTestWebIcon() throws IOException {

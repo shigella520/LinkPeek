@@ -77,6 +77,50 @@ public class StatisticsRecorder {
         );
     }
 
+    public void recordPreviewOpened(
+            PreviewService.PreviewLoadResult result,
+            StatisticsClientType clientType,
+            int httpStatus,
+            long durationMs
+    ) {
+        PreviewMetadata metadata = result.metadata();
+        recordEvent(
+                result.resolvedPreview().previewKey().value(),
+                metadata.providerId(),
+                metadata.canonicalUrl(),
+                metadata.title(),
+                metadata.siteName(),
+                StatisticsEventType.PREVIEW_OPENED,
+                clientType,
+                httpStatus,
+                result.cacheHit(),
+                durationMs,
+                null
+        );
+    }
+
+    public void recordLinkMetadata(PreviewService.PreviewLoadResult result) {
+        PreviewMetadata metadata = result.metadata();
+        long occurredAt = Instant.now(clock).toEpochMilli();
+        try {
+            statsLinkMapper.upsertLink(linkRecord(
+                    result.resolvedPreview().previewKey().value(),
+                    metadata.providerId(),
+                    metadata.canonicalUrl(),
+                    metadata.title(),
+                    metadata.siteName(),
+                    occurredAt
+            ));
+        } catch (RuntimeException exception) {
+            log.warn(
+                    "statistics_link_metadata_record_failed previewKey={} provider={}",
+                    result.resolvedPreview().previewKey().value(),
+                    metadata.providerId(),
+                    exception
+            );
+        }
+    }
+
     public void recordPreviewFailed(
             PreviewService.ResolvedPreview resolvedPreview,
             StatisticsClientType clientType,

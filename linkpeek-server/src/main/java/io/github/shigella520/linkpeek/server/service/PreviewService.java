@@ -44,6 +44,11 @@ public class PreviewService {
         return new PreviewLoadResult(resolvedPreview, metadata, false);
     }
 
+    public Optional<PreviewLoadResult> getCachedPreview(ResolvedPreview resolvedPreview) {
+        return cacheManager.getMetadata(resolvedPreview.previewKey())
+                .map(metadata -> new PreviewLoadResult(resolvedPreview, metadata, true));
+    }
+
     public Path ensureThumbnail(String previewKeyValue) {
         return ensureThumbnailResult(previewKeyValue).path();
     }
