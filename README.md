@@ -37,7 +37,7 @@ docker compose up -d --build
 
 默认监听 `8080` 端口。
 
-运行镜像内已预装 `Noto Sans CJK`，确保 V2EX 标题卡片里的中文在 Docker 环境中正常渲染。
+V2EX 标题卡片渲染时会优先尝试常见中文 UI 字体（如 `Heiti SC`、`PingFang SC`、`Microsoft YaHei`）。
 
 建议启动前至少配置：
 
@@ -94,34 +94,16 @@ https://preview.example.com
 
 ### 3. 分享预览链接
 
-当前 Java 版统一使用通用入口：
-
-```text
-https://preview.example.com/preview?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD
-```
-
-也支持 `b23.tv` 短链：
-
-```text
-https://preview.example.com/preview?url=https%3A%2F%2Fb23.tv%2F5ox9FJX
-```
-
-也支持 `V2EX` 话题链接：
+统一使用这个入口，把原始链接做 URL 编码后放进 `url` 参数即可，例如：
 
 ```text
 https://preview.example.com/preview?url=https%3A%2F%2Fwww.v2ex.com%2Ft%2F1206093
 ```
 
-对于带回复锚点的话题链接也会自动规范化：
-
-```text
-https://preview.example.com/preview?url=https%3A%2F%2Fwww.v2ex.com%2Ft%2F1205886%23reply45
-```
-
 行为说明：
 
 - 当 iMessage 或其他爬虫访问该链接时，服务返回 Open Graph HTML。
-- 当普通用户点击同一个链接时，服务会 `302` 跳转到原始 Bilibili 页面。
+- 当普通用户点击同一个链接时，服务会 `302` 跳转到原始链接。
 
 ### 4. 本地验证抓取结果
 
@@ -306,7 +288,7 @@ STATS_DB_PATH=$PWD/.data/linkpeek/stats.db \
 ./mvnw -pl linkpeek-server -am spring-boot:run
 ```
 
-如果你是在非 Docker 环境本地运行，并且要测试 V2EX 标题卡片，请确保系统已安装可用的中文字体（例如 `Noto Sans CJK SC`）。
+如果你是在非 Docker 环境本地运行，并且要测试 V2EX 标题卡片，请确保系统已安装可用的中文字体（例如 `Heiti SC`、`PingFang SC` 或 `Microsoft YaHei`）。
 
 如果你想显式指定端口，也可以这样启动：
 
