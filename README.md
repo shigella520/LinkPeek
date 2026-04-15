@@ -37,8 +37,6 @@ docker compose up -d --build
 
 默认监听 `8080` 端口。
 
-V2EX 标题卡片渲染时会优先尝试常见中文 UI 字体（如 `Heiti SC`、`PingFang SC`、`Microsoft YaHei`）。
-
 建议启动前至少配置：
 
 - `BASE_URL`：服务对外可访问的地址，例如 `https://preview.example.com`
@@ -287,8 +285,6 @@ CACHE_DIR=$PWD/.cache/linkpeek \
 STATS_DB_PATH=$PWD/.data/linkpeek/stats.db \
 ./mvnw -pl linkpeek-server -am spring-boot:run
 ```
-
-如果你是在非 Docker 环境本地运行，并且要测试 V2EX 标题卡片，请确保系统已安装可用的中文字体（例如 `Heiti SC`、`PingFang SC` 或 `Microsoft YaHei`）。
 
 如果你想显式指定端口，也可以这样启动：
 
