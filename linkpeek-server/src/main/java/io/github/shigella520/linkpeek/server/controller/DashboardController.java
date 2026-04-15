@@ -20,7 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 @Controller
 public class DashboardController {
-    private static final Resource DEFAULT_FAVICON = new ClassPathResource("static/dashboard/favicon.svg");
+    private static final Resource DEFAULT_FAVICON = new ClassPathResource("static/dashboard/DefaultIcon.svg");
 
     private final LinkPeekProperties linkPeekProperties;
 
@@ -64,7 +64,10 @@ public class DashboardController {
 
     private Resource resolveFavicon() {
         if (StringUtils.hasText(linkPeekProperties.getWebIconPath())) {
-            return new FileSystemResource(linkPeekProperties.getWebIconPath().trim());
+            Resource configuredIcon = new FileSystemResource(linkPeekProperties.getWebIconPath().trim());
+            if (configuredIcon.exists() && configuredIcon.isReadable()) {
+                return configuredIcon;
+            }
         }
         return DEFAULT_FAVICON;
     }

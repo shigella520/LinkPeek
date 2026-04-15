@@ -51,10 +51,7 @@ class PreviewControllerTest {
             TEST_STATS_DIR = Files.createTempDirectory("linkpeek-server-stats");
             TEST_STATS_DB = TEST_STATS_DIR.resolve("linkpeek-test.db");
             TEST_WEB_ICON = TEST_STATS_DIR.resolve("favicon.svg");
-            Files.writeString(
-                    TEST_WEB_ICON,
-                    "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"#0a84ff\"/></svg>"
-            );
+            writeTestWebIcon();
         } catch (IOException exception) {
             throw new ExceptionInInitializerError(exception);
         }
@@ -93,6 +90,7 @@ class PreviewControllerTest {
                     }
                 });
         Files.createDirectories(TEST_CACHE_DIR);
+        writeTestWebIcon();
         jdbcTemplate.execute("DELETE FROM stats_event");
         jdbcTemplate.execute("DELETE FROM stats_link");
 
@@ -197,7 +195,17 @@ class PreviewControllerTest {
         mockMvc.perform(get("/favicon.ico"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("image/svg+xml")))
-                .andExpect(content().string(containsString("<svg")));
+                .andExpect(content().string(containsString("fill=\"#0a84ff\"")));
+    }
+
+    @Test
+    void faviconEndpointFallsBackToBundledDefaultWhenConfiguredIconIsMissing() throws Exception {
+        Files.deleteIfExists(TEST_WEB_ICON);
+
+        mockMvc.perform(get("/favicon.ico"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("image/svg+xml")))
+                .andExpect(content().string(containsString("Background")));
     }
 
     @Test
@@ -323,6 +331,13 @@ class PreviewControllerTest {
 
     private static ArgumentMatcher<URI> supportedUrl() {
         return uri -> uri != null && "video.example.com".equals(uri.getHost());
+    }
+
+    private static void writeTestWebIcon() throws IOException {
+        Files.writeString(
+                TEST_WEB_ICON,
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 32 32\"><circle cx=\"16\" cy=\"16\" r=\"16\" fill=\"#0a84ff\"/></svg>"
+        );
     }
 
     private static final class TestPreviewProvider implements PreviewProvider {
