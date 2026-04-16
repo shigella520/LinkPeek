@@ -21,6 +21,8 @@ public class LinkPeekProperties {
     private boolean previewWarmupEnabled = true;
     private int previewWarmupThreads = 2;
     private int previewWarmupQueueCapacity = 64;
+    private String ngaPassportUid;
+    private String ngaPassportCid;
     private List<String> crawlerSignatures = List.of(
             "facebookexternalhit",
             "Facebot",
@@ -130,6 +132,22 @@ public class LinkPeekProperties {
 
     public void setPreviewWarmupQueueCapacity(int previewWarmupQueueCapacity) {
         this.previewWarmupQueueCapacity = previewWarmupQueueCapacity;
+    }
+
+    public String getNgaPassportUid() {
+        return ngaPassportUid;
+    }
+
+    public void setNgaPassportUid(String ngaPassportUid) {
+        this.ngaPassportUid = ngaPassportUid;
+    }
+
+    public String getNgaPassportCid() {
+        return ngaPassportCid;
+    }
+
+    public void setNgaPassportCid(String ngaPassportCid) {
+        this.ngaPassportCid = ngaPassportCid;
     }
 
     public List<String> getCrawlerSignatures() {

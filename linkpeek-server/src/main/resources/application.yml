@@ -42,6 +42,8 @@ linkpeek:
   preview-warmup-enabled: ${PREVIEW_WARMUP_ENABLED:true}
   preview-warmup-threads: ${PREVIEW_WARMUP_THREADS:2}
   preview-warmup-queue-capacity: ${PREVIEW_WARMUP_QUEUE_CAPACITY:64}
+  nga-passport-uid: ${NGA_PASSPORT_UID:}
+  nga-passport-cid: ${NGA_PASSPORT_CID:}
   crawler-signatures:
     - facebookexternalhit
     - Facebot
