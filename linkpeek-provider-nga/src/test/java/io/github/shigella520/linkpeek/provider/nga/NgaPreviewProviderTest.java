@@ -99,14 +99,13 @@ class NgaPreviewProviderTest {
         assertEquals("nga", metadata.providerId());
         assertEquals("https://bbs.nga.cn/read.php?tid=46581611", metadata.canonicalUrl());
         assertEquals("[水区] 这是一个测试贴", metadata.title());
-        assertTrue(metadata.description().contains("@测试用户"));
-        assertTrue(metadata.description().contains("第一段内容 第二段内容"));
+        assertEquals("NGA", metadata.description());
         assertTrue(metadata.thumbnailUrl().startsWith("generated://nga/thread-card/46581611"));
         assertEquals(URI.create("https://bbs.nga.cn/read.php?tid=46581611"), httpClient.lastRequestUri);
     }
 
     @Test
-    void fallsBackToMetaDescriptionWhenPostBodyMissing() {
+    void resolvesTitleWithoutDependingOnBodyContent() {
         httpClient.responseBody = """
                 <html>
                 <head>
@@ -120,7 +119,64 @@ class NgaPreviewProviderTest {
         PreviewMetadata metadata = provider.resolve(URI.create("https://bbs.nga.cn/read.php?tid=46581611"));
 
         assertEquals("NGA 测试帖子", metadata.title());
-        assertEquals("帖子摘要内容", metadata.description());
+        assertEquals("NGA", metadata.description());
+    }
+
+    @Test
+    void ignoresUbbMarkupInBodyWhenBuildingMetadata() {
+        httpClient.responseBody = """
+                <html>
+                <head>
+                    <title>开后宫有时候真不一定得多有钱 - NGA玩家社区</title>
+                </head>
+                <body>
+                    <div id="m_posts_c">
+                        <table>
+                            <tr><td class="posterinfo"><a href="/nuke.php?uid=123">测试用户</a></td></tr>
+                            <tr><td class="postcontent ubbcode">
+                                [quote][tid=46581611]Topic[/tid] [b]Post by [uid=67171394]大风浪淘沙[/uid][/b][/quote]
+                                开充值网站，看起来源头是这
+                            </td></tr>
+                        </table>
+                    </div>
+                </body>
+                </html>
+                """.getBytes(Charset.forName("GB18030"));
+
+        PreviewMetadata metadata = provider.resolve(URI.create("https://bbs.nga.cn/read.php?tid=46581611"));
+
+        assertEquals("开后宫有时候真不一定得多有钱", metadata.title());
+        assertEquals("NGA", metadata.description());
+    }
+
+    @Test
+    void ignoresReplyOrderingWhenBuildingMetadata() {
+        httpClient.responseBody = """
+                <html>
+                <head>
+                    <title>开后宫有时候真不一定得多有钱 - NGA玩家社区</title>
+                </head>
+                <body>
+                    <div id="m_posts_c">
+                        <table>
+                            <tr><td class="posterinfo"><a href="/nuke.php?uid=222">回复用户</a></td></tr>
+                            <tr><td class="postInfo"><span>1楼 2026-04-16 15:00</span></td></tr>
+                            <tr><td class="postcontent ubbcode">这是第一个回复，不是楼主正文</td></tr>
+                        </table>
+                        <table>
+                            <tr><td class="posterinfo"><a href="/nuke.php?uid=123">楼主用户</a></td></tr>
+                            <tr><td class="postInfo"><span>0楼 2026-04-16 14:59</span></td></tr>
+                            <tr><td class="postcontent ubbcode">这是楼主正文，应该被拿来做预览摘要</td></tr>
+                        </table>
+                    </div>
+                </body>
+                </html>
+                """.getBytes(Charset.forName("GB18030"));
+
+        PreviewMetadata metadata = provider.resolve(URI.create("https://bbs.nga.cn/read.php?tid=46581611"));
+
+        assertEquals("开后宫有时候真不一定得多有钱", metadata.title());
+        assertEquals("NGA", metadata.description());
     }
 
     @Test
