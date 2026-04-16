@@ -1,6 +1,9 @@
 (function () {
     const RANGE_VALUES = ["7d", "30d", "90d", "180d"];
     const REFRESH_INTERVAL_MS = 30_000;
+    const STATS_ADMIN_REVEAL_KEY = "6";
+    const STATS_ADMIN_REVEAL_COUNT = 3;
+    const STATS_ADMIN_REVEAL_WINDOW_MS = 1_200;
     const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     const CHART_TEXT = "#6f6b66";
     const CHART_LINE = "rgba(24, 24, 24, 0.08)";
@@ -43,6 +46,7 @@
     function init() {
         bindRangeSwitch();
         bindLinkBuilder();
+        bindStatsAdminPurge();
         bindParallax();
         initRevealObserver();
         initCharts();
@@ -123,6 +127,142 @@
         });
     }
 
+    function bindStatsAdminPurge() {
+        const trigger = document.getElementById("stats-admin-trigger");
+        const modal = document.getElementById("stats-admin-modal");
+        const closeButton = document.getElementById("stats-admin-close");
+        const cancelButton = document.getElementById("stats-admin-cancel");
+        const form = document.getElementById("stats-admin-form");
+        const passwordInput = document.getElementById("stats-admin-password");
+        const feedback = document.getElementById("stats-admin-feedback");
+        const submitButton = document.getElementById("stats-admin-submit");
+        if (!trigger || !modal || !closeButton || !cancelButton || !form || !passwordInput || !feedback || !submitButton) {
+            return;
+        }
+
+        let revealProgress = 0;
+        let revealTimerId = 0;
+
+        const setSubmitting = (submitting) => {
+            passwordInput.disabled = submitting;
+            submitButton.disabled = submitting;
+            cancelButton.disabled = submitting;
+            closeButton.disabled = submitting;
+        };
+
+        const resetRevealProgress = () => {
+            revealProgress = 0;
+            if (revealTimerId) {
+                window.clearTimeout(revealTimerId);
+                revealTimerId = 0;
+            }
+        };
+
+        const revealTrigger = () => {
+            if (!trigger.hidden) {
+                return;
+            }
+            trigger.hidden = false;
+            trigger.classList.add("is-revealed");
+            window.setTimeout(() => trigger.classList.remove("is-revealed"), 320);
+        };
+
+        const isTypingTarget = (eventTarget) => {
+            if (!(eventTarget instanceof HTMLElement)) {
+                return false;
+            }
+            const tagName = eventTarget.tagName;
+            return eventTarget.isContentEditable || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+        };
+
+        const openModal = () => {
+            modal.hidden = false;
+            document.body.style.overflow = "hidden";
+            setStatsAdminFeedback(feedback, "输入管理密码后会发起清理请求。", "");
+            window.setTimeout(() => passwordInput.focus(), 0);
+        };
+
+        const closeModal = (options = {}) => {
+            modal.hidden = true;
+            document.body.style.overflow = "";
+            setSubmitting(false);
+            if (options.clearPassword !== false) {
+                form.reset();
+            }
+            setStatsAdminFeedback(feedback, "输入管理密码后会发起清理请求。", "");
+        };
+
+        trigger.addEventListener("click", openModal);
+        closeButton.addEventListener("click", () => closeModal());
+        cancelButton.addEventListener("click", () => closeModal());
+        document.addEventListener("keydown", (event) => {
+            if (modal.hidden && !isTypingTarget(event.target) && event.key === STATS_ADMIN_REVEAL_KEY) {
+                revealProgress += 1;
+                if (revealProgress >= STATS_ADMIN_REVEAL_COUNT) {
+                    revealTrigger();
+                    resetRevealProgress();
+                    return;
+                }
+                if (revealTimerId) {
+                    window.clearTimeout(revealTimerId);
+                }
+                revealTimerId = window.setTimeout(resetRevealProgress, STATS_ADMIN_REVEAL_WINDOW_MS);
+                return;
+            }
+            if (event.key !== STATS_ADMIN_REVEAL_KEY) {
+                resetRevealProgress();
+            }
+        });
+        modal.addEventListener("click", (event) => {
+            if (event.target instanceof HTMLElement && event.target.dataset.closeModal === "true") {
+                closeModal();
+            }
+        });
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && !modal.hidden) {
+                closeModal();
+            }
+        });
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const password = passwordInput.value.trim();
+            if (!password) {
+                setStatsAdminFeedback(feedback, "请输入管理密码。", "is-error");
+                passwordInput.focus();
+                return;
+            }
+
+            setSubmitting(true);
+            setStatsAdminFeedback(feedback, "正在清理统计数据...", "is-loading");
+
+            try {
+                const response = await fetch(`/api/stats/admin/purge-all?password=${encodeURIComponent(password)}`, {
+                    headers: {
+                        Accept: "application/json"
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(resolveStatsAdminErrorMessage(response.status));
+                }
+
+                const result = await response.json();
+                setStatsAdminFeedback(
+                    feedback,
+                    `已清理 ${numberFormatter.format(result.deletedEvents || 0)} 条事件，${numberFormatter.format(result.deletedLinks || 0)} 条链接。`,
+                    "is-success"
+                );
+                await loadDashboard();
+                window.setTimeout(() => closeModal(), 900);
+            } catch (error) {
+                setStatsAdminFeedback(feedback, error.message || "清理失败，请稍后重试。", "is-error");
+                setSubmitting(false);
+                passwordInput.focus();
+            }
+        });
+    }
+
     function bindParallax() {
         const update = () => {
             document.documentElement.style.setProperty("--scroll-depth", `${window.scrollY}px`);
@@ -173,6 +313,16 @@
         } catch (error) {
             console.error("Failed to load dashboard", error);
         }
+    }
+
+    function resolveStatsAdminErrorMessage(status) {
+        if (status === 403) {
+            return "管理密码错误。";
+        }
+        if (status === 404) {
+            return "当前环境未启用统计清理。";
+        }
+        return `清理失败，HTTP ${status}。`;
     }
 
     function render(payload) {
@@ -685,6 +835,14 @@
     function setBuilderFeedback(node, text, stateClass) {
         node.textContent = text;
         node.classList.remove("is-ready", "is-success", "is-error");
+        if (stateClass) {
+            node.classList.add(stateClass);
+        }
+    }
+
+    function setStatsAdminFeedback(node, text, stateClass) {
+        node.textContent = text;
+        node.classList.remove("is-success", "is-error", "is-loading");
         if (stateClass) {
             node.classList.add(stateClass);
         }

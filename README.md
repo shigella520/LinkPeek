@@ -252,6 +252,7 @@ LinkPeek/
 | `CACHE_TTL_SECONDS` | `86400` | 元数据和缩略图缓存有效期 |
 | `CACHE_MAX_SIZE_GB` | `10` | 缓存空间上限 |
 | `STATS_RETENTION_DAYS` | `180` | 统计事件保留天数 |
+| `STATS_ADMIN_PASSWORD` | 空 | 统计管理密码。配置后可通过 `GET /api/stats/admin/purge-all?password=...` 清空统计数据 |
 | `DOWNLOAD_TIMEOUT` | `120s` | 上游请求超时时间 |
 | `VIDEO_MAX_QUALITY` | `480` | 为未来视频能力预留，首版暂不启用 |
 | `PREVIEW_WARMUP_ENABLED` | `true` | 是否启用普通浏览器打开后的异步元数据预热 |

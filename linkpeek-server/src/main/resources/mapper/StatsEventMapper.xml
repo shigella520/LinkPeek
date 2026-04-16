@@ -28,6 +28,10 @@
         )
     </insert>
 
+    <delete id="deleteAllEvents">
+        DELETE FROM stats_event
+    </delete>
+
     <delete id="deleteEventsOlderThan">
         DELETE FROM stats_event
         WHERE occurred_at &lt; #{threshold}

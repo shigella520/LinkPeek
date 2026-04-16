@@ -64,6 +64,7 @@ class PreviewControllerTest {
         registry.add("linkpeek.stats-db-path", () -> TEST_STATS_DB.toString());
         registry.add("linkpeek.base-url", () -> "https://preview.example.com");
         registry.add("linkpeek.web-icon-path", () -> TEST_WEB_ICON.toString());
+        registry.add("linkpeek.stats-admin-password", () -> "test-admin-password");
         registry.add("management.endpoints.web.exposure.include", () -> "health");
     }
 
@@ -314,6 +315,46 @@ class PreviewControllerTest {
         mockMvc.perform(get("/api/stats/dashboard")
                         .param("range", "12h"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void statsPurgeAllEndpointDeletesAllStatsWithValidPassword() throws Exception {
+        jdbcTemplate.update(
+                "INSERT INTO stats_link (preview_key, provider_id, canonical_url, title, site_name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "preview-1", "stub", "https://video.example.com/watch/abc", "Stub title", "Stub site", 1000L, 1000L
+        );
+        jdbcTemplate.update(
+                "INSERT INTO stats_event (occurred_at, event_type, preview_key, provider_id, http_status, cache_hit, duration_ms, client_type, error_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                1000L, "PREVIEW_CREATED", "preview-1", "stub", 200, 0, 10, "CRAWLER", null
+        );
+
+        mockMvc.perform(get("/api/stats/admin/purge-all")
+                        .param("password", "test-admin-password"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deletedEvents").value(1))
+                .andExpect(jsonPath("$.deletedLinks").value(1));
+
+        org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM stats_event", Integer.class));
+        org.junit.jupiter.api.Assertions.assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM stats_link", Integer.class));
+    }
+
+    @Test
+    void statsPurgeAllEndpointRejectsInvalidPassword() throws Exception {
+        jdbcTemplate.update(
+                "INSERT INTO stats_link (preview_key, provider_id, canonical_url, title, site_name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "preview-1", "stub", "https://video.example.com/watch/abc", "Stub title", "Stub site", 1000L, 1000L
+        );
+        jdbcTemplate.update(
+                "INSERT INTO stats_event (occurred_at, event_type, preview_key, provider_id, http_status, cache_hit, duration_ms, client_type, error_code) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                1000L, "PREVIEW_CREATED", "preview-1", "stub", 200, 0, 10, "CRAWLER", null
+        );
+
+        mockMvc.perform(get("/api/stats/admin/purge-all")
+                        .param("password", "wrong-password"))
+                .andExpect(status().isForbidden());
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM stats_event", Integer.class));
+        org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM stats_link", Integer.class));
     }
 
     @Test
