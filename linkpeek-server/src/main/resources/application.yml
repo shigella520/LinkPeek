@@ -36,12 +36,15 @@ linkpeek:
   cache-ttl-seconds: ${CACHE_TTL_SECONDS:86400}
   cache-max-size-gb: ${CACHE_MAX_SIZE_GB:10}
   stats-retention-days: ${STATS_RETENTION_DAYS:180}
+  stats-admin-password: ${STATS_ADMIN_PASSWORD:}
   download-timeout: ${DOWNLOAD_TIMEOUT:120s}
   log-level: ${LOG_LEVEL:INFO}
   video-max-quality: ${VIDEO_MAX_QUALITY:480}
   preview-warmup-enabled: ${PREVIEW_WARMUP_ENABLED:true}
   preview-warmup-threads: ${PREVIEW_WARMUP_THREADS:2}
   preview-warmup-queue-capacity: ${PREVIEW_WARMUP_QUEUE_CAPACITY:64}
+  nga-passport-uid: ${NGA_PASSPORT_UID:}
+  nga-passport-cid: ${NGA_PASSPORT_CID:}
   crawler-signatures:
     - facebookexternalhit
     - Facebot

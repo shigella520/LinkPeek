@@ -8,6 +8,8 @@ import org.apache.ibatis.annotations.Param;
 public interface StatsEventMapper {
     void insertEvent(StatisticsEventRecord event);
 
+    int deleteAllEvents();
+
     int deleteEventsOlderThan(@Param("threshold") long threshold);
 
     int deleteOrphanLinks();

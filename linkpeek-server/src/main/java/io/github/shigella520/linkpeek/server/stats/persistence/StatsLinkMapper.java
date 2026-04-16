@@ -6,4 +6,6 @@ import org.apache.ibatis.annotations.Mapper;
 @Mapper
 public interface StatsLinkMapper {
     void upsertLink(StatisticsLinkRecord link);
+
+    int deleteAllLinks();
 }

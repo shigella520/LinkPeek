@@ -895,6 +895,228 @@ td a:hover {
     text-align: center;
 }
 
+.stats-admin-trigger,
+.stats-admin-modal,
+.stats-admin-secondary,
+.stats-admin-danger,
+.stats-admin-close {
+    backdrop-filter: blur(26px);
+    -webkit-backdrop-filter: blur(26px);
+}
+
+.stats-admin-trigger {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 40;
+    border: 1px solid rgba(17, 17, 17, 0.08);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--text);
+    min-height: 50px;
+    padding: 0 18px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    cursor: pointer;
+    box-shadow: 0 20px 42px rgba(18, 22, 28, 0.12);
+    transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.stats-admin-trigger:hover {
+    transform: translateY(-2px);
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 26px 52px rgba(18, 22, 28, 0.16);
+}
+
+.stats-admin-trigger.is-revealed {
+    animation: statsAdminReveal 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stats-admin-trigger:focus-visible,
+.stats-admin-close:focus-visible,
+.stats-admin-secondary:focus-visible,
+.stats-admin-danger:focus-visible,
+.stats-admin-field input:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 5px rgba(10, 132, 255, 0.14);
+}
+
+.stats-admin-modal-shell[hidden] {
+    display: none;
+}
+
+.stats-admin-modal-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+}
+
+.stats-admin-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(17, 17, 17, 0.22);
+}
+
+.stats-admin-modal {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: min(460px, calc(100vw - 32px));
+    padding: 24px;
+    border-radius: 30px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.8));
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    box-shadow: 0 30px 90px rgba(16, 19, 23, 0.18);
+    transform: translate(-50%, -50%);
+}
+
+.stats-admin-modal-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+}
+
+.stats-admin-kicker {
+    margin: 0 0 8px;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(10, 132, 255, 0.76);
+}
+
+.stats-admin-modal-head h2 {
+    margin: 0;
+    font-size: 30px;
+    line-height: 1.04;
+    letter-spacing: -0.05em;
+}
+
+.stats-admin-close {
+    border: 1px solid rgba(17, 17, 17, 0.08);
+    border-radius: 999px;
+    width: 40px;
+    height: 40px;
+    background: rgba(255, 255, 255, 0.72);
+    color: var(--text);
+    font: inherit;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.stats-admin-description {
+    margin: 16px 0 0;
+    color: var(--muted);
+    line-height: 1.7;
+}
+
+.stats-admin-form {
+    margin-top: 18px;
+}
+
+.stats-admin-field {
+    display: block;
+}
+
+.stats-admin-field span {
+    display: block;
+    margin-bottom: 10px;
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.stats-admin-field input {
+    width: 100%;
+    border: 1px solid rgba(20, 20, 20, 0.08);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.88);
+    padding: 15px 16px;
+    font: inherit;
+    font-size: 15px;
+    color: var(--text);
+    transition: border-color 180ms ease, box-shadow 180ms ease, background 180ms ease;
+}
+
+.stats-admin-field input:focus {
+    outline: none;
+    border-color: rgba(10, 132, 255, 0.24);
+    background: rgba(255, 255, 255, 0.98);
+}
+
+.stats-admin-feedback {
+    min-height: 24px;
+    margin: 14px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.55;
+}
+
+.stats-admin-feedback.is-success {
+    color: #0f8f5f;
+}
+
+.stats-admin-feedback.is-error {
+    color: #b45309;
+}
+
+.stats-admin-feedback.is-loading {
+    color: rgba(10, 132, 255, 0.82);
+}
+
+.stats-admin-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 18px;
+}
+
+.stats-admin-secondary,
+.stats-admin-danger {
+    border: 0;
+    min-height: 46px;
+    padding: 0 18px;
+    border-radius: 999px;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 180ms ease, box-shadow 180ms ease, opacity 180ms ease, background 180ms ease;
+}
+
+.stats-admin-secondary {
+    background: rgba(255, 255, 255, 0.84);
+    color: var(--text);
+    border: 1px solid rgba(17, 17, 17, 0.08);
+}
+
+.stats-admin-danger {
+    background: linear-gradient(135deg, #111111, #2f2f2f);
+    color: #ffffff;
+    box-shadow: 0 16px 28px rgba(17, 17, 17, 0.16);
+}
+
+.stats-admin-secondary:hover,
+.stats-admin-danger:hover {
+    transform: translateY(-1px);
+}
+
+.stats-admin-danger:hover {
+    box-shadow: 0 22px 36px rgba(17, 17, 17, 0.2);
+}
+
+.stats-admin-secondary:disabled,
+.stats-admin-danger:disabled,
+.stats-admin-close:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
 .reveal {
     opacity: 0;
     transform: translateY(28px) scale(0.985);
@@ -935,6 +1157,17 @@ td a:hover {
     }
     50% {
         transform: translate3d(0, -10px, 0);
+    }
+}
+
+@keyframes statsAdminReveal {
+    0% {
+        opacity: 0;
+        transform: translateY(10px) scale(0.94);
+    }
+    100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
     }
 }
 
@@ -1058,5 +1291,26 @@ td a:hover {
     .floating-chip strong,
     .glass-card strong {
         font-size: 30px;
+    }
+
+    .stats-admin-trigger {
+        right: 16px;
+        bottom: 16px;
+        left: 16px;
+        width: auto;
+    }
+
+    .stats-admin-modal {
+        width: calc(100vw - 24px);
+        padding: 20px;
+    }
+
+    .stats-admin-actions {
+        flex-direction: column-reverse;
+    }
+
+    .stats-admin-secondary,
+    .stats-admin-danger {
+        width: 100%;
     }
 }

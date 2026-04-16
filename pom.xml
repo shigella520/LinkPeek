@@ -22,6 +22,7 @@
     <modules>
         <module>linkpeek-core</module>
         <module>linkpeek-provider-bilibili</module>
+        <module>linkpeek-provider-nga</module>
         <module>linkpeek-provider-v2ex</module>
         <module>linkpeek-provider-template</module>
         <module>linkpeek-server</module>

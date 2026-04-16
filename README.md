@@ -16,6 +16,7 @@
 
 - 提供 `Bilibili` provider，支持标准视频链接和 `b23.tv` 短链。
 - 提供 `V2EX` provider，支持标准话题链接和带 `#reply` 锚点的话题链接，并为话题统一生成渐变标题卡片缩略图。
+- 提供 `NGA` provider，支持 `read.php?tid=...` 帖子链接，抓取标题与首楼摘要并生成预览卡片。
 - 对爬虫请求返回 Open Graph HTML，对普通浏览器请求执行 `302` 跳转回原始链接。
 - 提供本地磁盘缓存，缓存元数据和缩略图，减少重复抓取。
 - 提供内部缩略图代理路由，`og:image` 指向服务自身地址，便于统一控制。
@@ -156,6 +157,8 @@ LinkPeek/
 │   └── 通用领域模型、错误模型、URL 规范化、provider SPI
 ├── linkpeek-provider-bilibili/
 │   └── Bilibili URL 识别、短链解析、元数据抓取、缩略图下载
+├── linkpeek-provider-nga/
+│   └── NGA 帖子 URL 识别、HTML 抓取、GBK 解码、标题卡片生成
 ├── linkpeek-provider-v2ex/
 │   └── V2EX 话题 URL 识别、canonical 化、元数据抓取、缩略图下载
 ├── linkpeek-provider-template/
@@ -177,6 +180,7 @@ LinkPeek/
 
 - `linkpeek-core`：定义 `PreviewProvider`、`PreviewMetadata`、`PreviewKey` 等核心抽象。
 - `linkpeek-provider-bilibili`：封装 Bilibili 平台相关逻辑，不把平台细节泄漏到 Web 层。
+- `linkpeek-provider-nga`：封装 NGA 帖子 URL 识别、页面抓取、首楼摘要提取和缩略图生成逻辑。
 - `linkpeek-provider-v2ex`：封装 V2EX 话题页解析、回复锚点归一化和缩略图下载逻辑。
 - `linkpeek-provider-template`：提供新增 provider 的最小骨架示例。
 - `linkpeek-server`：负责 HTTP 接口、爬虫识别、缓存、OG HTML 输出、SQLite 统计和 Dashboard 页面。
@@ -248,11 +252,14 @@ LinkPeek/
 | `CACHE_TTL_SECONDS` | `86400` | 元数据和缩略图缓存有效期 |
 | `CACHE_MAX_SIZE_GB` | `10` | 缓存空间上限 |
 | `STATS_RETENTION_DAYS` | `180` | 统计事件保留天数 |
+| `STATS_ADMIN_PASSWORD` | 空 | 统计管理密码。配置后可通过 `GET /api/stats/admin/purge-all?password=...` 清空统计数据 |
 | `DOWNLOAD_TIMEOUT` | `120s` | 上游请求超时时间 |
 | `VIDEO_MAX_QUALITY` | `480` | 为未来视频能力预留，首版暂不启用 |
 | `PREVIEW_WARMUP_ENABLED` | `true` | 是否启用普通浏览器打开后的异步元数据预热 |
 | `PREVIEW_WARMUP_THREADS` | `2` | 异步元数据预热线程数 |
 | `PREVIEW_WARMUP_QUEUE_CAPACITY` | `64` | 异步元数据预热队列上限，队列满时跳过本次预热 |
+| `NGA_PASSPORT_UID` | 空 | 可选的 NGA 登录态 UID，配置后 NGA provider 优先使用登录态抓取帖子 |
+| `NGA_PASSPORT_CID` | 空 | 可选的 NGA 登录态 CID，需与 `NGA_PASSPORT_UID` 配对使用 |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 
 ### 新增 provider

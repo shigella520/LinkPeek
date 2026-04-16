@@ -36,4 +36,8 @@
             first_seen_at = MIN(stats_link.first_seen_at, excluded.first_seen_at),
             last_seen_at = MAX(stats_link.last_seen_at, excluded.last_seen_at)
     </insert>
+
+    <delete id="deleteAllLinks">
+        DELETE FROM stats_link
+    </delete>
 </mapper>
