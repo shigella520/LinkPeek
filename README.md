@@ -8,6 +8,8 @@
 
 ![LinkPeek Dashboard 预览](docs/preview.png)
 
+[Raycast Script](docs/linkpeek.sh)
+
 [快捷指令 Shortcut](https://www.icloud.com/shortcuts/dc6b85dc0d2244caa0a6a9a730a283e1)
 
 ![快捷指令使用指南](docs/快捷指令使用指南.png)
@@ -167,6 +169,7 @@ LinkPeek/
 │   └── Spring Boot 服务、路由、缓存、HTML 渲染、配置装配
 ├── docs/
 │   ├── architecture.md
+│   ├── linkpeek.sh
 │   └── provider-development.md
 ├── .github/workflows/ci.yml
 ├── Dockerfile
