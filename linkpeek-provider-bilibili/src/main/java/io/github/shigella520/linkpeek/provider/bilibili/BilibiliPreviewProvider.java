@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.shigella520.linkpeek.core.error.UnsupportedPreviewUrlException;
 import io.github.shigella520.linkpeek.core.error.UpstreamFetchException;
+import io.github.shigella520.linkpeek.core.media.ThumbnailBadgeRenderer;
 import io.github.shigella520.linkpeek.core.model.ContentType;
 import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
 import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
@@ -35,6 +36,7 @@ public class BilibiliPreviewProvider implements PreviewProvider {
 
     private static final Pattern BV_PATTERN = Pattern.compile("(BV[0-9A-Za-z]{10})");
     private static final String REFERER = "https://www.bilibili.com";
+    private static final String SITE_NAME = "Bilibili";
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -128,9 +130,9 @@ public class BilibiliPreviewProvider implements PreviewProvider {
                         UrlNormalizer.normalizeHttpUrl(sourceUrl).toString(),
                         canonicalUrl.toString(),
                         getId(),
-                        data.path("title").asText(""),
+                        displayTitle(data),
                         data.path("desc").asText(""),
-                        "Bilibili",
+                        SITE_NAME,
                         data.path("pic").asText(),
                         dimension.path("width").asInt(1920),
                         dimension.path("height").asInt(1080),
@@ -163,6 +165,15 @@ public class BilibiliPreviewProvider implements PreviewProvider {
         }
     }
 
+    private String displayTitle(JsonNode data) {
+        String title = data.path("title").asText("").strip();
+        String ownerName = data.path("owner").path("name").asText("").strip();
+        if (title.isBlank() || ownerName.isBlank()) {
+            return title;
+        }
+        return ownerName + "：" + title;
+    }
+
     @Override
     public Path downloadThumbnail(PreviewMetadata metadata, Path targetPath) throws IOException {
         Files.createDirectories(targetPath.getParent());
@@ -178,8 +189,7 @@ public class BilibiliPreviewProvider implements PreviewProvider {
             if (response.statusCode() >= 400) {
                 throw new UpstreamFetchException("Thumbnail request failed with HTTP " + response.statusCode());
             }
-            Files.write(targetPath, response.body());
-            return targetPath;
+            return ThumbnailBadgeRenderer.render(response.body(), SITE_NAME, targetPath);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             throw new UpstreamFetchException("Interrupted while downloading the thumbnail.", exception);

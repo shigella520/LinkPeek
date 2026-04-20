@@ -10,6 +10,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import javax.imageio.ImageIO;
+import javax.imageio.ImageReader;
+import javax.imageio.stream.ImageInputStream;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.ByteArrayOutputStream;
@@ -27,6 +33,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.Iterator;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
@@ -39,6 +46,7 @@ import javax.net.ssl.SSLSession;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -99,14 +107,14 @@ class BilibiliPreviewProviderTest {
     @Test
     void resolvesMetadataFromBilibiliApi() {
         server.createContext("/x/web-interface/view", exchange -> writeJson(exchange, """
-                {"code":0,"data":{"title":"Demo","desc":"Description","pic":"https://img.example/test.jpg","dimension":{"width":1280,"height":720}}}
+                {"code":0,"data":{"title":"Demo","desc":"Description","pic":"https://img.example/test.jpg","owner":{"name":"Demo UP"},"dimension":{"width":1280,"height":720}}}
                 """));
 
         PreviewMetadata metadata = provider.resolve(URI.create("https://www.bilibili.com/video/BV1xx411c7mD"));
 
         assertEquals("bilibili", metadata.providerId());
         assertEquals("https://www.bilibili.com/video/BV1xx411c7mD", metadata.canonicalUrl());
-        assertEquals("Demo", metadata.title());
+        assertEquals("Demo UP：Demo", metadata.title());
         assertEquals("https://img.example/test.jpg", metadata.thumbnailUrl());
     }
 
@@ -164,7 +172,7 @@ class BilibiliPreviewProviderTest {
     @Test
     void downloadsThumbnailToTargetPath() throws IOException {
         server.createContext("/thumb.jpg", exchange -> {
-            byte[] body = "image-data".getBytes(StandardCharsets.UTF_8);
+            byte[] body = testImageBytes(160, 90);
             exchange.sendResponseHeaders(200, body.length);
             try (OutputStream outputStream = exchange.getResponseBody()) {
                 outputStream.write(body);
@@ -187,7 +195,11 @@ class BilibiliPreviewProviderTest {
 
         provider.downloadThumbnail(metadata, target);
 
-        assertEquals("image-data", Files.readString(target));
+        BufferedImage image = ImageIO.read(target.toFile());
+        assertNotNull(image);
+        assertEquals("JPEG", imageFormatName(target));
+        assertEquals(160, image.getWidth());
+        assertEquals(90, image.getHeight());
     }
 
     private static void writeJson(HttpExchange exchange, String payload) throws IOException {
@@ -205,6 +217,35 @@ class BilibiliPreviewProviderTest {
             gzipOutputStream.write(payload.getBytes(StandardCharsets.UTF_8));
         }
         return outputStream.toByteArray();
+    }
+
+    private static byte[] testImageBytes(int width, int height) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D graphics = image.createGraphics();
+        try {
+            graphics.setColor(new Color(34, 139, 230));
+            graphics.fillRect(0, 0, width, height);
+        } finally {
+            graphics.dispose();
+        }
+
+        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", outputStream);
+        return outputStream.toByteArray();
+    }
+
+    private static String imageFormatName(Path path) throws IOException {
+        try (ImageInputStream inputStream = ImageIO.createImageInputStream(path.toFile())) {
+            assertNotNull(inputStream);
+            Iterator<ImageReader> readers = ImageIO.getImageReaders(inputStream);
+            assertTrue(readers.hasNext());
+            ImageReader reader = readers.next();
+            try {
+                return reader.getFormatName();
+            } finally {
+                reader.dispose();
+            }
+        }
     }
 
     private static final class RedirectingHttpClient extends HttpClient {
