@@ -267,6 +267,7 @@ LinkPeek/
 | `PREVIEW_WARMUP_QUEUE_CAPACITY` | `64` | 异步元数据预热队列上限，队列满时跳过本次预热 |
 | `NGA_PASSPORT_UID` | 空 | 可选的 NGA 登录态 UID，配置后 NGA provider 优先使用登录态抓取帖子 |
 | `NGA_PASSPORT_CID` | 空 | 可选的 NGA 登录态 CID，需与 `NGA_PASSPORT_UID` 配对使用 |
+| `LINUXDO_COOKIE` | 空 | 可选的 LINUX DO 登录态 Cookie，配置后可抓取当前账号可见但匿名不可见的主题 |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 
 ### 新增 provider

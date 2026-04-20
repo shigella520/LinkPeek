@@ -115,6 +115,68 @@ class LinuxDoPreviewProviderTest {
     }
 
     @Test
+    void resolvesMetadataUsingOriginalTopicSlug() {
+        httpClient.responseBody = """
+                <!doctype html>
+                <html>
+                <head>
+                  <meta property="og:title" content="Linux.do 原始 slug 测试">
+                  <meta property="og:description" content="摘要">
+                </head>
+                </html>
+                """.getBytes(StandardCharsets.UTF_8);
+
+        PreviewMetadata metadata = provider.resolve(URI.create("https://linux.do/t/real-topic-slug/2009020/3#reply"));
+
+        assertEquals("Linux.do 原始 slug 测试", metadata.title());
+        assertEquals("https://linux.do/t/2009020", metadata.canonicalUrl());
+        assertEquals(URI.create("https://linux.do/t/real-topic-slug/2009020"), httpClient.lastRequestUri);
+    }
+
+    @Test
+    void resolvesMetadataUsingIdOnlyTopicPath() {
+        httpClient.responseBody = """
+                <!doctype html>
+                <html>
+                <head>
+                  <meta property="og:title" content="Linux.do ID path 测试">
+                  <meta property="og:description" content="摘要">
+                </head>
+                </html>
+                """.getBytes(StandardCharsets.UTF_8);
+
+        PreviewMetadata metadata = provider.resolve(URI.create("https://linux.do/t/2009020"));
+
+        assertEquals("Linux.do ID path 测试", metadata.title());
+        assertEquals("https://linux.do/t/2009020", metadata.canonicalUrl());
+        assertEquals(URI.create("https://linux.do/t/2009020"), httpClient.lastRequestUri);
+    }
+
+    @Test
+    void sendsConfiguredCookieHeader() {
+        LinuxDoPreviewProvider cookieProvider = new LinuxDoPreviewProvider(
+                httpClient,
+                URI.create("https://linux.do"),
+                Duration.ofSeconds(3),
+                "LinkPeek-Test/1.0",
+                "_t=secret; _forum_session=session"
+        );
+        httpClient.responseBody = """
+                <!doctype html>
+                <html>
+                <head>
+                  <meta property="og:title" content="Linux.do Cookie 测试">
+                  <meta property="og:description" content="摘要">
+                </head>
+                </html>
+                """.getBytes(StandardCharsets.UTF_8);
+
+        cookieProvider.resolve(URI.create("https://linux.do/t/topic/2009020"));
+
+        assertEquals(Optional.of("_t=secret; _forum_session=session"), httpClient.lastRequest.headers().firstValue("Cookie"));
+    }
+
+    @Test
     void fallsBackToTitleTagAndNameDescription() {
         httpClient.responseBody = """
                 <!doctype html>
@@ -247,6 +309,7 @@ class LinuxDoPreviewProviderTest {
         private byte[] responseBody = new byte[0];
         private int statusCode = 200;
         private URI lastRequestUri;
+        private HttpRequest lastRequest;
 
         private StubHttpClient() {
             this(null);
@@ -313,6 +376,7 @@ class LinuxDoPreviewProviderTest {
             if (exception != null) {
                 throw exception;
             }
+            lastRequest = request;
             lastRequestUri = request.uri();
             return new StubResponse<>(request, statusCode, (T) responseBody);
         }

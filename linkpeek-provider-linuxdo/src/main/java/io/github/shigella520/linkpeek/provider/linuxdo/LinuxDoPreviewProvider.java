@@ -27,7 +27,7 @@ import java.util.regex.Pattern;
 public class LinuxDoPreviewProvider implements PreviewProvider {
     private static final Logger log = LoggerFactory.getLogger(LinuxDoPreviewProvider.class);
 
-    private static final Pattern TOPIC_PATH_PATTERN = Pattern.compile("^/t/(?:[^/]+/)?(\\d+)(?:/\\d+)?/?$");
+    private static final Pattern TOPIC_PATH_PATTERN = Pattern.compile("^/t/(?:([^/]+)/)?(\\d+)(?:/\\d+)?/?$");
     private static final Pattern TITLE_TAG_PATTERN = Pattern.compile("(?is)<title[^>]*>(.*?)</title>");
     private static final Pattern META_TAG_PATTERN = Pattern.compile("(?is)<meta\\b[^>]*>");
     private static final Pattern ATTRIBUTE_PATTERN = Pattern.compile("(?is)([a-zA-Z_:][-a-zA-Z0-9_:.]*)\\s*=\\s*(\"([^\"]*)\"|'([^']*)'|([^\\s\"'>/]+))");
@@ -45,6 +45,7 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
     private final URI pageBaseUri;
     private final Duration requestTimeout;
     private final String userAgent;
+    private final String cookieHeader;
 
     public LinuxDoPreviewProvider(
             HttpClient httpClient,
@@ -52,10 +53,21 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
             Duration requestTimeout,
             String userAgent
     ) {
+        this(httpClient, pageBaseUri, requestTimeout, userAgent, null);
+    }
+
+    public LinuxDoPreviewProvider(
+            HttpClient httpClient,
+            URI pageBaseUri,
+            Duration requestTimeout,
+            String userAgent,
+            String cookieHeader
+    ) {
         this.httpClient = httpClient;
         this.pageBaseUri = pageBaseUri;
         this.requestTimeout = requestTimeout;
         this.userAgent = userAgent;
+        this.cookieHeader = trimToNull(cookieHeader);
     }
 
     @Override
@@ -91,21 +103,23 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
         URI canonicalUrl = canonicalize(sourceUrl);
         String topicId = extractTopicId(canonicalUrl)
                 .orElseThrow(() -> new UnsupportedPreviewUrlException("Only Linux.do topic URLs are supported."));
-        URI requestUri = pageBaseUri.resolve("/t/topic/" + topicId);
+        URI requestUri = topicPageUri(normalizedSourceUrl, topicId);
 
-        HttpRequest request = HttpRequest.newBuilder(requestUri)
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder(requestUri)
                 .timeout(requestTimeout)
                 .header("Referer", pageBaseUri.toString())
                 .header("User-Agent", userAgent)
                 .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
-                .GET()
-                .build();
+                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+        if (cookieHeader != null) {
+            requestBuilder.header("Cookie", cookieHeader);
+        }
+        HttpRequest request = requestBuilder.GET().build();
 
         try {
             HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
             if (response.statusCode() >= 400) {
-                throw new UpstreamFetchException("Linux.do topic page returned HTTP " + response.statusCode());
+                throw new UpstreamFetchException(upstreamHttpErrorMessage(response.statusCode()));
             }
 
             String html = new String(response.body(), StandardCharsets.UTF_8);
@@ -156,11 +170,29 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
     }
 
     private Optional<String> extractTopicId(URI sourceUrl) {
-        Matcher matcher = TOPIC_PATH_PATTERN.matcher(sourceUrl.getPath());
+        Matcher matcher = TOPIC_PATH_PATTERN.matcher(sourceUrl.getRawPath());
         if (matcher.matches()) {
-            return Optional.of(matcher.group(1));
+            return Optional.of(matcher.group(2));
         }
         return Optional.empty();
+    }
+
+    private URI topicPageUri(URI sourceUrl, String topicId) {
+        Matcher matcher = TOPIC_PATH_PATTERN.matcher(sourceUrl.getRawPath());
+        if (!matcher.matches()) {
+            throw new UnsupportedPreviewUrlException("Only Linux.do topic URLs are supported.");
+        }
+
+        String slug = matcher.group(1);
+        String requestPath = slug == null ? "/t/" + topicId : "/t/" + slug + "/" + topicId;
+        return pageBaseUri.resolve(requestPath);
+    }
+
+    private String upstreamHttpErrorMessage(int statusCode) {
+        if (statusCode == 404 && cookieHeader == null) {
+            return "Linux.do topic page returned HTTP 404. The topic may require a logged-in session; configure LINUXDO_COOKIE if it is private.";
+        }
+        return "Linux.do topic page returned HTTP " + statusCode;
     }
 
     private String extractTitle(String html) {
@@ -319,5 +351,13 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
             current = current.getCause();
         }
         return false;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.strip();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

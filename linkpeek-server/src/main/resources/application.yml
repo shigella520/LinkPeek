@@ -45,6 +45,7 @@ linkpeek:
   preview-warmup-queue-capacity: ${PREVIEW_WARMUP_QUEUE_CAPACITY:64}
   nga-passport-uid: ${NGA_PASSPORT_UID:}
   nga-passport-cid: ${NGA_PASSPORT_CID:}
+  linux-do-cookie: ${LINUXDO_COOKIE:}
   crawler-signatures:
     - facebookexternalhit
     - Facebot

@@ -46,9 +46,43 @@ public final class CardTextSanitizer {
     }
 
     private static boolean isUnsupportedSpecialSymbol(int codePoint) {
-        return isEmojiFormattingCodePoint(codePoint) || isUnsupportedSymbolBlock(Character.UnicodeBlock.of(codePoint));
+        return isEmojiCodePoint(codePoint)
+                || isEmojiFormattingCodePoint(codePoint)
+                || isUnsupportedSymbolBlock(Character.UnicodeBlock.of(codePoint));
     }
 
+    // Visible emoji and pictograph code points. Most can render, but title cards intentionally avoid them
+    // to keep typography stable across server fonts and Java2D fallback behavior.
+    private static boolean isEmojiCodePoint(int codePoint) {
+        return codePoint == 0x00A9
+                || codePoint == 0x00AE
+                || codePoint == 0x203C
+                || codePoint == 0x2049
+                || codePoint == 0x2122
+                || codePoint == 0x2139
+                || (codePoint >= 0x2194 && codePoint <= 0x21AA)
+                || (codePoint >= 0x231A && codePoint <= 0x231B)
+                || codePoint == 0x2328
+                || codePoint == 0x23CF
+                || (codePoint >= 0x23E9 && codePoint <= 0x23F3)
+                || (codePoint >= 0x23F8 && codePoint <= 0x23FA)
+                || codePoint == 0x24C2
+                || (codePoint >= 0x25AA && codePoint <= 0x25AB)
+                || codePoint == 0x25B6
+                || codePoint == 0x25C0
+                || (codePoint >= 0x25FB && codePoint <= 0x25FE)
+                || (codePoint >= 0x2600 && codePoint <= 0x27BF)
+                || (codePoint >= 0x2934 && codePoint <= 0x2935)
+                || (codePoint >= 0x2B05 && codePoint <= 0x2B55)
+                || codePoint == 0x3030
+                || codePoint == 0x303D
+                || codePoint == 0x3297
+                || codePoint == 0x3299
+                || (codePoint >= 0x1F000 && codePoint <= 0x1FAFF);
+    }
+
+    // Emoji modifiers and joiners do not carry useful text by themselves; remove them so stripping emoji
+    // bodies does not leave invisible variation selectors, keycap marks, ZWJ sequences, or tag characters.
     private static boolean isEmojiFormattingCodePoint(int codePoint) {
         return codePoint == 0x200D
                 || codePoint == 0x20E3

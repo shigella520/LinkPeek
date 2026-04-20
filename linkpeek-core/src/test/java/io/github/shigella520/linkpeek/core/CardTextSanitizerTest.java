@@ -20,4 +20,10 @@ class CardTextSanitizerTest {
     void collapsesWhitespaceAroundRemovedSymbols() {
         assertEquals("Hello world", CardTextSanitizer.sanitize("Hello   😄   world"));
     }
+
+    @Test
+    void stripsEmojiSymbolsOutsideThePictographBlocks() {
+        assertEquals("280积分出 Telegram【印度+91】自动发货", CardTextSanitizer.sanitize("280积分出 Telegram【印度+91】⭐自动发货"));
+        assertEquals("国旗 文本", CardTextSanitizer.sanitize("国旗 🇨🇳 文本"));
+    }
 }
