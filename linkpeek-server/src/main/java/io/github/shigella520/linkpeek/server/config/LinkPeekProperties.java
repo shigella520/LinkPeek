@@ -24,6 +24,7 @@ public class LinkPeekProperties {
     private int previewWarmupQueueCapacity = 64;
     private String ngaPassportUid;
     private String ngaPassportCid;
+    private String linuxDoCookie;
     private List<String> crawlerSignatures = List.of(
             "facebookexternalhit",
             "Facebot",
@@ -157,6 +158,14 @@ public class LinkPeekProperties {
 
     public void setNgaPassportCid(String ngaPassportCid) {
         this.ngaPassportCid = ngaPassportCid;
+    }
+
+    public String getLinuxDoCookie() {
+        return linuxDoCookie;
+    }
+
+    public void setLinuxDoCookie(String linuxDoCookie) {
+        this.linuxDoCookie = linuxDoCookie;
     }
 
     public List<String> getCrawlerSignatures() {

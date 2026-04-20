@@ -19,6 +19,7 @@
 - 提供 `Bilibili` provider，支持标准视频链接和 `b23.tv` 短链。
 - 提供 `V2EX` provider，支持标准话题链接和带 `#reply` 锚点的话题链接，并为话题统一生成渐变标题卡片缩略图。
 - 提供 `NGA` provider，支持 `read.php?tid=...` 帖子链接，抓取标题与首楼摘要并生成预览卡片。
+- 提供 `LINUX DO` provider，支持公开主题链接，抓取主题 HTML 元数据并生成标题卡片。
 - 对爬虫请求返回 Open Graph HTML，对普通浏览器请求执行 `302` 跳转回原始链接。
 - 提供本地磁盘缓存，缓存元数据和缩略图，减少重复抓取。
 - 提供内部缩略图代理路由，`og:image` 指向服务自身地址，便于统一控制。
@@ -159,6 +160,8 @@ LinkPeek/
 │   └── 通用领域模型、错误模型、URL 规范化、provider SPI
 ├── linkpeek-provider-bilibili/
 │   └── Bilibili URL 识别、短链解析、元数据抓取、缩略图下载
+├── linkpeek-provider-linuxdo/
+│   └── LINUX DO 主题 URL 识别、HTML 元数据抓取、标题卡片生成
 ├── linkpeek-provider-nga/
 │   └── NGA 帖子 URL 识别、HTML 抓取、GBK 解码、标题卡片生成
 ├── linkpeek-provider-v2ex/
@@ -183,6 +186,7 @@ LinkPeek/
 
 - `linkpeek-core`：定义 `PreviewProvider`、`PreviewMetadata`、`PreviewKey` 等核心抽象。
 - `linkpeek-provider-bilibili`：封装 Bilibili 平台相关逻辑，不把平台细节泄漏到 Web 层。
+- `linkpeek-provider-linuxdo`：封装 LINUX DO 主题链接解析、HTML 元数据抓取和缩略图生成逻辑。
 - `linkpeek-provider-nga`：封装 NGA 帖子 URL 识别、页面抓取、首楼摘要提取和缩略图生成逻辑。
 - `linkpeek-provider-v2ex`：封装 V2EX 话题页解析、回复锚点归一化和缩略图下载逻辑。
 - `linkpeek-provider-template`：提供新增 provider 的最小骨架示例。
@@ -263,6 +267,7 @@ LinkPeek/
 | `PREVIEW_WARMUP_QUEUE_CAPACITY` | `64` | 异步元数据预热队列上限，队列满时跳过本次预热 |
 | `NGA_PASSPORT_UID` | 空 | 可选的 NGA 登录态 UID，配置后 NGA provider 优先使用登录态抓取帖子 |
 | `NGA_PASSPORT_CID` | 空 | 可选的 NGA 登录态 CID，需与 `NGA_PASSPORT_UID` 配对使用 |
+| `LINUXDO_COOKIE` | 空 | 可选的 LINUX DO 登录态 Cookie，配置后可抓取当前账号可见但匿名不可见的主题 |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 
 ### 新增 provider

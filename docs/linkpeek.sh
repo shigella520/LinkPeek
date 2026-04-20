@@ -33,6 +33,7 @@ base_url = os.environ["BASE_URL"]
 BV_PATTERN = re.compile(r"(BV[0-9A-Za-z]{10})")
 V2EX_TOPIC_PATH_PATTERN = re.compile(r"^/(?:amp/)?t/(\d+)(?:/.*)?$")
 NGA_TID_QUERY_PATTERN = re.compile(r"(^|&)tid=(\d+)($|&)")
+LINUXDO_TOPIC_PATH_PATTERN = re.compile(r"^/t/(?:[^/]+/)?(\d+)(?:/\d+)?/?$")
 
 
 def is_supported(url: str) -> bool:
@@ -59,6 +60,9 @@ def is_supported(url: str) -> bool:
         return True
 
     if host in ("bbs.nga.cn", "nga.178.com", "ngabbs.com") and path == "/read.php" and NGA_TID_QUERY_PATTERN.search(query):
+        return True
+
+    if host in ("linux.do", "www.linux.do") and LINUXDO_TOPIC_PATH_PATTERN.match(path):
         return True
 
     return False
