@@ -1,5 +1,7 @@
 package io.github.shigella520.linkpeek.core.media;
 
+import io.github.shigella520.linkpeek.core.util.CardTextSanitizer;
+
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageWriteParam;
@@ -104,7 +106,7 @@ public final class TitleCardRenderer {
     }
 
     private static void paintBadge(Graphics2D graphics, String badgeLabel) {
-        String label = badgeLabel == null ? "" : badgeLabel.strip();
+        String label = CardTextSanitizer.sanitize(badgeLabel);
         if (label.isBlank()) {
             return;
         }
@@ -323,11 +325,7 @@ public final class TitleCardRenderer {
     }
 
     private static String displayTitle(String title, String fallbackTitle) {
-        String cleaned = title == null ? "" : title.strip();
-        if (!cleaned.isBlank()) {
-            return cleaned;
-        }
-        return fallbackTitle == null ? "" : fallbackTitle.strip();
+        return CardTextSanitizer.displayTitle(title, fallbackTitle);
     }
 
     private static Color withAlpha(Color color, int alpha) {

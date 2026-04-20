@@ -4,13 +4,13 @@
 
 采用 `Spring Boot 3.x + Maven` 多模块结构，对外统一暴露 `GET /preview?url=...` 入口，内部通过 provider SPI 解析目标链接并输出预览 HTML。
 
-[在线体验 Live Demo](https://linkpeek.cloud.jianyutan.com/dashboard)
+[在线体验 Live Demo](https://linkpeek.jianyutan.com/dashboard)
 
 ![LinkPeek Dashboard 预览](docs/preview.png)
 
 [Raycast Script](docs/linkpeek.sh)
 
-[快捷指令 Shortcut](https://www.icloud.com/shortcuts/dc6b85dc0d2244caa0a6a9a730a283e1)
+[快捷指令 Shortcut](https://www.icloud.com/shortcuts/91eb1956206840f49f23aa214107dd38)
 
 ![快捷指令使用指南](docs/快捷指令使用指南.png)
 
