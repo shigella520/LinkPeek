@@ -20,6 +20,9 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
 
 - `linkpeek-core`：定义所有模块共享的核心类型与契约。
 - `linkpeek-provider-bilibili`：提供 Bilibili 的具体 `PreviewProvider` 实现。
+- `linkpeek-provider-linuxdo`：提供 LINUX DO 的具体 `PreviewProvider` 实现。
+- `linkpeek-provider-nga`：提供 NGA 的具体 `PreviewProvider` 实现。
+- `linkpeek-provider-v2ex`：提供 V2EX 的具体 `PreviewProvider` 实现。
 - `linkpeek-provider-template`：提供新增 provider 的最小骨架示例。
 - `linkpeek-server`：负责 HTTP 路由、运行时配置、缓存、日志、SQLite 统计聚合和 HTML 渲染。
 

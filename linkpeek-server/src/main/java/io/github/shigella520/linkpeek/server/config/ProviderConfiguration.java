@@ -3,6 +3,7 @@ package io.github.shigella520.linkpeek.server.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.shigella520.linkpeek.core.util.CrawlerMatcher;
 import io.github.shigella520.linkpeek.provider.bilibili.BilibiliPreviewProvider;
+import io.github.shigella520.linkpeek.provider.linuxdo.LinuxDoPreviewProvider;
 import io.github.shigella520.linkpeek.provider.nga.NgaPreviewProvider;
 import io.github.shigella520.linkpeek.provider.v2ex.V2exPreviewProvider;
 import org.springframework.context.annotation.Bean;
@@ -52,6 +53,25 @@ public class ProviderConfiguration {
                 httpClient,
                 objectMapper,
                 URI.create("https://www.v2ex.com"),
+                properties.getDownloadTimeout(),
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        );
+    }
+
+    @Bean
+    public LinuxDoPreviewProvider linuxDoPreviewProvider(
+            LinkPeekProperties properties
+    ) {
+        // Linux.do currently challenges Java HTTP/1.1 requests, while HTTP/2 returns the public topic page.
+        HttpClient linuxDoHttpClient = HttpClient.newBuilder()
+                .connectTimeout(properties.getDownloadTimeout())
+                .followRedirects(HttpClient.Redirect.NORMAL)
+                .version(HttpClient.Version.HTTP_2)
+                .build();
+
+        return new LinuxDoPreviewProvider(
+                linuxDoHttpClient,
+                URI.create("https://linux.do"),
                 properties.getDownloadTimeout(),
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         );
