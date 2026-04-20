@@ -4,7 +4,7 @@
 
 采用 `Spring Boot 3.x + Maven` 多模块结构，对外统一暴露 `GET /preview?url=...` 入口，内部通过 provider SPI 解析目标链接并输出预览 HTML。
 
-[在线体验 Live Demo](https://linkpeek.cloud.jianyutan.com/dashboard)
+[在线体验 Live Demo](https://linkpeek.jianyutan.com/dashboard)
 
 ![LinkPeek Dashboard 预览](docs/preview.png)
 

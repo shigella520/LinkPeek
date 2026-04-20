@@ -11,7 +11,7 @@
 # Documentation:
 # @raycast.author JianyuTan
 
-base_url="https://linkpeek.cloud.jianyutan.com/preview?url="
+base_url="https://linkpeek.jianyutan.com/preview?url="
 input="$(pbpaste)"
 
 if [[ -z "${input//[[:space:]]/}" ]]; then
