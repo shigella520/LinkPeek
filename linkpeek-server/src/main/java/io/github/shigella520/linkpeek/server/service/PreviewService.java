@@ -33,6 +33,11 @@ public class PreviewService {
         return new ResolvedPreview(sourceUrl, canonicalUrl, PreviewKey.fromCanonicalUrl(canonicalUrl), provider);
     }
 
+    public boolean supports(String rawUrl) {
+        URI sourceUrl = UrlNormalizer.parseHttpUrl(rawUrl);
+        return providerRegistry.findSupporting(sourceUrl).isPresent();
+    }
+
     public PreviewLoadResult loadPreview(ResolvedPreview resolvedPreview) {
         Optional<PreviewMetadata> cached = cacheManager.getMetadata(resolvedPreview.previewKey());
         if (cached.isPresent()) {

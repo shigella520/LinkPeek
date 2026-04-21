@@ -154,7 +154,8 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.APPLICATION_JSON))
                 .andExpect(content().string(containsString("\"title\":\"LinkPeek API\"")))
-                .andExpect(content().string(containsString("\"/preview\"")));
+                .andExpect(content().string(containsString("\"/preview\"")))
+                .andExpect(content().string(containsString("\"/api/preview/support\"")));
     }
 
     @Test
@@ -265,6 +266,67 @@ class PreviewControllerTest {
                         .param("url", "https://unsupported.example.com/post/1")
                         .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void previewSupportEndpointReturnsTrueForSupportedUrlWithoutPreparingPreview() throws Exception {
+        mockMvc.perform(get("/api/preview/support")
+                        .param("url", "https://video.example.com/watch/abc"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.supported").value(true))
+                .andExpect(jsonPath("$.errorCode").doesNotExist())
+                .andExpect(jsonPath("$.message").doesNotExist());
+
+        org.junit.jupiter.api.Assertions.assertEquals(0, testPreviewProvider.canonicalizations.get());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testPreviewProvider.resolutions.get());
+    }
+
+    @Test
+    void previewSupportEndpointReturnsFalseForUnsupportedUrl() throws Exception {
+        mockMvc.perform(get("/api/preview/support")
+                        .param("url", "https://unsupported.example.com/post/1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.supported").value(false))
+                .andExpect(jsonPath("$.errorCode").doesNotExist())
+                .andExpect(jsonPath("$.message").doesNotExist());
+    }
+
+    @Test
+    void previewSupportEndpointRejectsMissingUrl() throws Exception {
+        mockMvc.perform(get("/api/preview/support"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.supported").value(false))
+                .andExpect(jsonPath("$.errorCode").value("INVALID_URL"))
+                .andExpect(jsonPath("$.message").value("The url parameter is required."));
+    }
+
+    @Test
+    void previewSupportEndpointRejectsInvalidUrl() throws Exception {
+        mockMvc.perform(get("/api/preview/support")
+                        .param("url", "notaurl"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.supported").value(false))
+                .andExpect(jsonPath("$.errorCode").value("INVALID_URL"));
+    }
+
+    @Test
+    void previewSupportEndpointRejectsNonHttpUrl() throws Exception {
+        mockMvc.perform(get("/api/preview/support")
+                        .param("url", "ftp://example.com/file"))
+                .andExpect(status().isBadRequest())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.APPLICATION_JSON))
+                .andExpect(jsonPath("$.supported").value(false))
+                .andExpect(jsonPath("$.errorCode").value("INVALID_URL"))
+                .andExpect(jsonPath("$.message").value("Only http and https URLs are supported."));
     }
 
     @Test
@@ -419,6 +481,8 @@ class PreviewControllerTest {
 
     private static final class TestPreviewProvider implements PreviewProvider {
         private final AtomicInteger thumbnailDownloads = new AtomicInteger();
+        private final AtomicInteger canonicalizations = new AtomicInteger();
+        private final AtomicInteger resolutions = new AtomicInteger();
 
         @Override
         public String getId() {
@@ -432,11 +496,13 @@ class PreviewControllerTest {
 
         @Override
         public URI canonicalize(URI sourceUrl) {
+            canonicalizations.incrementAndGet();
             return URI.create("https://video.example.com/watch/abc");
         }
 
         @Override
         public PreviewMetadata resolve(URI sourceUrl) {
+            resolutions.incrementAndGet();
             return new PreviewMetadata(
                     sourceUrl.toString(),
                     canonicalize(sourceUrl).toString(),

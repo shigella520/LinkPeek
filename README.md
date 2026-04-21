@@ -21,6 +21,7 @@
 - 提供 `NGA` provider，支持 `read.php?tid=...` 帖子链接，抓取标题与首楼摘要并生成预览卡片。
 - 提供 `LINUX DO` provider，支持公开主题链接，抓取主题 HTML 元数据并生成标题卡片。
 - 对爬虫请求返回 Open Graph HTML，对普通浏览器请求执行 `302` 跳转回原始链接。
+- 提供轻量支持判定接口，Raycast 脚本通过云端 provider registry 判断链接是否支持，新增 provider 后无需同步脚本规则。
 - 提供本地磁盘缓存，缓存元数据和缩略图，减少重复抓取。
 - 提供内部缩略图代理路由，`og:image` 指向服务自身地址，便于统一控制。
 - 保留视频代理路由占位，但目前明确返回 `501 Not Implemented`，不引入外部二进制依赖。
@@ -106,6 +107,26 @@ https://preview.example.com/preview?url=https%3A%2F%2Fwww.v2ex.com%2Ft%2F1206093
 
 - 当 iMessage 或其他爬虫访问该链接时，服务返回 Open Graph HTML。
 - 当普通用户点击同一个链接时，服务会 `302` 跳转到原始链接。
+- Raycast 脚本会先调用云端支持判定接口，只有当前服务端 provider 支持该链接时才复制预览链接。
+
+如果只需要判断一个链接当前是否支持预览，可以调用：
+
+```bash
+curl -G --data-urlencode "url=https://www.v2ex.com/t/1206093" \
+  https://preview.example.com/api/preview/support
+```
+
+支持时返回：
+
+```json
+{"supported":true}
+```
+
+合法但没有 provider 支持时返回：
+
+```json
+{"supported":false}
+```
 
 ### 4. 本地验证抓取结果
 
@@ -278,6 +299,8 @@ LinkPeek/
 2. 补齐 `supports()`、`canonicalize()`、`resolve()`
 3. 如有需要实现 `downloadThumbnail()`
 4. 在 `linkpeek-server` 中注册为 Spring Bean
+
+`supports()` 是服务端支持判定接口和 Raycast 脚本的唯一规则来源；新增 provider 并部署后，Raycast 用户不需要更新脚本。该方法必须只做快速 URL 形态判断，不访问上游、不写缓存、不记录统计。
 
 参考文档：
 
