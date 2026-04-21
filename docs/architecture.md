@@ -28,6 +28,8 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
 
 ## 请求流程
 
+支持判定接口 `/api/preview/support?url=...` 只执行第 1、2 步，返回 JSON 布尔结果；它不会 canonicalize、抓取上游、写缓存或记录统计。
+
 1. `/preview?url=...` 先校验输入 URL。
 2. provider registry 通过 `supports(URI)` 选择匹配的 provider。
 3. provider 将原始链接规范化为 canonical URL。
