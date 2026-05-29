@@ -14,6 +14,14 @@
             total: 0,
             totalPages: 0
         },
+        shareSummaryTasks: [],
+        shareSummaryRuns: {
+            items: [],
+            page: 1,
+            size: 20,
+            total: 0,
+            totalPages: 0
+        },
         aiProviderDowngradeSaveTimer: null,
         aiProviderDowngradeSaveVersion: 0,
         logRefreshTimer: null,
@@ -29,6 +37,7 @@
         bindAiProviderDowngradeConfig();
         bindAiForm();
         bindPreviewEvents();
+        bindShareSummary();
         bindLogs();
         bindModalClose();
         checkSession();
@@ -243,6 +252,36 @@
         });
     }
 
+    function bindShareSummary() {
+        document.getElementById("share-summary-new-button").addEventListener("click", openShareSummaryTaskModalForCreate);
+        document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
+        document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
+        document.getElementById("share-summary-task-period").addEventListener("change", updateShareSummaryPeriodFields);
+        document.getElementById("share-summary-task-form").addEventListener("submit", saveShareSummaryTask);
+        document.getElementById("share-summary-run-form").addEventListener("submit", runShareSummaryTask);
+        document.getElementById("share-summary-refresh-runs").addEventListener("click", async () => {
+            await loadShareSummaryRuns();
+        });
+        document.getElementById("share-summary-run-filter-form").addEventListener("change", async () => {
+            state.shareSummaryRuns.page = 1;
+            await loadShareSummaryRuns();
+        });
+        document.getElementById("share-summary-run-prev").addEventListener("click", async () => {
+            if (state.shareSummaryRuns.page <= 1) {
+                return;
+            }
+            state.shareSummaryRuns.page -= 1;
+            await loadShareSummaryRuns();
+        });
+        document.getElementById("share-summary-run-next").addEventListener("click", async () => {
+            if (state.shareSummaryRuns.totalPages > 0 && state.shareSummaryRuns.page >= state.shareSummaryRuns.totalPages) {
+                return;
+            }
+            state.shareSummaryRuns.page += 1;
+            await loadShareSummaryRuns();
+        });
+    }
+
     function bindModalClose() {
         document.querySelectorAll("[data-close-modal]").forEach((node) => {
             node.addEventListener("click", () => {
@@ -252,6 +291,14 @@
                 }
                 if (node.dataset.closeModal === "ai") {
                     closeAiModal();
+                    return;
+                }
+                if (node.dataset.closeModal === "share-summary-task") {
+                    closeShareSummaryTaskModal();
+                    return;
+                }
+                if (node.dataset.closeModal === "share-summary-run") {
+                    closeShareSummaryRunModal();
                 }
             });
         });
@@ -265,6 +312,14 @@
             }
             if (!document.getElementById("ai-modal").hidden) {
                 closeAiModal();
+                return;
+            }
+            if (!document.getElementById("share-summary-task-modal").hidden) {
+                closeShareSummaryTaskModal();
+                return;
+            }
+            if (!document.getElementById("share-summary-run-modal").hidden) {
+                closeShareSummaryRunModal();
             }
         });
     }
@@ -277,6 +332,7 @@
             loadAiProviderDowngradeConfig(),
             loadAiProviders(),
             loadPreviewEvents(),
+            loadShareSummary(),
             loadLogs()
         ]);
     }
@@ -326,6 +382,40 @@
             setFeedback("preview-event-feedback", `已加载 ${state.previewEvents.items.length} 条，共 ${state.previewEvents.total} 条。`, "is-success");
         } catch (error) {
             setFeedback("preview-event-feedback", error.message, "is-error");
+        }
+    }
+
+    async function loadShareSummary() {
+        await loadShareSummaryTasks();
+        await loadShareSummaryRuns();
+    }
+
+    async function loadShareSummaryTasks() {
+        state.shareSummaryTasks = await fetchJson("/api/admin/share-summary/tasks");
+        renderShareSummaryTasks();
+        renderShareSummaryTaskOptions();
+    }
+
+    async function loadShareSummaryRuns() {
+        const params = new URLSearchParams();
+        params.set("page", String(state.shareSummaryRuns.page || 1));
+        params.set("size", document.getElementById("share-summary-run-size").value || "20");
+        const taskId = document.getElementById("share-summary-run-filter-task").value;
+        const status = document.getElementById("share-summary-run-filter-status").value;
+        if (taskId) {
+            params.set("taskId", taskId);
+        }
+        if (status) {
+            params.set("status", status);
+        }
+
+        setFeedback("share-summary-history-feedback", "正在读取分享总结记录...", "");
+        try {
+            state.shareSummaryRuns = await fetchJson(`/api/admin/share-summary/runs?${params.toString()}`);
+            renderShareSummaryRuns();
+            setFeedback("share-summary-history-feedback", `已加载 ${state.shareSummaryRuns.items.length} 条，共 ${state.shareSummaryRuns.total} 条。`, "is-success");
+        } catch (error) {
+            setFeedback("share-summary-history-feedback", error.message, "is-error");
         }
     }
 
@@ -579,6 +669,142 @@
         document.getElementById("preview-event-next").disabled = totalPages === 0 || page >= totalPages;
     }
 
+    function renderShareSummaryTasks() {
+        const body = document.getElementById("share-summary-task-table");
+        if (!state.shareSummaryTasks.length) {
+            body.innerHTML = `<tr><td colspan="6" class="muted">暂无分享总结任务</td></tr>`;
+            return;
+        }
+        body.innerHTML = state.shareSummaryTasks.map((task) => `
+            <tr>
+                <td>
+                    <strong>${escapeHtml(task.name)}</strong>
+                    <div class="prompt-preview">${escapeHtml(promptPreview(task.prompt))}</div>
+                </td>
+                    <td class="nowrap">${escapeHtml(periodLabel(task.periodType))}</td>
+                    <td class="nowrap">${escapeHtml(scheduleLabel(task))}</td>
+                    <td class="nowrap">${escapeHtml(task.maxLinks || 100)}</td>
+                <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
+                <td>
+                    <div class="row-actions">
+                        <button type="button" class="secondary" data-run-share-task="${task.id}">执行</button>
+                        <button type="button" class="secondary" data-edit-share-task="${task.id}">编辑</button>
+                        <button type="button" class="danger" data-delete-share-task="${task.id}">删除</button>
+                    </div>
+                </td>
+            </tr>
+        `).join("");
+        body.querySelectorAll("[data-run-share-task]").forEach((button) => {
+            button.addEventListener("click", async () => {
+                document.getElementById("share-summary-run-task").value = button.dataset.runShareTask;
+                await runShareSummaryTask();
+            });
+        });
+        body.querySelectorAll("[data-edit-share-task]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const task = state.shareSummaryTasks.find((item) => String(item.id) === button.dataset.editShareTask);
+                if (task) {
+                    openShareSummaryTaskModalForEdit(task);
+                }
+            });
+        });
+        body.querySelectorAll("[data-delete-share-task]").forEach((button) => {
+            button.addEventListener("click", async () => {
+                if (!confirmDangerAction(button, "确认删除")) {
+                    return;
+                }
+                button.disabled = true;
+                setFeedback("share-summary-feedback", "正在删除分享总结任务...", "");
+                try {
+                    await fetchJson(`/api/admin/share-summary/tasks/${encodeURIComponent(button.dataset.deleteShareTask)}`, {method: "DELETE"});
+                    await loadShareSummary();
+                    setFeedback("share-summary-feedback", "分享总结任务已删除。", "is-success");
+                } catch (error) {
+                    resetDangerAction(button);
+                    button.disabled = false;
+                    setFeedback("share-summary-feedback", error.message, "is-error");
+                }
+            });
+        });
+    }
+
+    function renderShareSummaryTaskOptions() {
+        const options = [`<option value="">请选择任务</option>`]
+                .concat(state.shareSummaryTasks.map((task) => `<option value="${escapeAttribute(task.id)}">${escapeHtml(task.name)}</option>`))
+                .join("");
+        const filterOptions = [`<option value="">全部任务</option>`]
+                .concat(state.shareSummaryTasks.map((task) => `<option value="${escapeAttribute(task.id)}">${escapeHtml(task.name)}</option>`))
+                .join("");
+        document.getElementById("share-summary-run-task").innerHTML = options;
+        document.getElementById("share-summary-run-filter-task").innerHTML = filterOptions;
+    }
+
+    function renderShareSummaryRuns() {
+        const payload = state.shareSummaryRuns || {};
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const body = document.getElementById("share-summary-run-table");
+        if (!items.length) {
+            body.innerHTML = `<tr><td colspan="7" class="muted">暂无分享总结记录</td></tr>`;
+        } else {
+            body.innerHTML = items.map((run) => `
+                <tr>
+                    <td class="nowrap">${escapeHtml(formatTimestamp(run.startedAt))}</td>
+                    <td>${escapeHtml(run.taskName || "-")}<div class="keyline">${escapeHtml(run.triggerType || "-")}</div></td>
+                    <td class="summary-window-cell">${escapeHtml(formatWindow(run.windowStart, run.windowEnd))}</td>
+                    <td>${renderRunStatus(run.status)}</td>
+                    <td>${escapeHtml(run.linkCount || 0)} / ${escapeHtml(run.uniqueLinkCount || 0)} / ${escapeHtml(run.inputLinkCount || 0)}</td>
+                    <td>${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
+                    <td><button type="button" class="secondary" data-view-share-run="${run.id}">详情</button></td>
+                </tr>
+            `).join("");
+        }
+        body.querySelectorAll("[data-view-share-run]").forEach((button) => {
+            button.addEventListener("click", () => openShareSummaryRunDetail(button.dataset.viewShareRun));
+        });
+        renderShareSummaryRunPagination(payload);
+    }
+
+    function renderShareSummaryRunPagination(payload) {
+        const page = Number(payload.page || 1);
+        const totalPages = Number(payload.totalPages || 0);
+        const total = Number(payload.total || 0);
+        document.getElementById("share-summary-run-page-info").textContent = totalPages > 0
+                ? `第 ${page} / ${totalPages} 页 · ${total} 条`
+                : "暂无记录";
+        document.getElementById("share-summary-run-prev").disabled = page <= 1;
+        document.getElementById("share-summary-run-next").disabled = totalPages === 0 || page >= totalPages;
+    }
+
+    function renderRunStatus(status) {
+        const normalized = status || "-";
+        const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" ? "is-warning" : "";
+        return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+    }
+
+    function periodLabel(value) {
+        if (value === "WEEKLY") {
+            return "每周";
+        }
+        if (value === "MONTHLY") {
+            return "每月";
+        }
+        return "每日";
+    }
+
+    function scheduleLabel(task) {
+        if (task.periodType === "WEEKLY") {
+            return `${weekdayLabel(task.dayOfWeek)} ${task.runTime || ""}`;
+        }
+        if (task.periodType === "MONTHLY") {
+            return `${task.dayOfMonth || 1} 号 ${task.runTime || ""}`;
+        }
+        return task.runTime || "";
+    }
+
+    function weekdayLabel(value) {
+        return ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"][Number(value || 1)] || "周一";
+    }
+
     function setAiProviderDowngradeEnabled(enabled) {
         const toggle = document.getElementById("ai-auto-downgrade-enabled-toggle");
         const label = document.getElementById("ai-auto-downgrade-enabled-label");
@@ -818,6 +1044,147 @@
         document.getElementById("ai-api-kind").value = "CHAT_COMPLETIONS";
     }
 
+    async function saveShareSummaryTask(event) {
+        event.preventDefault();
+        const id = document.getElementById("share-summary-task-id").value;
+        const periodType = document.getElementById("share-summary-task-period").value;
+        const payload = {
+            name: document.getElementById("share-summary-task-name").value.trim(),
+            enabled: document.getElementById("share-summary-task-enabled").checked,
+            periodType,
+            runTime: document.getElementById("share-summary-task-run-time").value,
+            dayOfWeek: periodType === "WEEKLY" ? Number(document.getElementById("share-summary-task-day-of-week").value) : null,
+            dayOfMonth: periodType === "MONTHLY" ? Number(document.getElementById("share-summary-task-day-of-month").value) : null,
+            prompt: document.getElementById("share-summary-task-prompt").value.trim(),
+            maxLinks: Number(document.getElementById("share-summary-task-max-links").value || 100)
+        };
+        const maxLinksError = validateShareSummaryMaxLinks(payload.maxLinks);
+        if (maxLinksError) {
+            setFeedback("share-summary-task-modal-feedback", maxLinksError, "is-error");
+            return;
+        }
+        const url = id ? `/api/admin/share-summary/tasks/${encodeURIComponent(id)}` : "/api/admin/share-summary/tasks";
+        const method = id ? "PUT" : "POST";
+        setFeedback("share-summary-task-modal-feedback", "正在保存分享总结任务...", "");
+        try {
+            await fetchJson(url, {
+                method,
+                body: JSON.stringify(payload)
+            });
+            closeShareSummaryTaskModal(false);
+            await loadShareSummary();
+            setFeedback("share-summary-feedback", "分享总结任务已保存。", "is-success");
+        } catch (error) {
+            setFeedback("share-summary-task-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    async function runShareSummaryTask(event) {
+        if (event) {
+            event.preventDefault();
+        }
+        const taskId = document.getElementById("share-summary-run-task").value;
+        if (!taskId) {
+            setFeedback("share-summary-run-feedback", "请选择分享总结任务。", "is-error");
+            return;
+        }
+        const startedAt = readLocalDateTimeMillis("share-summary-run-start");
+        const endedAt = readLocalDateTimeMillis("share-summary-run-end");
+        if ((startedAt && !endedAt) || (!startedAt && endedAt)) {
+            setFeedback("share-summary-run-feedback", "自定义范围需要同时填写开始和结束时间。", "is-error");
+            return;
+        }
+        if (startedAt && endedAt && startedAt >= endedAt) {
+            setFeedback("share-summary-run-feedback", "开始时间必须早于结束时间。", "is-error");
+            return;
+        }
+        const payload = startedAt && endedAt ? {windowStart: startedAt, windowEnd: endedAt} : {};
+        setFeedback("share-summary-run-feedback", "正在执行分享总结...", "");
+        try {
+            const run = await fetchJson(`/api/admin/share-summary/tasks/${encodeURIComponent(taskId)}/run`, {
+                method: "POST",
+                body: JSON.stringify(payload)
+            });
+            await loadShareSummaryRuns();
+            setFeedback("share-summary-run-feedback", `执行完成：${run.status || "-"}`, run.status === "FAILED" ? "is-error" : "is-success");
+            if (run && run.id) {
+                await openShareSummaryRunDetail(run.id);
+            }
+        } catch (error) {
+            setFeedback("share-summary-run-feedback", error.message, "is-error");
+        }
+    }
+
+    function openShareSummaryTaskModalForCreate() {
+        resetShareSummaryTaskForm();
+        document.getElementById("share-summary-task-modal-title").textContent = "新建分享总结任务";
+        openModal("share-summary-task-modal");
+        updateShareSummaryPeriodFields();
+        setFeedback("share-summary-task-modal-feedback", "", "");
+        document.getElementById("share-summary-task-name").focus();
+    }
+
+    function openShareSummaryTaskModalForEdit(task) {
+        resetShareSummaryTaskForm();
+        document.getElementById("share-summary-task-modal-title").textContent = `编辑分享总结任务：${task.name || task.id}`;
+        document.getElementById("share-summary-task-id").value = task.id || "";
+        document.getElementById("share-summary-task-name").value = task.name || "";
+        document.getElementById("share-summary-task-period").value = task.periodType || "DAILY";
+        document.getElementById("share-summary-task-run-time").value = task.runTime || "09:00";
+        document.getElementById("share-summary-task-day-of-week").value = task.dayOfWeek || 1;
+        document.getElementById("share-summary-task-day-of-month").value = task.dayOfMonth || 1;
+        document.getElementById("share-summary-task-max-links").value = task.maxLinks || 100;
+        document.getElementById("share-summary-task-enabled").checked = Boolean(task.enabled);
+        document.getElementById("share-summary-task-prompt").value = task.prompt || "";
+        openModal("share-summary-task-modal");
+        updateShareSummaryPeriodFields();
+        setFeedback("share-summary-task-modal-feedback", "", "");
+        document.getElementById("share-summary-task-name").focus();
+    }
+
+    function closeShareSummaryTaskModal(clearFeedback = true) {
+        resetShareSummaryTaskForm();
+        closeModal("share-summary-task-modal");
+        if (clearFeedback) {
+            setFeedback("share-summary-task-modal-feedback", "", "");
+        }
+    }
+
+    function resetShareSummaryTaskForm() {
+        document.getElementById("share-summary-task-form").reset();
+        document.getElementById("share-summary-task-id").value = "";
+        document.getElementById("share-summary-task-period").value = "DAILY";
+        document.getElementById("share-summary-task-run-time").value = "09:00";
+        document.getElementById("share-summary-task-day-of-week").value = "1";
+        document.getElementById("share-summary-task-day-of-month").value = "1";
+        document.getElementById("share-summary-task-max-links").value = "100";
+        updateShareSummaryPeriodFields();
+    }
+
+    function updateShareSummaryPeriodFields() {
+        const periodType = document.getElementById("share-summary-task-period").value;
+        document.getElementById("share-summary-task-weekday-field").hidden = periodType !== "WEEKLY";
+        document.getElementById("share-summary-task-monthday-field").hidden = periodType !== "MONTHLY";
+    }
+
+    async function openShareSummaryRunDetail(runId) {
+        openModal("share-summary-run-modal");
+        document.getElementById("share-summary-run-detail").innerHTML = `<p class="muted">正在读取详情...</p>`;
+        setFeedback("share-summary-run-modal-feedback", "", "");
+        try {
+            const run = await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}`);
+            document.getElementById("share-summary-run-modal-title").textContent = `分享总结详情：${run.taskName || run.id}`;
+            document.getElementById("share-summary-run-detail").innerHTML = renderShareSummaryRunDetail(run);
+        } catch (error) {
+            setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    function closeShareSummaryRunModal() {
+        closeModal("share-summary-run-modal");
+        setFeedback("share-summary-run-modal-feedback", "", "");
+    }
+
     function openModal(id) {
         document.getElementById(id).hidden = false;
         document.body.classList.add("modal-open");
@@ -1005,6 +1372,48 @@
             return "-";
         }
         return `${Math.round(duration)}ms`;
+    }
+
+    function formatWindow(start, end) {
+        return `${formatTimestamp(start)} ~ ${formatTimestamp(end)}`;
+    }
+
+    function readLocalDateTimeMillis(id) {
+        const value = document.getElementById(id).value;
+        if (!value) {
+            return null;
+        }
+        const millis = new Date(value).getTime();
+        return Number.isFinite(millis) ? millis : null;
+    }
+
+    function validateShareSummaryMaxLinks(value) {
+        if (!Number.isInteger(value) || value < 1 || value > 500) {
+            return "最大链接数必须是 1-500 之间的整数。";
+        }
+        return "";
+    }
+
+    function renderShareSummaryRunDetail(run) {
+        return `
+            <div class="summary-detail-grid">
+                <div><b>状态</b><span>${renderRunStatus(run.status)}</span></div>
+                <div><b>触发方式</b><span>${escapeHtml(run.triggerType || "-")}</span></div>
+                <div><b>窗口</b><span>${escapeHtml(formatWindow(run.windowStart, run.windowEnd))}</span></div>
+                <div><b>链接</b><span>${escapeHtml(run.linkCount || 0)} / ${escapeHtml(run.uniqueLinkCount || 0)} / ${escapeHtml(run.inputLinkCount || 0)}</span></div>
+                <div><b>AI Provider</b><span>${escapeHtml(run.aiProviderNames || "-")}</span></div>
+                <div><b>AI 耗时</b><span>${escapeHtml(formatDuration(run.aiDurationMs))}</span></div>
+            </div>
+            ${run.errorMessage ? `<section class="summary-detail-section"><h4>错误信息</h4><pre class="summary-report is-error">${escapeHtml(run.errorMessage)}</pre></section>` : ""}
+            <section class="summary-detail-section">
+                <h4>总结报告</h4>
+                <article class="summary-report summary-report-main">${escapeHtml(run.report || "")}</article>
+            </section>
+            <section class="summary-detail-section">
+                <h4>提示词快照</h4>
+                <pre class="summary-report summary-report-prompt">${escapeHtml(run.promptSnapshot || "")}</pre>
+            </section>
+        `;
     }
 
     function shortPreviewKey(value) {

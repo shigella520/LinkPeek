@@ -164,6 +164,114 @@
                 </div>
             </section>
 
+            <section class="panel" id="share-summary">
+                <div class="panel-head">
+                    <div>
+                        <p class="panel-kicker">Share Summary</p>
+                        <h2>分享总结</h2>
+                    </div>
+                    <button type="button" id="share-summary-new-button">新建任务</button>
+                </div>
+                <p id="share-summary-feedback" class="feedback" role="status" aria-live="polite"></p>
+                <div class="table-shell share-summary-task-shell">
+                    <table class="share-summary-task-table">
+                        <thead>
+                        <tr>
+                            <th>任务</th>
+                            <th>周期</th>
+                            <th>执行时间</th>
+                            <th>最大链接</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                        </thead>
+                        <tbody id="share-summary-task-table"></tbody>
+                    </table>
+                </div>
+
+                <div class="prompt-subsection">
+                    <div class="subsection-head subsection-head-actions">
+                        <div>
+                            <p class="panel-kicker">Manual Run</p>
+                            <h3>手动执行</h3>
+                        </div>
+                    </div>
+                    <form id="share-summary-run-form" class="share-summary-manual-form">
+                        <label class="share-summary-task-select">
+                            <span>任务</span>
+                            <select id="share-summary-run-task"></select>
+                        </label>
+                        <label class="share-summary-time-field">
+                            <span>开始时间</span>
+                            <input id="share-summary-run-start" type="datetime-local">
+                        </label>
+                        <label class="share-summary-time-field">
+                            <span>结束时间</span>
+                            <input id="share-summary-run-end" type="datetime-local">
+                        </label>
+                        <button type="submit" class="share-summary-run-button">执行一次</button>
+                    </form>
+                    <p id="share-summary-run-feedback" class="feedback" role="status" aria-live="polite"></p>
+                </div>
+
+                <div class="prompt-subsection">
+                    <div class="subsection-head subsection-head-actions">
+                        <div>
+                            <p class="panel-kicker">History</p>
+                            <h3>历史记录</h3>
+                        </div>
+                        <button type="button" class="secondary" id="share-summary-refresh-runs">刷新记录</button>
+                    </div>
+                    <form id="share-summary-run-filter-form" class="share-summary-filter-form">
+                        <label class="share-summary-task-select">
+                            <span>任务</span>
+                            <select id="share-summary-run-filter-task"></select>
+                        </label>
+                        <label>
+                            <span>状态</span>
+                            <select id="share-summary-run-filter-status">
+                                <option value="">全部</option>
+                                <option value="RUNNING">RUNNING</option>
+                                <option value="SUCCESS">SUCCESS</option>
+                                <option value="EMPTY">EMPTY</option>
+                                <option value="FAILED">FAILED</option>
+                                <option value="SKIPPED">SKIPPED</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>每页</span>
+                            <select id="share-summary-run-size">
+                                <option value="10">10</option>
+                                <option value="20" selected>20</option>
+                                <option value="50">50</option>
+                            </select>
+                        </label>
+                    </form>
+                    <p id="share-summary-history-feedback" class="feedback" role="status" aria-live="polite"></p>
+                    <div class="table-shell share-summary-run-shell">
+                        <table class="share-summary-run-table">
+                            <thead>
+                            <tr>
+                                <th>执行时间</th>
+                                <th>任务</th>
+                                <th>窗口</th>
+                                <th>状态</th>
+                                <th>链接</th>
+                                <th>AI</th>
+                                <th>操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="share-summary-run-table"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination-bar">
+                        <button type="button" class="secondary" id="share-summary-run-prev">上一页</button>
+                        <span id="share-summary-run-page-info">第 1 页</span>
+                        <button type="button" class="secondary" id="share-summary-run-next">下一页</button>
+                    </div>
+                </div>
+            </section>
+
             <section class="panel" id="provider-config">
                 <div class="panel-head">
                     <div>
@@ -336,6 +444,79 @@
             </div>
         </form>
         <p id="ai-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
+    </section>
+</div>
+
+<div class="modal-shell" id="share-summary-task-modal" hidden>
+    <div class="modal-backdrop" data-close-modal="share-summary-task"></div>
+    <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="share-summary-task-modal-title">
+        <div class="modal-head">
+            <h3 id="share-summary-task-modal-title">新建分享总结任务</h3>
+            <button type="button" class="secondary" id="share-summary-task-cancel-button">取消</button>
+        </div>
+        <form id="share-summary-task-form" class="grid-form">
+            <input id="share-summary-task-id" type="hidden">
+            <label>
+                <span>任务名称</span>
+                <input id="share-summary-task-name" type="text" autocomplete="off" required>
+            </label>
+            <label>
+                <span>周期</span>
+                <select id="share-summary-task-period" required>
+                    <option value="DAILY">每日</option>
+                    <option value="WEEKLY">每周</option>
+                    <option value="MONTHLY">每月</option>
+                </select>
+            </label>
+            <label>
+                <span>执行时间</span>
+                <input id="share-summary-task-run-time" type="time" value="09:00" required>
+            </label>
+            <label id="share-summary-task-weekday-field">
+                <span>周几</span>
+                <select id="share-summary-task-day-of-week">
+                    <option value="1">周一</option>
+                    <option value="2">周二</option>
+                    <option value="3">周三</option>
+                    <option value="4">周四</option>
+                    <option value="5">周五</option>
+                    <option value="6">周六</option>
+                    <option value="7">周日</option>
+                </select>
+            </label>
+            <label id="share-summary-task-monthday-field">
+                <span>几号</span>
+                <input id="share-summary-task-day-of-month" type="number" min="1" max="28" value="1">
+            </label>
+            <label>
+                <span>最大链接数</span>
+                <input id="share-summary-task-max-links" type="number" min="1" max="500" value="100" required>
+            </label>
+            <label class="checkbox-row">
+                <input id="share-summary-task-enabled" type="checkbox">
+                <span>启用定时执行</span>
+            </label>
+            <label class="wide">
+                <span>分享总结提示词</span>
+                <textarea id="share-summary-task-prompt" rows="7" required></textarea>
+            </label>
+            <div class="modal-actions wide">
+                <button type="submit">保存任务</button>
+            </div>
+        </form>
+        <p id="share-summary-task-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
+    </section>
+</div>
+
+<div class="modal-shell" id="share-summary-run-modal" hidden>
+    <div class="modal-backdrop" data-close-modal="share-summary-run"></div>
+    <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="share-summary-run-modal-title">
+        <div class="modal-head">
+            <h3 id="share-summary-run-modal-title">分享总结详情</h3>
+            <button type="button" class="secondary" id="share-summary-run-cancel-button">关闭</button>
+        </div>
+        <div id="share-summary-run-detail" class="summary-detail"></div>
+        <p id="share-summary-run-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
     </section>
 </div>
 

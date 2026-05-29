@@ -8,6 +8,7 @@ import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
+import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
 import io.github.shigella520.linkpeek.server.ai.AiTitlePrompt;
 import jakarta.servlet.http.Cookie;
@@ -119,6 +120,8 @@ class PreviewControllerTest {
         Files.deleteIfExists(TEST_SERVICE_LOG);
         jdbcTemplate.execute("DELETE FROM stats_event");
         jdbcTemplate.execute("DELETE FROM stats_link");
+        jdbcTemplate.execute("DELETE FROM share_summary_run");
+        jdbcTemplate.execute("DELETE FROM share_summary_task");
         jdbcTemplate.execute("DELETE FROM admin_prompt");
         jdbcTemplate.execute("DELETE FROM provider_config");
         jdbcTemplate.execute("DELETE FROM ai_provider");
@@ -235,6 +238,7 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("service-logs")))
                 .andExpect(content().string(containsString("ai-providers")))
                 .andExpect(content().string(containsString("preview-events")))
+                .andExpect(content().string(containsString("share-summary")))
                 .andExpect(content().string(containsString("preview-event-form")))
                 .andExpect(content().string(containsString("preview-event-table")))
                 .andExpect(content().string(containsString("ai-new-button")))
@@ -253,6 +257,7 @@ class PreviewControllerTest {
                     int promptIndex = html.indexOf("id=\"prompts\"");
                     int aiIndex = html.indexOf("id=\"ai-providers\"");
                     int previewEventsIndex = html.indexOf("id=\"preview-events\"");
+                    int shareSummaryIndex = html.indexOf("id=\"share-summary\"");
                     int providerIndex = html.indexOf("id=\"provider-config\"");
                     int logsIndex = html.indexOf("id=\"service-logs\"");
                     int purgeIndex = html.indexOf("id=\"purge\"");
@@ -260,10 +265,11 @@ class PreviewControllerTest {
                             promptIndex >= 0
                                     && promptIndex < aiIndex
                                     && aiIndex < previewEventsIndex
-                                    && previewEventsIndex < providerIndex
+                                    && previewEventsIndex < shareSummaryIndex
+                                    && shareSummaryIndex < providerIndex
                                     && providerIndex < logsIndex
                                     && logsIndex < purgeIndex,
-                            "Expected admin module order: prompts, AI providers, preview events, provider config, service logs, purge."
+                            "Expected admin module order: prompts, AI providers, preview events, share summary, provider config, service logs, purge."
                     );
                 });
 
@@ -282,7 +288,8 @@ class PreviewControllerTest {
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("application/javascript")))
                 .andExpect(content().string(containsString("/api/admin/logs")))
                 .andExpect(content().string(containsString("/api/admin/ai-title-config")))
-                .andExpect(content().string(containsString("/api/admin/preview-events")));
+                .andExpect(content().string(containsString("/api/admin/preview-events")))
+                .andExpect(content().string(containsString("/api/admin/share-summary")));
 
         mockMvc.perform(get("/admin/login.js"))
                 .andExpect(status().isOk())
@@ -850,6 +857,156 @@ class PreviewControllerTest {
     }
 
     @Test
+    void adminShareSummaryCrudManualRunAndHistoryUseDatabaseTitles() throws Exception {
+        Cookie cookie = adminCookie();
+        long now = System.currentTimeMillis();
+        testAiTitleClient.generatedText.set("分享总结报告");
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "local", 1, 1, "https://api.openai.com/v1", "RESPONSES", "test-model", "low", "test-key", now
+        );
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").exists())
+                .andExpect(jsonPath("$.name").value("每日总结"))
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.periodType").value("DAILY"))
+                .andExpect(jsonPath("$.runTime").value("09:00"))
+                .andExpect(jsonPath("$.dayOfWeek").doesNotExist())
+                .andExpect(jsonPath("$.dayOfMonth").doesNotExist())
+                .andExpect(jsonPath("$.prompt").value("总结重点"))
+                .andExpect(jsonPath("$.maxLinks").value(2));
+
+        Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "每日总结");
+        mockMvc.perform(put("/api/admin/share-summary/tasks/{taskId}", taskId)
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"周总结","enabled":true,"periodType":"WEEKLY","runTime":"10:30","dayOfWeek":3,"prompt":"按主题聚合","maxLinks":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.periodType").value("WEEKLY"))
+                .andExpect(jsonPath("$.dayOfWeek").value(3))
+                .andExpect(jsonPath("$.dayOfMonth").doesNotExist());
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"非法月任务","enabled":true,"periodType":"MONTHLY","runTime":"09:00","dayOfMonth":31,"prompt":"总结","maxLinks":100}
+                                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(get("/api/admin/share-summary/tasks")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].id").value(taskId))
+                .andExpect(jsonPath("$[0].name").value("周总结"));
+
+        long windowStart = 1_700_000_000_000L;
+        long windowEnd = windowStart + 86_400_000L;
+        insertStatsLink("key-a", "https://example.com/a", "数据库标题 A", windowStart + 1_000L);
+        insertStatsLink("key-b", "https://example.com/b", "数据库标题 B", windowStart + 2_000L);
+        insertStatsLink("key-c", "https://example.com/c", "数据库标题 C", windowStart + 3_000L);
+        insertStatsLink("key-empty", "https://example.com/empty", "", windowStart + 4_000L);
+        insertPreviewCreatedEvent("key-a", "https://source.example.com/a1", windowStart + 1_000L, true, true);
+        insertPreviewCreatedEvent("key-b", "https://source.example.com/b", windowStart + 2_000L, false, false);
+        insertPreviewCreatedEvent("key-a", "https://source.example.com/a2", windowStart + 3_000L, true, true);
+        insertPreviewCreatedEvent("key-c", "https://source.example.com/c", windowStart + 4_000L, false, false);
+        insertPreviewCreatedEvent("key-empty", "https://source.example.com/empty", windowStart + 5_000L, false, false);
+        insertPreviewCreatedEvent("key-a", "https://source.example.com/outside", windowEnd + 1_000L, true, true);
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"windowStart\":" + windowStart + ",\"windowEnd\":" + windowEnd + "}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.taskId").value(taskId))
+                .andExpect(jsonPath("$.taskName").value("周总结"))
+                .andExpect(jsonPath("$.triggerType").value("MANUAL"))
+                .andExpect(jsonPath("$.periodType").value("WEEKLY"))
+                .andExpect(jsonPath("$.windowStart").value(windowStart))
+                .andExpect(jsonPath("$.windowEnd").value(windowEnd))
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.linkCount").value(5))
+                .andExpect(jsonPath("$.uniqueLinkCount").value(3))
+                .andExpect(jsonPath("$.inputLinkCount").value(2))
+                .andExpect(jsonPath("$.promptSnapshot").value("按主题聚合"))
+                .andExpect(jsonPath("$.aiProviderNames").value("local"))
+                .andExpect(jsonPath("$.aiDurationMs").value(34))
+                .andExpect(jsonPath("$.report").value("分享总结报告"));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.textRequests.get());
+        AiTextPrompt prompt = testAiTitleClient.textPrompt.get();
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.prompt().contains("按主题聚合"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("[2次] 数据库标题 A"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("[1次] 数据库标题 B"));
+        org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 C"));
+        org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("source.example.com"));
+
+        mockMvc.perform(get("/api/admin/share-summary/runs")
+                        .cookie(cookie)
+                        .param("taskId", String.valueOf(taskId))
+                        .param("status", "SUCCESS"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.size").value(20))
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].report").value("分享总结报告"));
+
+        Long runId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_run WHERE task_id = ?", Long.class, taskId);
+        mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.id").value(runId))
+                .andExpect(jsonPath("$.report").value("分享总结报告"));
+
+        mockMvc.perform(delete("/api/admin/share-summary/tasks/{taskId}", taskId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deleted").value(1));
+
+        mockMvc.perform(get("/api/admin/share-summary/tasks")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isEmpty());
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM share_summary_run WHERE task_id = ?", Integer.class, taskId));
+    }
+
+    @Test
+    void adminShareSummaryManualRunWithNoTitlesIsEmptyAndDoesNotCallAi() throws Exception {
+        Cookie cookie = adminCookie();
+        mockMvc.perform(post("/api/admin/share-summary/tasks")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"空数据总结","enabled":false,"periodType":"DAILY","runTime":"09:00","prompt":"总结","maxLinks":100}
+                                """))
+                .andExpect(status().isOk());
+        Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "空数据总结");
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"windowStart\":1000,\"windowEnd\":2000}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("EMPTY"))
+                .andExpect(jsonPath("$.linkCount").value(0))
+                .andExpect(jsonPath("$.uniqueLinkCount").value(0))
+                .andExpect(jsonPath("$.inputLinkCount").value(0))
+                .andExpect(jsonPath("$.report").value(""));
+
+        org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.textRequests.get());
+    }
+
+    @Test
     void adminEndpointsRejectUnauthenticatedRequestsAndInvalidLogin() throws Exception {
         jdbcTemplate.update(
                 "INSERT INTO stats_link (preview_key, provider_id, canonical_url, title, site_name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -881,6 +1038,12 @@ class PreviewControllerTest {
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/admin/preview-events"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/admin/share-summary/tasks"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/admin/share-summary/runs"))
                 .andExpect(status().isUnauthorized());
 
         org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM stats_event", Integer.class));
@@ -1168,6 +1331,63 @@ class PreviewControllerTest {
         return login.getResponse().getCookie("LINKPEEK_ADMIN_SESSION");
     }
 
+    private void insertStatsLink(String previewKey, String canonicalUrl, String title, long seenAt) {
+        jdbcTemplate.update(
+                "INSERT INTO stats_link (preview_key, provider_id, canonical_url, title, site_name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                previewKey, "stub", canonicalUrl, title, "Example", seenAt, seenAt
+        );
+    }
+
+    private void insertPreviewCreatedEvent(
+            String previewKey,
+            String sourceUrl,
+            long occurredAt,
+            boolean aiRequested,
+            boolean aiSucceeded
+    ) {
+        jdbcTemplate.update(
+                """
+                        INSERT INTO stats_event (
+                            occurred_at,
+                            event_type,
+                            preview_key,
+                            provider_id,
+                            http_status,
+                            cache_hit,
+                            ai_requested,
+                            ai_succeeded,
+                            source_url,
+                            requested_style,
+                            actual_style,
+                            ai_provider_names,
+                            ai_duration_ms,
+                            crawl_duration_ms,
+                            duration_ms,
+                            client_type,
+                            error_code
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                occurredAt,
+                "PREVIEW_CREATED",
+                previewKey,
+                "stub",
+                200,
+                0,
+                aiRequested ? 1 : 0,
+                aiSucceeded ? 1 : 0,
+                sourceUrl,
+                "FUN",
+                "FUN",
+                aiRequested ? "local" : null,
+                aiRequested ? 12 : 0,
+                7,
+                10,
+                "CRAWLER",
+                null
+        );
+    }
+
     private void awaitLinkTitle(String expectedTitle) throws InterruptedException {
         long deadline = System.nanoTime() + 2_000_000_000L;
         while (System.nanoTime() < deadline) {
@@ -1207,8 +1427,11 @@ class PreviewControllerTest {
 
     static final class TestAiTitleClient extends AiTitleClient {
         private final AtomicInteger requests = new AtomicInteger();
+        private final AtomicInteger textRequests = new AtomicInteger();
         private final AtomicReference<AiTitlePrompt> prompt = new AtomicReference<>(new AiTitlePrompt("", "", ""));
+        private final AtomicReference<AiTextPrompt> textPrompt = new AtomicReference<>(new AiTextPrompt("", "", ""));
         private final AtomicReference<String> generatedTitle = new AtomicReference<>("AI title");
+        private final AtomicReference<String> generatedText = new AtomicReference<>("AI summary");
         private final AtomicReference<CountDownLatch> blockedRequestStarted = new AtomicReference<>();
         private final AtomicReference<CountDownLatch> blockedRequestRelease = new AtomicReference<>();
 
@@ -1244,6 +1467,13 @@ class PreviewControllerTest {
             return new AiTitleResult(Optional.ofNullable(generatedTitle.get()), 12);
         }
 
+        @Override
+        public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) {
+            textRequests.incrementAndGet();
+            this.textPrompt.set(prompt);
+            return new AiTextResult(Optional.ofNullable(generatedText.get()), 34);
+        }
+
         void blockNextRequest() {
             blockedRequestStarted.set(new CountDownLatch(1));
             blockedRequestRelease.set(new CountDownLatch(1));
@@ -1263,8 +1493,11 @@ class PreviewControllerTest {
 
         void reset() {
             requests.set(0);
+            textRequests.set(0);
             prompt.set(new AiTitlePrompt("", "", ""));
+            textPrompt.set(new AiTextPrompt("", "", ""));
             generatedTitle.set("AI title");
+            generatedText.set("AI summary");
             releaseBlockedRequest();
             blockedRequestStarted.set(null);
             blockedRequestRelease.set(null);

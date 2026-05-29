@@ -63,3 +63,46 @@ CREATE TABLE IF NOT EXISTS ai_provider (
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_provider_enabled_sort ON ai_provider (enabled, sort_order, id);
+
+CREATE TABLE IF NOT EXISTS share_summary_task (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    enabled INTEGER NOT NULL,
+    period_type TEXT NOT NULL,
+    run_time TEXT NOT NULL,
+    day_of_week INTEGER,
+    day_of_month INTEGER,
+    prompt TEXT NOT NULL,
+    max_links INTEGER NOT NULL,
+    deleted INTEGER NOT NULL DEFAULT 0,
+    deleted_at INTEGER,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_share_summary_task_enabled ON share_summary_task (enabled, deleted, period_type);
+
+CREATE TABLE IF NOT EXISTS share_summary_run (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id INTEGER NOT NULL,
+    task_name TEXT NOT NULL,
+    trigger_type TEXT NOT NULL,
+    period_type TEXT NOT NULL,
+    window_start INTEGER NOT NULL,
+    window_end INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    link_count INTEGER NOT NULL DEFAULT 0,
+    unique_link_count INTEGER NOT NULL DEFAULT 0,
+    input_link_count INTEGER NOT NULL DEFAULT 0,
+    prompt_snapshot TEXT NOT NULL,
+    ai_provider_names TEXT,
+    ai_duration_ms INTEGER NOT NULL DEFAULT 0,
+    report TEXT,
+    error_message TEXT,
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_share_summary_run_task_window ON share_summary_run (task_id, window_start, window_end);
+CREATE INDEX IF NOT EXISTS idx_share_summary_run_started_at ON share_summary_run (started_at);
+CREATE INDEX IF NOT EXISTS idx_share_summary_run_status ON share_summary_run (status);

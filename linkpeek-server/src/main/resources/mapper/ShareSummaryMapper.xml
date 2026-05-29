@@ -1,0 +1,246 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryMapper">
+    <sql id="taskColumns">
+        id,
+        name,
+        enabled,
+        period_type,
+        run_time,
+        day_of_week,
+        day_of_month,
+        prompt,
+        max_links,
+        deleted,
+        deleted_at,
+        created_at,
+        updated_at
+    </sql>
+
+    <sql id="runColumns">
+        id,
+        task_id,
+        task_name,
+        trigger_type,
+        period_type,
+        window_start,
+        window_end,
+        status,
+        link_count,
+        unique_link_count,
+        input_link_count,
+        prompt_snapshot,
+        ai_provider_names,
+        ai_duration_ms,
+        report,
+        error_message,
+        started_at,
+        finished_at
+    </sql>
+
+    <select id="selectTasks" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord">
+        SELECT <include refid="taskColumns"/>
+        FROM share_summary_task
+        WHERE deleted = 0
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectEnabledTasks" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord">
+        SELECT <include refid="taskColumns"/>
+        FROM share_summary_task
+        WHERE deleted = 0
+          AND enabled = 1
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectTask" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord">
+        SELECT <include refid="taskColumns"/>
+        FROM share_summary_task
+        WHERE id = #{id}
+          AND deleted = 0
+    </select>
+
+    <insert id="insertTask"
+            parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO share_summary_task (
+            name,
+            enabled,
+            period_type,
+            run_time,
+            day_of_week,
+            day_of_month,
+            prompt,
+            max_links,
+            deleted,
+            deleted_at,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            #{name},
+            #{enabled},
+            #{periodType},
+            #{runTime},
+            #{dayOfWeek},
+            #{dayOfMonth},
+            #{prompt},
+            #{maxLinks},
+            #{deleted},
+            #{deletedAt},
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateTask" parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord">
+        UPDATE share_summary_task
+        SET
+            name = #{name},
+            enabled = #{enabled},
+            period_type = #{periodType},
+            run_time = #{runTime},
+            day_of_week = #{dayOfWeek},
+            day_of_month = #{dayOfMonth},
+            prompt = #{prompt},
+            max_links = #{maxLinks},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+          AND deleted = 0
+    </update>
+
+    <update id="deleteTask">
+        UPDATE share_summary_task
+        SET
+            deleted = 1,
+            enabled = 0,
+            deleted_at = #{deletedAt},
+            updated_at = #{deletedAt}
+        WHERE id = #{id}
+          AND deleted = 0
+    </update>
+
+    <insert id="insertRun"
+            parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO share_summary_run (
+            task_id,
+            task_name,
+            trigger_type,
+            period_type,
+            window_start,
+            window_end,
+            status,
+            link_count,
+            unique_link_count,
+            input_link_count,
+            prompt_snapshot,
+            ai_provider_names,
+            ai_duration_ms,
+            report,
+            error_message,
+            started_at,
+            finished_at
+        )
+        VALUES (
+            #{taskId},
+            #{taskName},
+            #{triggerType},
+            #{periodType},
+            #{windowStart},
+            #{windowEnd},
+            #{status},
+            #{linkCount},
+            #{uniqueLinkCount},
+            #{inputLinkCount},
+            #{promptSnapshot},
+            #{aiProviderNames},
+            #{aiDurationMs},
+            #{report},
+            #{errorMessage},
+            #{startedAt},
+            #{finishedAt}
+        )
+    </insert>
+
+    <update id="updateRun" parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord">
+        UPDATE share_summary_run
+        SET
+            status = #{status},
+            link_count = #{linkCount},
+            unique_link_count = #{uniqueLinkCount},
+            input_link_count = #{inputLinkCount},
+            ai_provider_names = #{aiProviderNames},
+            ai_duration_ms = #{aiDurationMs},
+            report = #{report},
+            error_message = #{errorMessage},
+            finished_at = #{finishedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="markStaleRunningRunsFailed">
+        UPDATE share_summary_run
+        SET
+            status = 'FAILED',
+            error_message = 'RUNNING timeout exceeded.',
+            finished_at = #{finishedAt}
+        WHERE status = 'RUNNING'
+          AND started_at &lt; #{threshold}
+    </update>
+
+    <select id="selectRun" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord">
+        SELECT <include refid="runColumns"/>
+        FROM share_summary_run
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectLatestCompletedScheduledRun" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord">
+        SELECT <include refid="runColumns"/>
+        FROM share_summary_run
+        WHERE task_id = #{taskId}
+          AND trigger_type = 'SCHEDULED'
+          AND status IN ('SUCCESS', 'EMPTY')
+        ORDER BY window_end DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectScheduledRunForWindow" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord">
+        SELECT <include refid="runColumns"/>
+        FROM share_summary_run
+        WHERE task_id = #{taskId}
+          AND trigger_type = 'SCHEDULED'
+          AND window_start = #{windowStart}
+          AND window_end = #{windowEnd}
+        ORDER BY id DESC
+        LIMIT 1
+    </select>
+
+    <sql id="runFilter">
+        1 = 1
+        <if test="taskId != null">
+            AND task_id = #{taskId}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+    </sql>
+
+    <select id="countRuns" resultType="long">
+        SELECT COUNT(*)
+        FROM share_summary_run
+        WHERE <include refid="runFilter"/>
+    </select>
+
+    <select id="selectRuns" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord">
+        SELECT <include refid="runColumns"/>
+        FROM share_summary_run
+        WHERE <include refid="runFilter"/>
+        ORDER BY started_at DESC, id DESC
+        LIMIT #{limit}
+        OFFSET #{offset}
+    </select>
+</mapper>
