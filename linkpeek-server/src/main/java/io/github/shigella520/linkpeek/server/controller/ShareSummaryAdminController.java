@@ -7,6 +7,7 @@ import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryService;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -75,11 +76,14 @@ public class ShareSummaryAdminController {
     public ShareSummaryRunRecord runTask(
             HttpServletRequest request,
             @PathVariable long taskId,
-            @RequestBody(required = false) ShareSummaryService.ManualRunRequest runRequest
+            @RequestBody(required = false) String requestBody
     ) {
         adminAuthService.requireAuthenticated(request);
+        if (StringUtils.hasText(requestBody)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Manual window overrides are not supported.");
+        }
         try {
-            return shareSummaryService.runTask(taskId, runRequest);
+            return shareSummaryService.runTask(taskId);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }

@@ -33,6 +33,8 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -895,6 +897,18 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.dayOfWeek").value(3))
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist());
 
+        mockMvc.perform(put("/api/admin/share-summary/tasks/{taskId}", taskId)
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"周总结","enabled":true,"periodType":"DAILY","runTime":"00:00","prompt":"按主题聚合","maxLinks":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.periodType").value("DAILY"))
+                .andExpect(jsonPath("$.runTime").value("00:00"))
+                .andExpect(jsonPath("$.dayOfWeek").doesNotExist())
+                .andExpect(jsonPath("$.dayOfMonth").doesNotExist());
+
         mockMvc.perform(post("/api/admin/share-summary/tasks")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -909,8 +923,9 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$[0].id").value(taskId))
                 .andExpect(jsonPath("$[0].name").value("周总结"));
 
-        long windowStart = 1_700_000_000_000L;
-        long windowEnd = windowStart + 86_400_000L;
+        ExpectedWindow window = currentDailyManualWindow();
+        long windowStart = window.start();
+        long windowEnd = window.end();
         insertStatsLink("key-a", "https://example.com/a", "数据库标题 A", windowStart + 1_000L);
         insertStatsLink("key-b", "https://example.com/b", "数据库标题 B", windowStart + 2_000L);
         insertStatsLink("key-c", "https://example.com/c", "数据库标题 C", windowStart + 3_000L);
@@ -923,14 +938,12 @@ class PreviewControllerTest {
         insertPreviewCreatedEvent("key-a", "https://source.example.com/outside", windowEnd + 1_000L, true, true);
 
         mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
-                        .cookie(cookie)
-                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"windowStart\":" + windowStart + ",\"windowEnd\":" + windowEnd + "}"))
+                        .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.taskId").value(taskId))
                 .andExpect(jsonPath("$.taskName").value("周总结"))
                 .andExpect(jsonPath("$.triggerType").value("MANUAL"))
-                .andExpect(jsonPath("$.periodType").value("WEEKLY"))
+                .andExpect(jsonPath("$.periodType").value("DAILY"))
                 .andExpect(jsonPath("$.windowStart").value(windowStart))
                 .andExpect(jsonPath("$.windowEnd").value(windowEnd))
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
@@ -993,15 +1006,19 @@ class PreviewControllerTest {
         Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "空数据总结");
 
         mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
-                        .cookie(cookie)
-                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"windowStart\":1000,\"windowEnd\":2000}"))
+                        .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("EMPTY"))
                 .andExpect(jsonPath("$.linkCount").value(0))
                 .andExpect(jsonPath("$.uniqueLinkCount").value(0))
                 .andExpect(jsonPath("$.inputLinkCount").value(0))
                 .andExpect(jsonPath("$.report").value(""));
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"windowStart\":1000,\"windowEnd\":2000}"))
+                .andExpect(status().isBadRequest());
 
         org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.textRequests.get());
     }
@@ -1402,6 +1419,19 @@ class PreviewControllerTest {
             Thread.sleep(25);
         }
         org.junit.jupiter.api.Assertions.fail("Expected async warmup to store title: " + expectedTitle);
+    }
+
+    private static ExpectedWindow currentDailyManualWindow() {
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate endDate = LocalDate.now(zone);
+        LocalDate startDate = endDate.minusDays(1);
+        return new ExpectedWindow(
+                startDate.atStartOfDay(zone).toInstant().toEpochMilli(),
+                endDate.atStartOfDay(zone).toInstant().toEpochMilli()
+        );
+    }
+
+    private record ExpectedWindow(long start, long end) {
     }
 
     private static void writeTestWebIcon() throws IOException {

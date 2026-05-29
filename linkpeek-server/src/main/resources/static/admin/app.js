@@ -258,7 +258,6 @@
         document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
         document.getElementById("share-summary-task-period").addEventListener("change", updateShareSummaryPeriodFields);
         document.getElementById("share-summary-task-form").addEventListener("submit", saveShareSummaryTask);
-        document.getElementById("share-summary-run-form").addEventListener("submit", runShareSummaryTask);
         document.getElementById("share-summary-refresh-runs").addEventListener("click", async () => {
             await loadShareSummaryRuns();
         });
@@ -393,7 +392,7 @@
     async function loadShareSummaryTasks() {
         state.shareSummaryTasks = await fetchJson("/api/admin/share-summary/tasks");
         renderShareSummaryTasks();
-        renderShareSummaryTaskOptions();
+        renderShareSummaryTaskFilterOptions();
     }
 
     async function loadShareSummaryRuns() {
@@ -696,8 +695,7 @@
         `).join("");
         body.querySelectorAll("[data-run-share-task]").forEach((button) => {
             button.addEventListener("click", async () => {
-                document.getElementById("share-summary-run-task").value = button.dataset.runShareTask;
-                await runShareSummaryTask();
+                await runShareSummaryTask(button.dataset.runShareTask);
             });
         });
         body.querySelectorAll("[data-edit-share-task]").forEach((button) => {
@@ -728,14 +726,10 @@
         });
     }
 
-    function renderShareSummaryTaskOptions() {
-        const options = [`<option value="">请选择任务</option>`]
-                .concat(state.shareSummaryTasks.map((task) => `<option value="${escapeAttribute(task.id)}">${escapeHtml(task.name)}</option>`))
-                .join("");
+    function renderShareSummaryTaskFilterOptions() {
         const filterOptions = [`<option value="">全部任务</option>`]
                 .concat(state.shareSummaryTasks.map((task) => `<option value="${escapeAttribute(task.id)}">${escapeHtml(task.name)}</option>`))
                 .join("");
-        document.getElementById("share-summary-run-task").innerHTML = options;
         document.getElementById("share-summary-run-filter-task").innerHTML = filterOptions;
     }
 
@@ -1079,39 +1073,23 @@
         }
     }
 
-    async function runShareSummaryTask(event) {
-        if (event) {
-            event.preventDefault();
-        }
-        const taskId = document.getElementById("share-summary-run-task").value;
+    async function runShareSummaryTask(taskId) {
         if (!taskId) {
-            setFeedback("share-summary-run-feedback", "请选择分享总结任务。", "is-error");
+            setFeedback("share-summary-feedback", "请选择分享总结任务。", "is-error");
             return;
         }
-        const startedAt = readLocalDateTimeMillis("share-summary-run-start");
-        const endedAt = readLocalDateTimeMillis("share-summary-run-end");
-        if ((startedAt && !endedAt) || (!startedAt && endedAt)) {
-            setFeedback("share-summary-run-feedback", "自定义范围需要同时填写开始和结束时间。", "is-error");
-            return;
-        }
-        if (startedAt && endedAt && startedAt >= endedAt) {
-            setFeedback("share-summary-run-feedback", "开始时间必须早于结束时间。", "is-error");
-            return;
-        }
-        const payload = startedAt && endedAt ? {windowStart: startedAt, windowEnd: endedAt} : {};
-        setFeedback("share-summary-run-feedback", "正在执行分享总结...", "");
+        setFeedback("share-summary-feedback", "正在执行分享总结...", "");
         try {
             const run = await fetchJson(`/api/admin/share-summary/tasks/${encodeURIComponent(taskId)}/run`, {
-                method: "POST",
-                body: JSON.stringify(payload)
+                method: "POST"
             });
             await loadShareSummaryRuns();
-            setFeedback("share-summary-run-feedback", `执行完成：${run.status || "-"}`, run.status === "FAILED" ? "is-error" : "is-success");
+            setFeedback("share-summary-feedback", `执行完成：${run.status || "-"}`, run.status === "FAILED" ? "is-error" : "is-success");
             if (run && run.id) {
                 await openShareSummaryRunDetail(run.id);
             }
         } catch (error) {
-            setFeedback("share-summary-run-feedback", error.message, "is-error");
+            setFeedback("share-summary-feedback", error.message, "is-error");
         }
     }
 
@@ -1376,15 +1354,6 @@
 
     function formatWindow(start, end) {
         return `${formatTimestamp(start)} ~ ${formatTimestamp(end)}`;
-    }
-
-    function readLocalDateTimeMillis(id) {
-        const value = document.getElementById(id).value;
-        if (!value) {
-            return null;
-        }
-        const millis = new Date(value).getTime();
-        return Number.isFinite(millis) ? millis : null;
     }
 
     function validateShareSummaryMaxLinks(value) {

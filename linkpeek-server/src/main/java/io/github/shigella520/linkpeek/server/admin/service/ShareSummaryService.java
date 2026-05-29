@@ -96,9 +96,9 @@ public class ShareSummaryService {
         return new DeleteResponse(shareSummaryMapper.deleteTask(taskId, now()));
     }
 
-    public ShareSummaryRunRecord runTask(long taskId, ManualRunRequest request) {
+    public ShareSummaryRunRecord runTask(long taskId) {
         ShareSummaryTaskRecord task = existingTask(taskId);
-        Window window = manualWindow(task, request);
+        Window window = manualWindow(task);
         return executeWindow(task, window, ShareSummaryTriggerType.MANUAL);
     }
 
@@ -398,13 +398,7 @@ public class ShareSummaryService {
         return task;
     }
 
-    private Window manualWindow(ShareSummaryTaskRecord task, ManualRunRequest request) {
-        if (request != null && request.windowStart() != null && request.windowEnd() != null) {
-            if (request.windowStart() >= request.windowEnd()) {
-                throw new IllegalArgumentException("Window start must be before window end.");
-            }
-            return new Window(request.windowStart(), request.windowEnd());
-        }
+    private Window manualWindow(ShareSummaryTaskRecord task) {
         List<Window> windows = dueWindows(task);
         if (!windows.isEmpty()) {
             return windows.get(windows.size() - 1);
@@ -510,9 +504,6 @@ public class ShareSummaryService {
             String prompt,
             Integer maxLinks
     ) {
-    }
-
-    public record ManualRunRequest(Long windowStart, Long windowEnd) {
     }
 
     public record RunPage(

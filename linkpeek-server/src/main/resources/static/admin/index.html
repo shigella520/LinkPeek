@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260512-danger-slide-confirm-flush">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260530-share-summary-manual-window">
 </head>
 <body>
 <header class="topbar">
@@ -187,31 +187,6 @@
                         </thead>
                         <tbody id="share-summary-task-table"></tbody>
                     </table>
-                </div>
-
-                <div class="prompt-subsection">
-                    <div class="subsection-head subsection-head-actions">
-                        <div>
-                            <p class="panel-kicker">Manual Run</p>
-                            <h3>手动执行</h3>
-                        </div>
-                    </div>
-                    <form id="share-summary-run-form" class="share-summary-manual-form">
-                        <label class="share-summary-task-select">
-                            <span>任务</span>
-                            <select id="share-summary-run-task"></select>
-                        </label>
-                        <label class="share-summary-time-field">
-                            <span>开始时间</span>
-                            <input id="share-summary-run-start" type="datetime-local">
-                        </label>
-                        <label class="share-summary-time-field">
-                            <span>结束时间</span>
-                            <input id="share-summary-run-end" type="datetime-local">
-                        </label>
-                        <button type="submit" class="share-summary-run-button">执行一次</button>
-                    </form>
-                    <p id="share-summary-run-feedback" class="feedback" role="status" aria-live="polite"></p>
                 </div>
 
                 <div class="prompt-subsection">
@@ -520,6 +495,6 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260512-danger-slide-confirm-flush"></script>
+<script src="/admin/app.js?v=20260530-share-summary-manual-window"></script>
 </body>
 </html>

@@ -528,23 +528,11 @@ textarea:focus {
     gap: 14px;
 }
 
-.share-summary-manual-form {
-    display: grid;
-    grid-template-columns: minmax(320px, 1fr) minmax(240px, 300px) minmax(240px, 300px) 150px;
-    align-items: end;
-    gap: 14px;
-}
-
 .share-summary-filter-form {
     display: grid;
     grid-template-columns: minmax(320px, 1fr) minmax(150px, 180px) minmax(130px, 160px);
     align-items: end;
     gap: 14px;
-}
-
-.share-summary-run-button {
-    width: 100%;
-    min-height: 44px;
 }
 
 .log-auto-refresh {
@@ -1058,7 +1046,6 @@ td button.danger {
     .provider-grid,
     .log-controls,
     .preview-event-controls,
-    .share-summary-manual-form,
     .share-summary-filter-form,
     .inline-config-form {
         grid-template-columns: 1fr;
