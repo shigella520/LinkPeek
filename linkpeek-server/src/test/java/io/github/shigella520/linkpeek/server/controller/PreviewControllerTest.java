@@ -837,9 +837,16 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .param("q", "FUN"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items[0].metadataTitle").value(""))
+                .andExpect(jsonPath("$.items[0].metadataTitle").value("AI 管理后台标题"))
                 .andExpect(jsonPath("$.items[0].metadataCached").value(false))
                 .andExpect(jsonPath("$.items[0].thumbnailCached").value(false));
+
+        mockMvc.perform(get("/api/admin/preview-events")
+                        .cookie(cookie)
+                        .param("q", "AI 管理后台标题"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.items[0].previewKey").value(previewKey));
     }
 
     @Test

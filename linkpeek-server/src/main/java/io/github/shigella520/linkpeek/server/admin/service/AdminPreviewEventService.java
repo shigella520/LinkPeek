@@ -1,7 +1,6 @@
 package io.github.shigella520.linkpeek.server.admin.service;
 
 import io.github.shigella520.linkpeek.core.model.PreviewKey;
-import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
 import io.github.shigella520.linkpeek.server.admin.model.AdminPreviewEventRow;
 import io.github.shigella520.linkpeek.server.admin.persistence.AdminPreviewEventMapper;
 import io.github.shigella520.linkpeek.server.cache.DiskCacheManager;
@@ -54,17 +53,13 @@ public class AdminPreviewEventService {
         DiskCacheManager.CacheStatus cacheStatus = previewKey == null
                 ? new DiskCacheManager.CacheStatus(false, false, false)
                 : cacheManager.cacheStatus(previewKey);
-        String metadataTitle = previewKey == null ? "" : cacheManager.getMetadata(previewKey)
-                .map(PreviewMetadata::title)
-                .filter(StringUtils::hasText)
-                .orElse("");
         return new PreviewEventItem(
                 row.getId(),
                 row.getOccurredAt(),
                 row.getPreviewKey(),
                 row.getSourceUrl(),
                 row.getCanonicalUrl(),
-                metadataTitle,
+                row.getMetadataTitle(),
                 row.getProviderId(),
                 row.isAiRequested(),
                 row.isAiSucceeded(),
