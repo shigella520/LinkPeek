@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260530-share-summary-manual-window">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260530-share-summary-ai-image">
 </head>
 <body>
 <header class="topbar">
@@ -100,7 +100,7 @@
                 </form>
                 <p id="ai-downgrade-config-feedback" class="feedback" role="status" aria-live="polite"></p>
                 <div class="table-shell">
-                    <table>
+                    <table class="ai-provider-table">
                         <thead>
                         <tr>
                             <th class="drag-column"></th>
@@ -170,7 +170,10 @@
                         <p class="panel-kicker">Share Summary</p>
                         <h2>分享总结</h2>
                     </div>
-                    <button type="button" id="share-summary-new-button">新建任务</button>
+                    <div class="panel-actions">
+                        <button type="button" class="secondary" id="share-summary-image-config-button">AI 生图配置</button>
+                        <button type="button" id="share-summary-new-button">新建任务</button>
+                    </div>
                 </div>
                 <p id="share-summary-feedback" class="feedback" role="status" aria-live="polite"></p>
                 <div class="table-shell share-summary-task-shell">
@@ -233,6 +236,7 @@
                                 <th>状态</th>
                                 <th>链接</th>
                                 <th>AI</th>
+                                <th>分享图</th>
                                 <th>操作</th>
                             </tr>
                             </thead>
@@ -483,6 +487,68 @@
     </section>
 </div>
 
+<div class="modal-shell" id="share-summary-image-config-modal" hidden>
+    <div class="modal-backdrop" data-close-modal="share-summary-image-config"></div>
+    <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="share-summary-image-config-modal-title">
+        <div class="modal-head">
+            <h3 id="share-summary-image-config-modal-title">AI 生图配置</h3>
+            <button type="button" class="secondary" id="share-summary-image-config-cancel-button">取消</button>
+        </div>
+        <form id="share-summary-image-config-form" class="grid-form">
+            <label class="checkbox-field">
+                <input id="share-summary-image-enabled" type="checkbox">
+                <span>启用 AI 生图</span>
+            </label>
+            <label class="checkbox-field">
+                <input id="share-summary-image-auto-generate" type="checkbox">
+                <span>分享总结成功后自动生成</span>
+            </label>
+            <label>
+                <span>Provider</span>
+                <select id="share-summary-image-provider-type">
+                    <option value="OPENAI_COMPATIBLE">OpenAI Compatible</option>
+                </select>
+            </label>
+            <label>
+                <span>Base URL</span>
+                <input id="share-summary-image-base-url" type="url" placeholder="https://api.openai.com">
+            </label>
+            <label>
+                <span>Endpoint Path</span>
+                <input id="share-summary-image-endpoint-path" type="text" value="/v1/images/generations">
+            </label>
+            <label>
+                <span>API Key</span>
+                <input id="share-summary-image-api-key" type="password" autocomplete="off" placeholder="留空表示不修改">
+            </label>
+            <label>
+                <span>Model</span>
+                <input id="share-summary-image-model" type="text" autocomplete="off" placeholder="gpt-image-2">
+            </label>
+            <label>
+                <span>Size</span>
+                <input id="share-summary-image-size" type="text" value="auto" placeholder="auto / 1536x1024 / 1024x1024">
+            </label>
+            <label>
+                <span>Quality</span>
+                <input id="share-summary-image-quality" type="text" value="auto">
+            </label>
+            <label>
+                <span>Timeout</span>
+                <input id="share-summary-image-timeout" type="number" min="1" max="600" value="300">
+            </label>
+            <label class="full">
+                <span>风格提示词</span>
+                <textarea id="share-summary-image-style-prompt" rows="5"></textarea>
+            </label>
+            <div class="modal-actions wide">
+                <button type="submit">保存配置</button>
+            </div>
+        </form>
+        <p id="share-summary-image-config-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
+    </section>
+</div>
+
 <div class="modal-shell" id="share-summary-run-modal" hidden>
     <div class="modal-backdrop" data-close-modal="share-summary-run"></div>
     <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="share-summary-run-modal-title">
@@ -495,6 +561,6 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260530-share-summary-manual-window"></script>
+<script src="/admin/app.js?v=20260530-share-summary-ai-image"></script>
 </body>
 </html>

@@ -246,6 +246,23 @@ main {
     min-width: 0;
 }
 
+.panel-actions,
+.section-title-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.section-title-row {
+    margin-bottom: 12px;
+}
+
+.section-title-row h4 {
+    margin: 0;
+}
+
 .description,
 .feedback {
     color: var(--muted);
@@ -668,14 +685,16 @@ table {
 }
 
 .share-summary-task-table,
-.share-summary-run-table {
+.ai-provider-table,
+.share-summary-run-table,
+.share-summary-image-attempt-table {
     min-width: 0;
     table-layout: fixed;
 }
 
 .share-summary-task-table th:nth-child(1),
 .share-summary-task-table td:nth-child(1) {
-    width: 55%;
+    width: 44%;
 }
 
 .share-summary-task-table th:nth-child(2),
@@ -700,42 +719,87 @@ table {
 
 .share-summary-task-table th:nth-child(6),
 .share-summary-task-table td:nth-child(6) {
-    width: 260px;
+    width: 300px;
+}
+
+.ai-provider-table th:nth-child(1),
+.ai-provider-table td:nth-child(1) {
+    width: 46px;
+}
+
+.ai-provider-table th:nth-child(2),
+.ai-provider-table td:nth-child(2) {
+    width: 120px;
+}
+
+.ai-provider-table th:nth-child(3),
+.ai-provider-table td:nth-child(3) {
+    width: 20%;
+}
+
+.ai-provider-table th:nth-child(4),
+.ai-provider-table td:nth-child(4) {
+    width: 120px;
+}
+
+.ai-provider-table th:nth-child(5),
+.ai-provider-table td:nth-child(5) {
+    width: 14%;
+}
+
+.ai-provider-table th:nth-child(6),
+.ai-provider-table td:nth-child(6) {
+    width: 86px;
+}
+
+.ai-provider-table th:nth-child(7),
+.ai-provider-table td:nth-child(7) {
+    width: 104px;
+}
+
+.ai-provider-table th:nth-child(8),
+.ai-provider-table td:nth-child(8) {
+    width: 300px;
 }
 
 .share-summary-run-table th:nth-child(1),
 .share-summary-run-table td:nth-child(1) {
-    width: 170px;
+    width: 158px;
 }
 
 .share-summary-run-table th:nth-child(2),
 .share-summary-run-table td:nth-child(2) {
-    width: 150px;
+    width: 140px;
 }
 
 .share-summary-run-table th:nth-child(3),
 .share-summary-run-table td:nth-child(3) {
-    width: 34%;
+    width: 185px;
 }
 
 .share-summary-run-table th:nth-child(4),
 .share-summary-run-table td:nth-child(4) {
-    width: 110px;
+    width: 108px;
 }
 
 .share-summary-run-table th:nth-child(5),
 .share-summary-run-table td:nth-child(5) {
-    width: 110px;
+    width: 102px;
 }
 
 .share-summary-run-table th:nth-child(6),
 .share-summary-run-table td:nth-child(6) {
-    width: 150px;
+    width: 128px;
 }
 
 .share-summary-run-table th:nth-child(7),
 .share-summary-run-table td:nth-child(7) {
-    width: 86px;
+    width: 210px;
+}
+
+.share-summary-run-table th:nth-child(8),
+.share-summary-run-table td:nth-child(8) {
+    width: 178px;
 }
 
 .preview-event-table {
@@ -780,7 +844,7 @@ td {
     text-align: left;
     vertical-align: top;
     font-size: 14px;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
 }
 
 tr:last-child td {
@@ -822,10 +886,138 @@ button.drag-handle:active {
 }
 
 td .row-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
-    min-width: max-content;
+    min-width: 0;
+}
+
+.share-summary-run-table td .row-actions button {
+    width: 100%;
+    min-height: 32px;
+    padding: 6px 8px;
+    white-space: nowrap;
+}
+
+td .ai-provider-actions,
+td .share-summary-task-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.ai-provider-actions button,
+.share-summary-task-actions button {
+    width: 100%;
+    min-height: 32px;
+    padding: 6px 4px;
+    white-space: nowrap;
+}
+
+.share-summary-image-cell {
+    display: grid;
+    grid-template-columns: 72px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: center;
+    gap: 8px 10px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.share-summary-image-thumb-slot {
+    min-width: 0;
+}
+
+.share-summary-image-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.share-summary-image-title {
+    grid-column: 1 / -1;
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.share-summary-thumb {
+    width: 72px;
+    aspect-ratio: 1200 / 630;
+    object-fit: cover;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #f4f6f9;
+    flex: 0 0 auto;
+}
+
+.share-summary-thumb-placeholder {
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.summary-window-cell,
+.share-summary-run-table td:nth-child(1),
+.share-summary-run-table td:nth-child(5),
+.share-summary-run-table td:nth-child(6) {
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.window-range {
+    display: grid;
+    gap: 4px;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.window-range span + span::before {
+    content: "to ";
+    color: var(--muted);
+    font-size: 12px;
+}
+
+.single-line {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.share-summary-preview {
+    width: min(100%, 720px);
+    aspect-ratio: 1200 / 630;
+    object-fit: cover;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f4f6f9;
+}
+
+.share-summary-preview-placeholder {
+    display: grid;
+    place-items: center;
+    width: min(100%, 720px);
+    aspect-ratio: 1200 / 630;
+    border: 1px dashed var(--line);
+    border-radius: 8px;
+    color: var(--muted);
+    background: #f8fafc;
+}
+
+.share-summary-image-detail {
+    display: grid;
+    gap: 16px;
+    margin-bottom: 16px;
 }
 
 .nowrap {
@@ -885,6 +1077,13 @@ td .row-actions {
     border-color: rgba(180, 35, 24, 0.22);
     background: rgba(180, 35, 24, 0.08);
     color: var(--danger);
+}
+
+.status-pill-compact {
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .cache-badges {

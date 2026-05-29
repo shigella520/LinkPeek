@@ -22,6 +22,8 @@
             total: 0,
             totalPages: 0
         },
+        shareSummaryImageConfig: {},
+        activeShareSummaryRunId: null,
         aiProviderDowngradeSaveTimer: null,
         aiProviderDowngradeSaveVersion: 0,
         logRefreshTimer: null,
@@ -254,6 +256,9 @@
 
     function bindShareSummary() {
         document.getElementById("share-summary-new-button").addEventListener("click", openShareSummaryTaskModalForCreate);
+        document.getElementById("share-summary-image-config-button").addEventListener("click", openShareSummaryImageConfigModal);
+        document.getElementById("share-summary-image-config-cancel-button").addEventListener("click", closeShareSummaryImageConfigModal);
+        document.getElementById("share-summary-image-config-form").addEventListener("submit", saveShareSummaryImageConfig);
         document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
         document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
         document.getElementById("share-summary-task-period").addEventListener("change", updateShareSummaryPeriodFields);
@@ -296,6 +301,10 @@
                     closeShareSummaryTaskModal();
                     return;
                 }
+                if (node.dataset.closeModal === "share-summary-image-config") {
+                    closeShareSummaryImageConfigModal();
+                    return;
+                }
                 if (node.dataset.closeModal === "share-summary-run") {
                     closeShareSummaryRunModal();
                 }
@@ -315,6 +324,10 @@
             }
             if (!document.getElementById("share-summary-task-modal").hidden) {
                 closeShareSummaryTaskModal();
+                return;
+            }
+            if (!document.getElementById("share-summary-image-config-modal").hidden) {
+                closeShareSummaryImageConfigModal();
                 return;
             }
             if (!document.getElementById("share-summary-run-modal").hidden) {
@@ -385,8 +398,13 @@
     }
 
     async function loadShareSummary() {
+        await loadShareSummaryImageConfig();
         await loadShareSummaryTasks();
         await loadShareSummaryRuns();
+    }
+
+    async function loadShareSummaryImageConfig() {
+        state.shareSummaryImageConfig = await fetchJson("/api/admin/share-summary/image-config");
     }
 
     async function loadShareSummaryTasks() {
@@ -560,7 +578,7 @@
                     </label>
                 </td>
                 <td>
-                    <div class="row-actions">
+                    <div class="row-actions ai-provider-actions">
                         <button type="button" data-test-ai="${provider.id}" class="secondary test-button">测试</button>
                         <button type="button" data-edit-ai="${provider.id}" class="secondary">编辑</button>
                         <button type="button" data-delete-ai="${provider.id}" class="danger">删除</button>
@@ -685,7 +703,7 @@
                     <td class="nowrap">${escapeHtml(task.maxLinks || 100)}</td>
                 <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
                 <td>
-                    <div class="row-actions">
+                    <div class="row-actions share-summary-task-actions">
                         <button type="button" class="secondary" data-run-share-task="${task.id}">执行</button>
                         <button type="button" class="secondary" data-edit-share-task="${task.id}">编辑</button>
                         <button type="button" class="danger" data-delete-share-task="${task.id}">删除</button>
@@ -738,24 +756,62 @@
         const items = Array.isArray(payload.items) ? payload.items : [];
         const body = document.getElementById("share-summary-run-table");
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="7" class="muted">暂无分享总结记录</td></tr>`;
+            body.innerHTML = `<tr><td colspan="8" class="muted">暂无分享总结记录</td></tr>`;
         } else {
             body.innerHTML = items.map((run) => `
                 <tr>
                     <td class="nowrap">${escapeHtml(formatTimestamp(run.startedAt))}</td>
                     <td>${escapeHtml(run.taskName || "-")}<div class="keyline">${escapeHtml(run.triggerType || "-")}</div></td>
-                    <td class="summary-window-cell">${escapeHtml(formatWindow(run.windowStart, run.windowEnd))}</td>
+                    <td class="summary-window-cell">${renderSummaryWindow(run.windowStart, run.windowEnd)}</td>
                     <td>${renderRunStatus(run.status)}</td>
                     <td>${escapeHtml(run.linkCount || 0)} / ${escapeHtml(run.uniqueLinkCount || 0)} / ${escapeHtml(run.inputLinkCount || 0)}</td>
                     <td>${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
-                    <td><button type="button" class="secondary" data-view-share-run="${run.id}">详情</button></td>
+                    <td>${renderShareSummaryImageCell(run)}</td>
+                    <td>${renderShareSummaryRunActions(run)}</td>
                 </tr>
             `).join("");
         }
         body.querySelectorAll("[data-view-share-run]").forEach((button) => {
             button.addEventListener("click", () => openShareSummaryRunDetail(button.dataset.viewShareRun));
         });
+        bindShareSummaryImageButtons(body);
         renderShareSummaryRunPagination(payload);
+    }
+
+    function renderShareSummaryImageCell(run) {
+        const status = run.imageStatus || "NOT_GENERATED";
+        const image = run.latestImageUrl
+                ? `<img class="share-summary-thumb" src="${escapeAttribute(run.latestImageUrl)}" alt="">`
+                : `<div class="share-summary-thumb share-summary-thumb-placeholder">-</div>`;
+        const title = run.ogTitle || "暂无分享图";
+        return `
+            <div class="share-summary-image-cell">
+                <div class="share-summary-image-thumb-slot">${image}</div>
+                <div class="share-summary-image-meta">
+                    ${renderImageStatusCompact(status)}
+                </div>
+                <div class="share-summary-image-title" title="${escapeAttribute(title)}">${escapeHtml(title)}</div>
+            </div>
+        `;
+    }
+
+    function renderShareSummaryRunActions(run) {
+        const canGenerate = run.status === "SUCCESS";
+        const hasImage = Boolean(run.ogImageUrl);
+        return `
+            <div class="row-actions">
+                <button type="button" class="secondary" data-view-share-run="${escapeAttribute(run.id)}">详情</button>
+                ${renderShareSummaryImageActionButton(run, canGenerate, hasImage)}
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG</button>
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图</button>
+            </div>
+        `;
+    }
+
+    function renderShareSummaryImageActionButton(run, canGenerate = run.status === "SUCCESS", hasImage = Boolean(run.ogImageUrl)) {
+        const imageActionAttribute = hasImage ? "data-regenerate-share-image" : "data-generate-share-image";
+        const imageActionLabel = hasImage ? "重生成" : "生成图";
+        return `<button type="button" class="secondary" ${imageActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate ? "" : "disabled"}>${imageActionLabel}</button>`;
     }
 
     function renderShareSummaryRunPagination(payload) {
@@ -773,6 +829,79 @@
         const normalized = status || "-";
         const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" ? "is-warning" : "";
         return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+    }
+
+    function renderSummaryWindow(start, end) {
+        return `
+            <div class="window-range">
+                <span>${escapeHtml(formatShortTimestamp(start))}</span>
+                <span>${escapeHtml(formatShortTimestamp(end))}</span>
+            </div>
+        `;
+    }
+
+    function renderImageStatus(status) {
+        const normalized = status || "NOT_GENERATED";
+        const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" || normalized === "TIMEOUT" ? "is-warning" : "";
+        return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+    }
+
+    function renderImageStatusCompact(status) {
+        const normalized = status || "NOT_GENERATED";
+        const labels = {
+            NOT_GENERATED: "未生成",
+            PENDING: "排队",
+            GENERATING: "生成中",
+            SUCCESS: "SUCCESS",
+            FAILED: "失败",
+            TIMEOUT: "超时"
+        };
+        const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" || normalized === "TIMEOUT" ? "is-warning" : "";
+        return `<span class="status-pill status-pill-compact ${className}" title="${escapeAttribute(normalized)}">${escapeHtml(labels[normalized] || normalized)}</span>`;
+    }
+
+    function bindShareSummaryImageButtons(root) {
+        root.querySelectorAll("[data-generate-share-image]").forEach((button) => {
+            button.addEventListener("click", () => generateShareSummaryImage(button.dataset.generateShareImage, false));
+        });
+        root.querySelectorAll("[data-regenerate-share-image]").forEach((button) => {
+            button.addEventListener("click", () => generateShareSummaryImage(button.dataset.regenerateShareImage, true));
+        });
+        root.querySelectorAll("[data-copy-url]").forEach((button) => {
+            button.addEventListener("click", () => copyShareSummaryUrl(button.dataset.copyUrl));
+        });
+    }
+
+    async function generateShareSummaryImage(runId, regenerate) {
+        if (!runId) {
+            return;
+        }
+        setFeedback("share-summary-history-feedback", regenerate ? "正在重新生成分享图..." : "正在生成分享图...", "");
+        try {
+            const path = regenerate ? "image/regenerate" : "image";
+            await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/${path}`, {method: "POST"});
+            await loadShareSummaryRuns();
+            if (state.activeShareSummaryRunId && String(state.activeShareSummaryRunId) === String(runId)) {
+                await openShareSummaryRunDetail(runId);
+            }
+            setFeedback("share-summary-history-feedback", "分享图任务已提交。", "is-success");
+        } catch (error) {
+            setFeedback("share-summary-history-feedback", error.message, "is-error");
+            setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    async function copyShareSummaryUrl(url) {
+        if (!url) {
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(url);
+            setFeedback("share-summary-history-feedback", "链接已复制。", "is-success");
+            setFeedback("share-summary-run-modal-feedback", "链接已复制。", "is-success");
+        } catch (error) {
+            window.prompt("复制链接", url);
+        }
     }
 
     function periodLabel(value) {
@@ -1093,6 +1222,104 @@
         }
     }
 
+    async function openShareSummaryImageConfigModal() {
+        openModal("share-summary-image-config-modal");
+        setFeedback("share-summary-image-config-modal-feedback", "正在读取 AI 生图配置...", "");
+        try {
+            await loadShareSummaryImageConfig();
+            fillShareSummaryImageConfigForm(state.shareSummaryImageConfig || {});
+            setFeedback("share-summary-image-config-modal-feedback", "", "");
+        } catch (error) {
+            setFeedback("share-summary-image-config-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    function closeShareSummaryImageConfigModal(clearFeedback = true) {
+        closeModal("share-summary-image-config-modal");
+        document.getElementById("share-summary-image-config-form").reset();
+        if (clearFeedback) {
+            setFeedback("share-summary-image-config-modal-feedback", "", "");
+        }
+    }
+
+    function fillShareSummaryImageConfigForm(config) {
+        document.getElementById("share-summary-image-enabled").checked = Boolean(config.enabled);
+        document.getElementById("share-summary-image-auto-generate").checked = Boolean(config.autoGenerate);
+        document.getElementById("share-summary-image-provider-type").value = config.providerType || "OPENAI_COMPATIBLE";
+        document.getElementById("share-summary-image-base-url").value = config.baseUrl || "";
+        document.getElementById("share-summary-image-endpoint-path").value = config.endpointPath || "/v1/images/generations";
+        document.getElementById("share-summary-image-api-key").value = "";
+        document.getElementById("share-summary-image-api-key").placeholder = config.apiKeyConfigured ? "已配置，留空表示不修改" : "请输入 API Key";
+        document.getElementById("share-summary-image-model").value = config.model || "";
+        document.getElementById("share-summary-image-size").value = config.imageSize || "auto";
+        document.getElementById("share-summary-image-quality").value = config.quality || "auto";
+        document.getElementById("share-summary-image-timeout").value = config.requestTimeoutSeconds || 300;
+        document.getElementById("share-summary-image-style-prompt").value = config.stylePrompt || "";
+    }
+
+    async function saveShareSummaryImageConfig(event) {
+        event.preventDefault();
+        const payload = {
+            enabled: document.getElementById("share-summary-image-enabled").checked,
+            autoGenerate: document.getElementById("share-summary-image-auto-generate").checked,
+            providerType: document.getElementById("share-summary-image-provider-type").value,
+            baseUrl: document.getElementById("share-summary-image-base-url").value.trim(),
+            endpointPath: document.getElementById("share-summary-image-endpoint-path").value.trim(),
+            apiKey: document.getElementById("share-summary-image-api-key").value.trim(),
+            model: document.getElementById("share-summary-image-model").value.trim(),
+            imageSize: document.getElementById("share-summary-image-size").value.trim(),
+            quality: document.getElementById("share-summary-image-quality").value.trim(),
+            outputFormat: "png",
+            stylePrompt: document.getElementById("share-summary-image-style-prompt").value.trim(),
+            requestTimeoutSeconds: Number(document.getElementById("share-summary-image-timeout").value || 300)
+        };
+        const error = validateShareSummaryImageConfig(payload);
+        if (error) {
+            setFeedback("share-summary-image-config-modal-feedback", error, "is-error");
+            return;
+        }
+        setFeedback("share-summary-image-config-modal-feedback", "正在保存 AI 生图配置...", "");
+        try {
+            state.shareSummaryImageConfig = await fetchJson("/api/admin/share-summary/image-config", {
+                method: "PUT",
+                body: JSON.stringify(payload)
+            });
+            fillShareSummaryImageConfigForm(state.shareSummaryImageConfig);
+            setFeedback("share-summary-image-config-modal-feedback", "AI 生图配置已保存。", "is-success");
+        } catch (saveError) {
+            setFeedback("share-summary-image-config-modal-feedback", saveError.message, "is-error");
+        }
+    }
+
+    function validateShareSummaryImageConfig(payload) {
+        if (payload.enabled || payload.autoGenerate) {
+            if (!payload.baseUrl) {
+                return "Base URL 不能为空。";
+            }
+            try {
+                const url = new URL(payload.baseUrl);
+                if (url.protocol !== "http:" && url.protocol !== "https:") {
+                    return "Base URL 必须使用 http 或 https。";
+                }
+            } catch (error) {
+                return "Base URL 必须是合法 URL。";
+            }
+            if (!payload.model) {
+                return "Model 不能为空。";
+            }
+        }
+        if (!payload.endpointPath) {
+            return "Endpoint Path 不能为空。";
+        }
+        if (!["auto", "1024x1024", "1536x1024", "1024x1536"].includes((payload.imageSize || "").toLowerCase())) {
+            return "Size 必须是 auto、1024x1024、1536x1024 或 1024x1536。";
+        }
+        if (!Number.isInteger(payload.requestTimeoutSeconds) || payload.requestTimeoutSeconds < 1 || payload.requestTimeoutSeconds > 600) {
+            return "Timeout 必须是 1-600 秒之间的整数。";
+        }
+        return "";
+    }
+
     function openShareSummaryTaskModalForCreate() {
         resetShareSummaryTaskForm();
         document.getElementById("share-summary-task-modal-title").textContent = "新建分享总结任务";
@@ -1146,13 +1373,16 @@
     }
 
     async function openShareSummaryRunDetail(runId) {
+        state.activeShareSummaryRunId = runId;
         openModal("share-summary-run-modal");
         document.getElementById("share-summary-run-detail").innerHTML = `<p class="muted">正在读取详情...</p>`;
         setFeedback("share-summary-run-modal-feedback", "", "");
         try {
             const run = await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}`);
+            const images = await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/images`);
             document.getElementById("share-summary-run-modal-title").textContent = `分享总结详情：${run.taskName || run.id}`;
-            document.getElementById("share-summary-run-detail").innerHTML = renderShareSummaryRunDetail(run);
+            document.getElementById("share-summary-run-detail").innerHTML = renderShareSummaryRunDetail(run, images);
+            bindShareSummaryImageButtons(document.getElementById("share-summary-run-detail"));
         } catch (error) {
             setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
         }
@@ -1160,6 +1390,7 @@
 
     function closeShareSummaryRunModal() {
         closeModal("share-summary-run-modal");
+        state.activeShareSummaryRunId = null;
         setFeedback("share-summary-run-modal-feedback", "", "");
     }
 
@@ -1333,6 +1564,16 @@
         return new Date(value).toLocaleString();
     }
 
+    function formatShortTimestamp(value) {
+        if (!value) {
+            return "n/a";
+        }
+        const date = new Date(value);
+        const datePart = date.toLocaleDateString();
+        const timePart = date.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+        return `${datePart} ${timePart}`;
+    }
+
     function formatBytes(value) {
         const bytes = Number(value || 0);
         if (bytes < 1024) {
@@ -1363,7 +1604,7 @@
         return "";
     }
 
-    function renderShareSummaryRunDetail(run) {
+    function renderShareSummaryRunDetail(run, images = []) {
         return `
             <div class="summary-detail-grid">
                 <div><b>状态</b><span>${renderRunStatus(run.status)}</span></div>
@@ -1373,6 +1614,17 @@
                 <div><b>AI Provider</b><span>${escapeHtml(run.aiProviderNames || "-")}</span></div>
                 <div><b>AI 耗时</b><span>${escapeHtml(formatDuration(run.aiDurationMs))}</span></div>
             </div>
+            <section class="summary-detail-section">
+                <div class="section-title-row">
+                    <h4>分享图</h4>
+                    <div class="row-actions">
+                        ${renderShareSummaryImageActionButton(run)}
+                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制 OG 分享链接</button>
+                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图片直链</button>
+                    </div>
+                </div>
+                ${renderShareSummaryImageDetail(run, images)}
+            </section>
             ${run.errorMessage ? `<section class="summary-detail-section"><h4>错误信息</h4><pre class="summary-report is-error">${escapeHtml(run.errorMessage)}</pre></section>` : ""}
             <section class="summary-detail-section">
                 <h4>总结报告</h4>
@@ -1383,6 +1635,58 @@
                 <pre class="summary-report summary-report-prompt">${escapeHtml(run.promptSnapshot || "")}</pre>
             </section>
         `;
+    }
+
+    function renderShareSummaryImageDetail(run, images) {
+        const attempts = Array.isArray(images) ? images : [];
+        const preview = run.latestImageUrl
+                ? `<img class="share-summary-preview" src="${escapeAttribute(run.latestImageUrl)}" alt="">`
+                : `<div class="share-summary-preview-placeholder">暂无分享图</div>`;
+        const meta = `
+            <div class="summary-detail-grid">
+                <div><b>图片状态</b><span>${renderImageStatus(run.imageStatus || "NOT_GENERATED")}</span></div>
+                <div><b>OG 标题</b><span>${escapeHtml(run.ogTitle || "-")}</span></div>
+                <div><b>OG 描述</b><span>${escapeHtml(run.ogDescription || "-")}</span></div>
+                <div><b>OG 分享链接</b><span class="url-cell">${escapeHtml(shareSummaryOgShareUrl(run) || "-")}</span></div>
+                <div><b>图片直链</b><span class="url-cell">${escapeHtml(run.ogImageUrl || "-")}</span></div>
+                <div><b>错误</b><span>${escapeHtml(run.imageErrorMessage || "-")}</span></div>
+            </div>
+        `;
+        const rows = attempts.length ? attempts.map((image) => `
+            <tr>
+                <td>${escapeHtml(image.attemptNo || "-")}</td>
+                <td>${renderImageStatus(image.status)}</td>
+                <td>${escapeHtml(image.model || "-")}<div class="keyline">${escapeHtml(image.imageSize || "-")} · ${escapeHtml(image.quality || "-")}</div></td>
+                <td>${escapeHtml(formatDuration(image.durationMs))}</td>
+                <td>${escapeHtml(formatTimestamp(image.createdAt))}</td>
+                <td>${escapeHtml(image.errorMessage || "-")}</td>
+            </tr>
+        `).join("") : `<tr><td colspan="6" class="muted">暂无生成记录</td></tr>`;
+        return `
+            <div class="share-summary-image-detail">
+                ${preview}
+                ${meta}
+            </div>
+            <div class="table-shell">
+                <table class="share-summary-image-attempt-table">
+                    <thead>
+                    <tr>
+                        <th>次数</th>
+                        <th>状态</th>
+                        <th>模型</th>
+                        <th>耗时</th>
+                        <th>创建时间</th>
+                        <th>错误</th>
+                    </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function shareSummaryOgShareUrl(run) {
+        return run.ogShareUrl || run.ogPageUrl || "";
     }
 
     function shortPreviewKey(value) {

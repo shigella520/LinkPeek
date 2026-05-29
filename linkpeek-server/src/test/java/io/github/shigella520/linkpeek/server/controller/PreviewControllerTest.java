@@ -8,6 +8,7 @@ import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClient;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
 import io.github.shigella520.linkpeek.server.ai.AiTitlePrompt;
@@ -34,6 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
@@ -105,6 +107,9 @@ class PreviewControllerTest {
     @Autowired
     private TestAiTitleClient testAiTitleClient;
 
+    @Autowired
+    private TestShareSummaryImageClient testShareSummaryImageClient;
+
     @BeforeEach
     void setUp() throws IOException {
         Files.walk(TEST_CACHE_DIR)
@@ -122,6 +127,8 @@ class PreviewControllerTest {
         Files.deleteIfExists(TEST_SERVICE_LOG);
         jdbcTemplate.execute("DELETE FROM stats_event");
         jdbcTemplate.execute("DELETE FROM stats_link");
+        jdbcTemplate.execute("DELETE FROM share_summary_image");
+        jdbcTemplate.execute("DELETE FROM share_summary_image_config");
         jdbcTemplate.execute("DELETE FROM share_summary_run");
         jdbcTemplate.execute("DELETE FROM share_summary_task");
         jdbcTemplate.execute("DELETE FROM admin_prompt");
@@ -130,6 +137,7 @@ class PreviewControllerTest {
 
         testPreviewProvider.reset();
         testAiTitleClient.reset();
+        testShareSummaryImageClient.reset();
     }
 
     @AfterAll
@@ -1024,6 +1032,107 @@ class PreviewControllerTest {
     }
 
     @Test
+    void adminShareSummaryImageConfigGenerationAndPublicOgEndpoints() throws Exception {
+        Cookie cookie = adminCookie();
+        long now = System.currentTimeMillis();
+        testAiTitleClient.generatedText.set("""
+                # 分享总结报告正文
+
+                ## 关键洞察
+
+                - 链接分享增长
+                - **内容洞察**稳定
+                """);
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "local", 1, 1, "https://api.openai.com/v1", "RESPONSES", "test-model", "low", "test-key", now
+        );
+
+        mockMvc.perform(get("/api/admin/share-summary/image-config"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(put("/api/admin/share-summary/image-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://api.example.com","endpointPath":"/v1/images/generations","apiKey":"sk-image","model":"image-model","imageSize":"auto","quality":"auto","outputFormat":"png","stylePrompt":"科技感数据报告","requestTimeoutSeconds":300}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.apiKeyConfigured").value(true))
+                .andExpect(jsonPath("$.model").value("image-model"));
+
+        mockMvc.perform(put("/api/admin/share-summary/image-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://api.example.com","endpointPath":"/v1/images/generations","apiKey":"","model":"image-model-2","imageSize":"auto","quality":"auto","outputFormat":"png","stylePrompt":"科技感数据报告","requestTimeoutSeconds":300}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.apiKeyConfigured").value(true))
+                .andExpect(jsonPath("$.model").value("image-model-2"));
+        org.junit.jupiter.api.Assertions.assertEquals("sk-image", jdbcTemplate.queryForObject("SELECT api_key FROM share_summary_image_config WHERE id = 1", String.class));
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"图片总结","enabled":false,"periodType":"MONTHLY","runTime":"09:00","dayOfMonth":1,"prompt":"总结","maxLinks":5}
+                                """))
+                .andExpect(status().isOk());
+        Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "图片总结");
+        ExpectedWindow window = currentMonthlyManualWindow();
+        insertStatsLink("image-key", "https://example.com/image", "图片测试标题", window.start() + 1_000L);
+        insertPreviewCreatedEvent("image-key", "https://source.example.com/image", window.start() + 1_000L, true, true);
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"))
+                .andExpect(jsonPath("$.imageStatus").value("NOT_GENERATED"));
+        Long runId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_run WHERE task_id = ?", Long.class, taskId);
+
+        mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/image", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PENDING"));
+
+        waitForImageSuccess(runId);
+        org.junit.jupiter.api.Assertions.assertEquals(1, testShareSummaryImageClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryImageClient.prompt.get().contains("LinkPeek - "));
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryImageClient.prompt.get().contains("科技感数据报告"));
+
+        mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.imageStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.ogImageUrl").value(containsString("/share-summary/og-images/")))
+                .andExpect(jsonPath("$.ogPageUrl").value(containsString("/share-summary/reports/")))
+                .andExpect(jsonPath("$.ogTitle").value(containsString("LinkPeek - ")))
+                .andExpect(jsonPath("$.ogDescription").value(containsString("链接分享与内容洞察")));
+
+        mockMvc.perform(get("/api/admin/share-summary/runs")
+                        .cookie(cookie)
+                        .param("taskId", String.valueOf(taskId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].imageStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.items[0].ogImageUrl").value(containsString("/share-summary/og-images/")));
+
+        String publicToken = jdbcTemplate.queryForObject("SELECT public_token FROM share_summary_image WHERE run_id = ?", String.class, runId);
+        mockMvc.perform(get("/share-summary/og-images/{publicToken}.png", publicToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "image/png"));
+
+        mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("og:title")))
+                .andExpect(content().string(containsString("og:image")))
+                .andExpect(content().string(containsString("<h2>分享总结报告正文</h2>")))
+                .andExpect(content().string(containsString("<li>链接分享增长</li>")))
+                .andExpect(content().string(containsString("<strong>内容洞察</strong>")));
+    }
+
+    @Test
     void adminEndpointsRejectUnauthenticatedRequestsAndInvalidLogin() throws Exception {
         jdbcTemplate.update(
                 "INSERT INTO stats_link (preview_key, provider_id, canonical_url, title, site_name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -1421,10 +1530,36 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.fail("Expected async warmup to store title: " + expectedTitle);
     }
 
+    private void waitForImageSuccess(long runId) throws InterruptedException {
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            List<String> statuses = jdbcTemplate.queryForList(
+                    "SELECT status FROM share_summary_image WHERE run_id = ? ORDER BY id DESC",
+                    String.class,
+                    runId
+            );
+            if (!statuses.isEmpty() && "SUCCESS".equals(statuses.get(0))) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected share summary image generation to succeed.");
+    }
+
     private static ExpectedWindow currentDailyManualWindow() {
         ZoneId zone = ZoneId.systemDefault();
         LocalDate endDate = LocalDate.now(zone);
         LocalDate startDate = endDate.minusDays(1);
+        return new ExpectedWindow(
+                startDate.atStartOfDay(zone).toInstant().toEpochMilli(),
+                endDate.atStartOfDay(zone).toInstant().toEpochMilli()
+        );
+    }
+
+    private static ExpectedWindow currentMonthlyManualWindow() {
+        ZoneId zone = ZoneId.systemDefault();
+        LocalDate endDate = YearMonth.now(zone).atDay(1);
+        LocalDate startDate = endDate.minusMonths(1);
         return new ExpectedWindow(
                 startDate.atStartOfDay(zone).toInstant().toEpochMilli(),
                 endDate.atStartOfDay(zone).toInstant().toEpochMilli()
@@ -1452,6 +1587,12 @@ class PreviewControllerTest {
         @Primary
         TestAiTitleClient testAiTitleClient() {
             return new TestAiTitleClient();
+        }
+
+        @Bean
+        @Primary
+        TestShareSummaryImageClient testShareSummaryImageClient() {
+            return new TestShareSummaryImageClient();
         }
     }
 
@@ -1594,5 +1735,32 @@ class PreviewControllerTest {
             Files.writeString(targetPath, "thumb-data");
             return targetPath;
         }
+    }
+
+    static final class TestShareSummaryImageClient extends ShareSummaryImageClient {
+        private final AtomicInteger requests = new AtomicInteger();
+        private final AtomicReference<String> prompt = new AtomicReference<>("");
+        private final AtomicReference<String> base64 = new AtomicReference<>(testPngBase64());
+
+        TestShareSummaryImageClient() {
+            super(null, null);
+        }
+
+        @Override
+        public ImageGenerationResult generate(io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageConfigRecord config, String prompt) {
+            requests.incrementAndGet();
+            this.prompt.set(prompt);
+            return new ImageGenerationResult(base64.get(), null, "{\"test\":true}", 23);
+        }
+
+        void reset() {
+            requests.set(0);
+            prompt.set("");
+            base64.set(testPngBase64());
+        }
+    }
+
+    private static String testPngBase64() {
+        return "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4XmP4z8DwHwAFAAH/e+m+7wAAAABJRU5ErkJggg==";
     }
 }

@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryImageMapper">
+    <sql id="configColumns">
+        id,
+        enabled,
+        auto_generate,
+        provider_type,
+        base_url,
+        endpoint_path,
+        api_key,
+        model,
+        image_size,
+        quality,
+        output_format,
+        style_prompt,
+        request_timeout_seconds,
+        updated_at
+    </sql>
+
+    <sql id="imageColumns">
+        id,
+        run_id,
+        attempt_no,
+        status,
+        provider_type,
+        model,
+        image_size,
+        output_format,
+        quality,
+        style_prompt_snapshot,
+        prompt_snapshot,
+        storage_key,
+        public_token,
+        image_url,
+        og_image_url,
+        og_page_url,
+        og_title,
+        og_description,
+        raw_response_snapshot,
+        error_message,
+        duration_ms,
+        created_at,
+        started_at,
+        finished_at
+    </sql>
+
+    <select id="selectConfig" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageConfigRecord">
+        SELECT <include refid="configColumns"/>
+        FROM share_summary_image_config
+        WHERE id = 1
+    </select>
+
+    <insert id="upsertConfig" parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageConfigRecord">
+        INSERT INTO share_summary_image_config (
+            id,
+            enabled,
+            auto_generate,
+            provider_type,
+            base_url,
+            endpoint_path,
+            api_key,
+            model,
+            image_size,
+            quality,
+            output_format,
+            style_prompt,
+            request_timeout_seconds,
+            updated_at
+        )
+        VALUES (
+            1,
+            #{enabled},
+            #{autoGenerate},
+            #{providerType},
+            #{baseUrl},
+            #{endpointPath},
+            #{apiKey},
+            #{model},
+            #{imageSize},
+            #{quality},
+            #{outputFormat},
+            #{stylePrompt},
+            #{requestTimeoutSeconds},
+            #{updatedAt}
+        )
+        ON CONFLICT(id) DO UPDATE SET
+            enabled = excluded.enabled,
+            auto_generate = excluded.auto_generate,
+            provider_type = excluded.provider_type,
+            base_url = excluded.base_url,
+            endpoint_path = excluded.endpoint_path,
+            api_key = excluded.api_key,
+            model = excluded.model,
+            image_size = excluded.image_size,
+            quality = excluded.quality,
+            output_format = excluded.output_format,
+            style_prompt = excluded.style_prompt,
+            request_timeout_seconds = excluded.request_timeout_seconds,
+            updated_at = excluded.updated_at
+    </insert>
+
+    <insert id="insertImage"
+            parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO share_summary_image (
+            run_id,
+            attempt_no,
+            status,
+            provider_type,
+            model,
+            image_size,
+            output_format,
+            quality,
+            style_prompt_snapshot,
+            prompt_snapshot,
+            storage_key,
+            public_token,
+            image_url,
+            og_image_url,
+            og_page_url,
+            og_title,
+            og_description,
+            raw_response_snapshot,
+            error_message,
+            duration_ms,
+            created_at,
+            started_at,
+            finished_at
+        )
+        VALUES (
+            #{runId},
+            #{attemptNo},
+            #{status},
+            #{providerType},
+            #{model},
+            #{imageSize},
+            #{outputFormat},
+            #{quality},
+            #{stylePromptSnapshot},
+            #{promptSnapshot},
+            #{storageKey},
+            #{publicToken},
+            #{imageUrl},
+            #{ogImageUrl},
+            #{ogPageUrl},
+            #{ogTitle},
+            #{ogDescription},
+            #{rawResponseSnapshot},
+            #{errorMessage},
+            #{durationMs},
+            #{createdAt},
+            #{startedAt},
+            #{finishedAt}
+        )
+    </insert>
+
+    <update id="updateImage" parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord">
+        UPDATE share_summary_image
+        SET
+            status = #{status},
+            storage_key = #{storageKey},
+            image_url = #{imageUrl},
+            og_image_url = #{ogImageUrl},
+            og_page_url = #{ogPageUrl},
+            raw_response_snapshot = #{rawResponseSnapshot},
+            error_message = #{errorMessage},
+            duration_ms = #{durationMs},
+            started_at = #{startedAt},
+            finished_at = #{finishedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectImage" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord">
+        SELECT <include refid="imageColumns"/>
+        FROM share_summary_image
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectImageByPublicToken" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord">
+        SELECT <include refid="imageColumns"/>
+        FROM share_summary_image
+        WHERE public_token = #{publicToken}
+    </select>
+
+    <select id="selectLatestImage" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord">
+        SELECT <include refid="imageColumns"/>
+        FROM share_summary_image
+        WHERE run_id = #{runId}
+        ORDER BY attempt_no DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectLatestSuccessfulImage" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord">
+        SELECT <include refid="imageColumns"/>
+        FROM share_summary_image
+        WHERE run_id = #{runId}
+          AND status = 'SUCCESS'
+        ORDER BY attempt_no DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectActiveImage" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord">
+        SELECT <include refid="imageColumns"/>
+        FROM share_summary_image
+        WHERE run_id = #{runId}
+          AND status IN ('PENDING', 'GENERATING')
+        ORDER BY attempt_no DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectNextAttemptNo" resultType="int">
+        SELECT COALESCE(MAX(attempt_no), 0) + 1
+        FROM share_summary_image
+        WHERE run_id = #{runId}
+    </select>
+
+    <select id="selectImagesForRun" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord">
+        SELECT <include refid="imageColumns"/>
+        FROM share_summary_image
+        WHERE run_id = #{runId}
+        ORDER BY attempt_no DESC, id DESC
+    </select>
+</mapper>

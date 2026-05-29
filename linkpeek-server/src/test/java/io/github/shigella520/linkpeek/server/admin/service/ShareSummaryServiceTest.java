@@ -107,6 +107,7 @@ class ShareSummaryServiceTest {
                 new FakeShareSummaryLinkMapper(),
                 new FakeAiProviderMapper(),
                 new AiTitleClient(null, null),
+                null,
                 Clock.fixed(Instant.parse(instant), ZONE)
         );
     }

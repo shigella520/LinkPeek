@@ -19,6 +19,14 @@ public class ShareSummaryRunRecord {
     private String errorMessage;
     private long startedAt;
     private Long finishedAt;
+    private String imageStatus;
+    private String latestImageUrl;
+    private String ogImageUrl;
+    private String ogPageUrl;
+    private String ogShareUrl;
+    private String ogTitle;
+    private String ogDescription;
+    private String imageErrorMessage;
 
     public Long getId() {
         return id;
@@ -162,5 +170,69 @@ public class ShareSummaryRunRecord {
 
     public void setFinishedAt(Long finishedAt) {
         this.finishedAt = finishedAt;
+    }
+
+    public String getImageStatus() {
+        return imageStatus;
+    }
+
+    public void setImageStatus(String imageStatus) {
+        this.imageStatus = imageStatus;
+    }
+
+    public String getLatestImageUrl() {
+        return latestImageUrl;
+    }
+
+    public void setLatestImageUrl(String latestImageUrl) {
+        this.latestImageUrl = latestImageUrl;
+    }
+
+    public String getOgImageUrl() {
+        return ogImageUrl;
+    }
+
+    public void setOgImageUrl(String ogImageUrl) {
+        this.ogImageUrl = ogImageUrl;
+    }
+
+    public String getOgPageUrl() {
+        return ogPageUrl;
+    }
+
+    public void setOgPageUrl(String ogPageUrl) {
+        this.ogPageUrl = ogPageUrl;
+    }
+
+    public String getOgShareUrl() {
+        return ogShareUrl;
+    }
+
+    public void setOgShareUrl(String ogShareUrl) {
+        this.ogShareUrl = ogShareUrl;
+    }
+
+    public String getOgTitle() {
+        return ogTitle;
+    }
+
+    public void setOgTitle(String ogTitle) {
+        this.ogTitle = ogTitle;
+    }
+
+    public String getOgDescription() {
+        return ogDescription;
+    }
+
+    public void setOgDescription(String ogDescription) {
+        this.ogDescription = ogDescription;
+    }
+
+    public String getImageErrorMessage() {
+        return imageErrorMessage;
+    }
+
+    public void setImageErrorMessage(String imageErrorMessage) {
+        this.imageErrorMessage = imageErrorMessage;
     }
 }

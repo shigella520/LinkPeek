@@ -48,6 +48,7 @@ public class ShareSummaryService {
     private final ShareSummaryLinkMapper shareSummaryLinkMapper;
     private final AiProviderMapper aiProviderMapper;
     private final AiTitleClient aiTitleClient;
+    private final ShareSummaryImageService shareSummaryImageService;
     private final Clock clock;
     private final AtomicBoolean scheduledRunning = new AtomicBoolean(false);
 
@@ -56,12 +57,14 @@ public class ShareSummaryService {
             ShareSummaryLinkMapper shareSummaryLinkMapper,
             AiProviderMapper aiProviderMapper,
             AiTitleClient aiTitleClient,
+            ShareSummaryImageService shareSummaryImageService,
             Clock clock
     ) {
         this.shareSummaryMapper = shareSummaryMapper;
         this.shareSummaryLinkMapper = shareSummaryLinkMapper;
         this.aiProviderMapper = aiProviderMapper;
         this.aiTitleClient = aiTitleClient;
+        this.shareSummaryImageService = shareSummaryImageService;
         this.clock = clock;
     }
 
@@ -109,7 +112,9 @@ public class ShareSummaryService {
         long total = shareSummaryMapper.countRuns(taskId, normalizedStatus);
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / normalizedSize);
         int offset = (normalizedPage - 1) * normalizedSize;
-        List<ShareSummaryRunRecord> items = shareSummaryMapper.selectRuns(taskId, normalizedStatus, normalizedSize, offset);
+        List<ShareSummaryRunRecord> items = shareSummaryMapper.selectRuns(taskId, normalizedStatus, normalizedSize, offset).stream()
+                .map(this::withImageSummary)
+                .toList();
         return new RunPage(items, normalizedPage, normalizedSize, total, totalPages);
     }
 
@@ -118,7 +123,7 @@ public class ShareSummaryService {
         if (run == null) {
             throw new IllegalArgumentException("Share summary run was not found.");
         }
-        return run;
+        return withImageSummary(run);
     }
 
     @Scheduled(fixedDelay = 60_000L, initialDelay = 30_000L)
@@ -265,7 +270,11 @@ public class ShareSummaryService {
             run.setFinishedAt(now());
             shareSummaryMapper.updateRun(run);
         }
-        return shareSummaryMapper.selectRun(run.getId());
+        ShareSummaryRunRecord savedRun = shareSummaryMapper.selectRun(run.getId());
+        if (shareSummaryImageService != null && ShareSummaryRunStatus.SUCCESS.name().equals(savedRun.getStatus())) {
+            shareSummaryImageService.triggerAutoGeneration(savedRun);
+        }
+        return withImageSummary(savedRun);
     }
 
     private ShareSummaryRunRecord createRunningRun(
@@ -492,6 +501,25 @@ public class ShareSummaryService {
 
     private long now() {
         return Instant.now(clock).toEpochMilli();
+    }
+
+    private ShareSummaryRunRecord withImageSummary(ShareSummaryRunRecord run) {
+        if (run == null || run.getId() == null) {
+            return run;
+        }
+        if (shareSummaryImageService == null) {
+            return run;
+        }
+        ShareSummaryImageService.ImageSummary summary = shareSummaryImageService.imageSummary(run.getId());
+        run.setImageStatus(summary.imageStatus());
+        run.setLatestImageUrl(summary.latestImageUrl());
+        run.setOgImageUrl(summary.ogImageUrl());
+        run.setOgPageUrl(summary.ogPageUrl());
+        run.setOgShareUrl(summary.ogPageUrl());
+        run.setOgTitle(summary.ogTitle());
+        run.setOgDescription(summary.ogDescription());
+        run.setImageErrorMessage(summary.imageErrorMessage());
+        return run;
     }
 
     public record TaskRequest(
