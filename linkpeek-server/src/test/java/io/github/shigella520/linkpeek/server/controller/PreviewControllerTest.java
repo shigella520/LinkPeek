@@ -6,6 +6,9 @@ import io.github.shigella520.linkpeek.core.model.PreviewKey;
 import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
 import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
+import io.github.shigella520.linkpeek.server.admin.service.NotificationService;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClient;
@@ -111,6 +114,9 @@ class PreviewControllerTest {
     @Autowired
     private TestShareSummaryImageClient testShareSummaryImageClient;
 
+    @Autowired
+    private NotificationService notificationService;
+
     @BeforeEach
     void setUp() throws IOException {
         Files.walk(TEST_CACHE_DIR)
@@ -132,6 +138,10 @@ class PreviewControllerTest {
         jdbcTemplate.execute("DELETE FROM share_summary_image_config");
         jdbcTemplate.execute("DELETE FROM share_summary_run");
         jdbcTemplate.execute("DELETE FROM share_summary_task");
+        jdbcTemplate.execute("DELETE FROM notification_delivery");
+        jdbcTemplate.execute("DELETE FROM notification_task_channel");
+        jdbcTemplate.execute("DELETE FROM notification_task");
+        jdbcTemplate.execute("DELETE FROM notification_channel");
         jdbcTemplate.execute("DELETE FROM admin_prompt");
         jdbcTemplate.execute("DELETE FROM provider_config");
         jdbcTemplate.execute("DELETE FROM ai_provider");
@@ -250,6 +260,7 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("ai-providers")))
                 .andExpect(content().string(containsString("preview-events")))
                 .andExpect(content().string(containsString("share-summary")))
+                .andExpect(content().string(containsString("notifications")))
                 .andExpect(content().string(containsString("preview-event-form")))
                 .andExpect(content().string(containsString("preview-event-table")))
                 .andExpect(content().string(containsString("ai-new-button")))
@@ -269,6 +280,7 @@ class PreviewControllerTest {
                     int aiIndex = html.indexOf("id=\"ai-providers\"");
                     int previewEventsIndex = html.indexOf("id=\"preview-events\"");
                     int shareSummaryIndex = html.indexOf("id=\"share-summary\"");
+                    int notificationIndex = html.indexOf("id=\"notifications\"");
                     int providerIndex = html.indexOf("id=\"provider-config\"");
                     int logsIndex = html.indexOf("id=\"service-logs\"");
                     int purgeIndex = html.indexOf("id=\"purge\"");
@@ -277,10 +289,11 @@ class PreviewControllerTest {
                                     && promptIndex < aiIndex
                                     && aiIndex < previewEventsIndex
                                     && previewEventsIndex < shareSummaryIndex
-                                    && shareSummaryIndex < providerIndex
+                                    && shareSummaryIndex < notificationIndex
+                                    && notificationIndex < providerIndex
                                     && providerIndex < logsIndex
                                     && logsIndex < purgeIndex,
-                            "Expected admin module order: prompts, AI providers, preview events, share summary, provider config, service logs, purge."
+                            "Expected admin module order: prompts, AI providers, preview events, share summary, notifications, provider config, service logs, purge."
                     );
                 });
 
@@ -300,7 +313,8 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("/api/admin/logs")))
                 .andExpect(content().string(containsString("/api/admin/ai-title-config")))
                 .andExpect(content().string(containsString("/api/admin/preview-events")))
-                .andExpect(content().string(containsString("/api/admin/share-summary")));
+                .andExpect(content().string(containsString("/api/admin/share-summary")))
+                .andExpect(content().string(containsString("/api/admin/notifications")));
 
         mockMvc.perform(get("/admin/login.js"))
                 .andExpect(status().isOk())
@@ -1175,6 +1189,189 @@ class PreviewControllerTest {
     }
 
     @Test
+    void notificationAdminApisValidateTemplatesAndDeliverOnShareSummaryImageSuccess() throws Exception {
+        Cookie cookie = adminCookie();
+
+        mockMvc.perform(get("/api/admin/notifications/events")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].eventType").value("SHARE_SUMMARY_IMAGE_SUCCESS"))
+                .andExpect(jsonPath("$[0].placeholders[?(@.name == 'image.ogPageUrl')]").exists());
+
+        mockMvc.perform(post("/api/admin/notifications/tasks/validate-template")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"eventType":"SHARE_SUMMARY_IMAGE_SUCCESS","templateJson":"{\\"title\\":\\"{{image.ogTitle}}\\",\\"count\\":{{run.linkCount}}}"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(true));
+
+        mockMvc.perform(post("/api/admin/notifications/tasks/validate-template")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"eventType":"SHARE_SUMMARY_IMAGE_SUCCESS","templateJson":"{\\"bad\\":\\"{{run.notExists}}\\"}"}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.valid").value(false))
+                .andExpect(jsonPath("$.invalidPlaceholders[0]").value("run.notExists"));
+
+        mockMvc.perform(post("/api/admin/notifications/channels")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Example","enabled":true,"url":"http://93.184.216.34/linkpeek","headersJson":{"X-Test":"yes"},"secret":"secret","timeoutSeconds":10}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.secretConfigured").value(true));
+        Long channelId = jdbcTemplate.queryForObject("SELECT id FROM notification_channel WHERE name = ?", Long.class, "Example");
+        jdbcTemplate.update("UPDATE notification_channel SET url = ? WHERE id = ?", "http://127.0.0.1/linkpeek", channelId);
+
+        mockMvc.perform(post("/api/admin/notifications/tasks")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"分享图通知",
+                                  "enabled":true,
+                                  "eventType":"SHARE_SUMMARY_IMAGE_SUCCESS",
+                                  "filters":{"periodTypes":["MONTHLY"],"triggerTypes":["MANUAL"]},
+                                  "templateJson":"{\\"title\\":\\"{{image.ogTitle}}\\",\\"shareUrl\\":\\"{{image.ogShareUrl}}\\",\\"count\\":{{run.linkCount}}}",
+                                  "channelIds":[%d]
+                                }
+                                """.formatted(channelId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.channelIds[0]").value(channelId));
+
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                "INSERT INTO share_summary_run (task_id, task_name, trigger_type, period_type, window_start, window_end, status, link_count, unique_link_count, input_link_count, prompt_snapshot, ai_provider_names, ai_duration_ms, report, error_message, started_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                44L,
+                "月报",
+                "MANUAL",
+                "MONTHLY",
+                now - 86_400_000L,
+                now,
+                "SUCCESS",
+                7,
+                6,
+                6,
+                "prompt",
+                "local",
+                34L,
+                "报告正文",
+                null,
+                now - 1_000L,
+                now
+        );
+        Long runId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_run WHERE task_id = 44", Long.class);
+        jdbcTemplate.update(
+                """
+                        INSERT INTO share_summary_image (
+                            run_id,
+                            attempt_no,
+                            status,
+                            provider_type,
+                            model,
+                            image_size,
+                            output_format,
+                            quality,
+                            style_prompt_snapshot,
+                            prompt_snapshot,
+                            storage_key,
+                            public_token,
+                            image_url,
+                            og_image_url,
+                            og_page_url,
+                            og_title,
+                            og_description,
+                            raw_response_snapshot,
+                            error_message,
+                            duration_ms,
+                            created_at,
+                            started_at,
+                            finished_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                runId,
+                1,
+                "SUCCESS",
+                "OPENAI_COMPATIBLE",
+                "image-model",
+                "auto",
+                "png",
+                "auto",
+                "style",
+                "prompt",
+                "share-summary/images/1/1.png",
+                "token",
+                "https://preview.example.com/share-summary/og-images/token.png",
+                "https://preview.example.com/share-summary/og-images/token.png",
+                "https://preview.example.com/share-summary/reports/token",
+                "LinkPeek - 2026年5月月报",
+                "本报告汇总了链接分享与内容洞察。",
+                "{}",
+                null,
+                23L,
+                now,
+                now,
+                now
+        );
+        Long imageId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_image WHERE run_id = ?", Long.class, runId);
+        ShareSummaryRunRecord run = new ShareSummaryRunRecord();
+        run.setId(runId);
+        run.setTaskId(44L);
+        run.setTaskName("月报");
+        run.setTriggerType("MANUAL");
+        run.setPeriodType("MONTHLY");
+        run.setWindowStart(now - 86_400_000L);
+        run.setWindowEnd(now);
+        run.setStatus("SUCCESS");
+        run.setLinkCount(7);
+        run.setUniqueLinkCount(6);
+        run.setInputLinkCount(6);
+        run.setAiProviderNames("local");
+        run.setAiDurationMs(34L);
+        run.setReport("报告正文");
+        run.setStartedAt(now - 1_000L);
+        run.setFinishedAt(now);
+
+        ShareSummaryImageRecord image = new ShareSummaryImageRecord();
+        image.setId(imageId);
+        image.setRunId(runId);
+        image.setAttemptNo(1);
+        image.setStatus("SUCCESS");
+        image.setProviderType("OPENAI_COMPATIBLE");
+        image.setModel("image-model");
+        image.setImageSize("auto");
+        image.setOutputFormat("png");
+        image.setQuality("auto");
+        image.setImageUrl("https://preview.example.com/share-summary/og-images/token.png");
+        image.setOgImageUrl("https://preview.example.com/share-summary/og-images/token.png");
+        image.setOgPageUrl("https://preview.example.com/share-summary/reports/token");
+        image.setOgTitle("LinkPeek - 2026年5月月报");
+        image.setOgDescription("本报告汇总了链接分享与内容洞察。");
+        image.setDurationMs(23L);
+        image.setCreatedAt(now);
+        image.setStartedAt(now);
+        image.setFinishedAt(now);
+
+        notificationService.publishShareSummaryImageSuccess(run, image);
+        waitForNotificationDelivery(imageId);
+
+        mockMvc.perform(get("/api/admin/notifications/deliveries")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].eventType").value("SHARE_SUMMARY_IMAGE_SUCCESS"))
+                .andExpect(jsonPath("$.items[0].eventKey").value("SHARE_SUMMARY_IMAGE_SUCCESS:" + imageId))
+                .andExpect(jsonPath("$.items[0].status").value("FAILED"))
+                .andExpect(jsonPath("$.items[0].requestBodySnapshot").value(containsString("https://preview.example.com/share-summary/reports/token")))
+                .andExpect(jsonPath("$.items[0].requestBodySnapshot").value(containsString("\"count\":7")));
+    }
+
+    @Test
     void adminEndpointsRejectUnauthenticatedRequestsAndInvalidLogin() throws Exception {
         jdbcTemplate.update(
                 "INSERT INTO stats_link (preview_key, provider_id, canonical_url, title, site_name, first_seen_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -1212,6 +1409,9 @@ class PreviewControllerTest {
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/admin/share-summary/runs"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/admin/notifications/events"))
                 .andExpect(status().isUnauthorized());
 
         org.junit.jupiter.api.Assertions.assertEquals(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM stats_event", Integer.class));
@@ -1586,6 +1786,23 @@ class PreviewControllerTest {
             Thread.sleep(25);
         }
         org.junit.jupiter.api.Assertions.fail("Expected share summary image generation to succeed.");
+    }
+
+    private void waitForNotificationDelivery(long imageId) throws InterruptedException {
+        String eventKey = "SHARE_SUMMARY_IMAGE_SUCCESS:" + imageId;
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM notification_delivery WHERE event_key = ? AND status != 'PENDING'",
+                    Integer.class,
+                    eventKey
+            );
+            if (count != null && count > 0) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected notification delivery to finish.");
     }
 
     private static ExpectedWindow currentDailyManualWindow() {

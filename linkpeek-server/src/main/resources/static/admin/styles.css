@@ -241,6 +241,39 @@ main {
     margin-bottom: 16px;
 }
 
+.panel.is-collapsed {
+    padding-bottom: 18px;
+}
+
+.panel.is-collapsed .panel-head {
+    margin-bottom: 0;
+}
+
+.panel-body {
+    display: grid;
+    gap: 16px;
+}
+
+.panel-toggle {
+    margin-left: auto;
+    min-width: 70px;
+}
+
+.panel-toggle::before {
+    content: "";
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 8px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translateY(-2px);
+}
+
+.panel.is-collapsed .panel-toggle::before {
+    transform: rotate(-45deg);
+}
+
 .panel-head > *,
 .subsection-head > * {
     min-width: 0;
@@ -693,9 +726,53 @@ table {
 .share-summary-task-table,
 .ai-provider-table,
 .share-summary-run-table,
-.share-summary-image-attempt-table {
+.share-summary-image-attempt-table,
+.notification-channel-table,
+.notification-task-table,
+.notification-delivery-table {
     min-width: 0;
     table-layout: fixed;
+}
+
+.notification-channel-table th:nth-child(1),
+.notification-channel-table td:nth-child(1),
+.notification-task-table th:nth-child(1),
+.notification-task-table td:nth-child(1) {
+    width: 24%;
+}
+
+.notification-channel-table th:nth-child(2),
+.notification-channel-table td:nth-child(2) {
+    width: 38%;
+}
+
+.notification-task-table th:nth-child(2),
+.notification-task-table td:nth-child(2) {
+    width: 26%;
+}
+
+.notification-channel-table th:nth-child(5),
+.notification-channel-table td:nth-child(5),
+.notification-task-table th:nth-child(5),
+.notification-task-table td:nth-child(5) {
+    width: 190px;
+}
+
+.notification-delivery-table th:nth-child(1),
+.notification-delivery-table td:nth-child(1) {
+    width: 150px;
+}
+
+.notification-delivery-table th:nth-child(4),
+.notification-delivery-table td:nth-child(4) {
+    width: 170px;
+}
+
+.notification-delivery-table th:nth-child(5),
+.notification-delivery-table td:nth-child(5),
+.notification-delivery-table th:nth-child(6),
+.notification-delivery-table td:nth-child(6) {
+    width: 86px;
 }
 
 .share-summary-task-table th:nth-child(1),
@@ -1060,6 +1137,48 @@ td .share-summary-task-actions {
     font-size: 12px;
 }
 
+.checkbox-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fafbfc;
+}
+
+.notification-placeholder-panel {
+    display: grid;
+    gap: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    background: #fafbfc;
+}
+
+.placeholder-list {
+    display: grid;
+    gap: 14px;
+}
+
+.placeholder-group h5 {
+    margin: 0 0 8px;
+    color: var(--muted);
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.placeholder-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.placeholder-token {
+    font-family: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", monospace;
+    font-size: 12px;
+}
+
 .status-pill,
 .cache-badge {
     display: inline-flex;
@@ -1260,6 +1379,11 @@ td button.danger {
     .panel-head {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .panel-toggle {
+        width: 100%;
+        margin-left: 0;
     }
 
     .grid-form,

@@ -69,6 +69,7 @@ class ShareSummaryImageServiceTest {
                 imageClient,
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
+                null,
                 properties,
                 Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
         );
@@ -93,6 +94,7 @@ class ShareSummaryImageServiceTest {
                 new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
+                null,
                 new LinkPeekProperties(),
                 Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
         );
@@ -114,6 +116,7 @@ class ShareSummaryImageServiceTest {
                 new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
+                null,
                 new LinkPeekProperties(),
                 Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
         );

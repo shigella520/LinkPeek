@@ -251,6 +251,121 @@
                 </div>
             </section>
 
+            <section class="panel" id="notifications">
+                <div class="panel-head">
+                    <div>
+                        <p class="panel-kicker">Webhook</p>
+                        <h2>通知</h2>
+                    </div>
+                    <div class="panel-actions">
+                        <button type="button" class="secondary" id="notification-channel-new-button">新建渠道</button>
+                        <button type="button" id="notification-task-new-button">新建通知任务</button>
+                    </div>
+                </div>
+                <p id="notification-feedback" class="feedback" role="status" aria-live="polite"></p>
+                <div class="prompt-subsection prompt-subsection-first">
+                    <div class="subsection-head">
+                        <div>
+                            <p class="panel-kicker">Channels</p>
+                            <h3>通知渠道</h3>
+                        </div>
+                    </div>
+                    <div class="table-shell">
+                        <table class="notification-channel-table">
+                            <thead>
+                            <tr>
+                                <th>渠道</th>
+                                <th>URL</th>
+                                <th>超时</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="notification-channel-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="prompt-subsection">
+                    <div class="subsection-head">
+                        <div>
+                            <p class="panel-kicker">Tasks</p>
+                            <h3>通知任务</h3>
+                        </div>
+                    </div>
+                    <div class="table-shell">
+                        <table class="notification-task-table">
+                            <thead>
+                            <tr>
+                                <th>任务</th>
+                                <th>事件</th>
+                                <th>渠道</th>
+                                <th>状态</th>
+                                <th>操作</th>
+                            </tr>
+                            </thead>
+                            <tbody id="notification-task-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="prompt-subsection">
+                    <div class="subsection-head subsection-head-actions">
+                        <div>
+                            <p class="panel-kicker">Deliveries</p>
+                            <h3>发送记录</h3>
+                        </div>
+                        <button type="button" class="secondary" id="notification-refresh-deliveries">刷新记录</button>
+                    </div>
+                    <form id="notification-delivery-filter-form" class="share-summary-filter-form">
+                        <label>
+                            <span>任务</span>
+                            <select id="notification-delivery-filter-task"></select>
+                        </label>
+                        <label>
+                            <span>渠道</span>
+                            <select id="notification-delivery-filter-channel"></select>
+                        </label>
+                        <label>
+                            <span>状态</span>
+                            <select id="notification-delivery-filter-status">
+                                <option value="">全部</option>
+                                <option value="PENDING">PENDING</option>
+                                <option value="SUCCESS">SUCCESS</option>
+                                <option value="FAILED">FAILED</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>每页</span>
+                            <select id="notification-delivery-size">
+                                <option value="10">10</option>
+                                <option value="20" selected>20</option>
+                                <option value="50">50</option>
+                            </select>
+                        </label>
+                    </form>
+                    <p id="notification-delivery-feedback" class="feedback" role="status" aria-live="polite"></p>
+                    <div class="table-shell">
+                        <table class="notification-delivery-table">
+                            <thead>
+                            <tr>
+                                <th>时间</th>
+                                <th>任务 / 渠道</th>
+                                <th>事件</th>
+                                <th>状态</th>
+                                <th>HTTP</th>
+                                <th>耗时</th>
+                            </tr>
+                            </thead>
+                            <tbody id="notification-delivery-table"></tbody>
+                        </table>
+                    </div>
+                    <div class="pagination-bar">
+                        <button type="button" class="secondary" id="notification-delivery-prev">上一页</button>
+                        <span id="notification-delivery-page-info">第 1 页</span>
+                        <button type="button" class="secondary" id="notification-delivery-next">下一页</button>
+                    </div>
+                </div>
+            </section>
+
             <section class="panel" id="provider-config">
                 <div class="panel-head">
                     <div>
@@ -567,6 +682,106 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260530-share-summary-ai-image"></script>
+<div class="modal-shell" id="notification-channel-modal" hidden>
+    <div class="modal-backdrop" data-close-modal="notification-channel"></div>
+    <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="notification-channel-modal-title">
+        <div class="modal-head">
+            <h3 id="notification-channel-modal-title">新建通知渠道</h3>
+            <button type="button" class="secondary" id="notification-channel-cancel-button">取消</button>
+        </div>
+        <form id="notification-channel-form" class="grid-form">
+            <input id="notification-channel-id" type="hidden">
+            <label>
+                <span>渠道名称</span>
+                <input id="notification-channel-name" type="text" autocomplete="off" required>
+            </label>
+            <label>
+                <span>Webhook URL</span>
+                <input id="notification-channel-url" type="url" autocomplete="off" required>
+            </label>
+            <label>
+                <span>超时秒数</span>
+                <input id="notification-channel-timeout" type="number" min="1" max="60" value="10" required>
+            </label>
+            <label class="checkbox-row">
+                <input id="notification-channel-enabled" type="checkbox">
+                <span>启用渠道</span>
+            </label>
+            <label class="wide">
+                <span>自定义 Headers JSON</span>
+                <textarea id="notification-channel-headers" rows="5" placeholder='{"X-Token":"..."}'></textarea>
+            </label>
+            <label class="wide">
+                <span>签名密钥</span>
+                <input id="notification-channel-secret" type="password" autocomplete="off" placeholder="留空表示不修改">
+            </label>
+            <div class="modal-actions wide">
+                <button type="submit">保存渠道</button>
+            </div>
+        </form>
+        <p id="notification-channel-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
+    </section>
+</div>
+
+<div class="modal-shell" id="notification-task-modal" hidden>
+    <div class="modal-backdrop" data-close-modal="notification-task"></div>
+    <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="notification-task-modal-title">
+        <div class="modal-head">
+            <h3 id="notification-task-modal-title">新建通知任务</h3>
+            <button type="button" class="secondary" id="notification-task-cancel-button">取消</button>
+        </div>
+        <form id="notification-task-form" class="grid-form">
+            <input id="notification-task-id" type="hidden">
+            <label>
+                <span>任务名称</span>
+                <input id="notification-task-name" type="text" autocomplete="off" required>
+            </label>
+            <label>
+                <span>事件类型</span>
+                <select id="notification-task-event-type" required></select>
+            </label>
+            <label class="checkbox-row">
+                <input id="notification-task-enabled" type="checkbox">
+                <span>启用任务</span>
+            </label>
+            <label class="wide">
+                <span>关联渠道</span>
+                <div id="notification-task-channel-options" class="checkbox-list"></div>
+            </label>
+            <label>
+                <span>分享总结任务 ID</span>
+                <input id="notification-filter-share-task-ids" type="text" autocomplete="off" placeholder="留空表示全部，例如 1,2">
+            </label>
+            <label>
+                <span>周期类型</span>
+                <input id="notification-filter-period-types" type="text" autocomplete="off" placeholder="DAILY,WEEKLY,MONTHLY">
+            </label>
+            <label>
+                <span>触发方式</span>
+                <input id="notification-filter-trigger-types" type="text" autocomplete="off" placeholder="SCHEDULED,MANUAL">
+            </label>
+            <label class="wide">
+                <span>消息模板 JSON</span>
+                <textarea id="notification-task-template" rows="10" required></textarea>
+            </label>
+            <div class="wide notification-placeholder-panel">
+                <div class="subsection-head">
+                    <div>
+                        <p class="panel-kicker">Placeholders</p>
+                        <h4>当前事件可用占位符</h4>
+                    </div>
+                </div>
+                <div id="notification-placeholder-list" class="placeholder-list"></div>
+            </div>
+            <div class="modal-actions wide">
+                <button type="button" class="secondary" id="notification-template-validate-button">校验模板</button>
+                <button type="submit">保存任务</button>
+            </div>
+        </form>
+        <p id="notification-task-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
+    </section>
+</div>
+
+<script src="/admin/app.js?v=20260531-webhook-notification"></script>
 </body>
 </html>

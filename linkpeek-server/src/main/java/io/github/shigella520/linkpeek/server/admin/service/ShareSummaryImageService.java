@@ -67,6 +67,7 @@ public class ShareSummaryImageService {
     private final ShareSummaryImageClient imageClient;
     private final HttpClient httpClient;
     private final ExecutorService executor;
+    private final NotificationService notificationService;
     private final LinkPeekProperties properties;
     private final Clock clock;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -77,6 +78,7 @@ public class ShareSummaryImageService {
             ShareSummaryImageClient imageClient,
             @Qualifier("shareSummaryImageHttpClient") HttpClient httpClient,
             @Qualifier("shareSummaryImageExecutor") ExecutorService executor,
+            NotificationService notificationService,
             LinkPeekProperties properties,
             Clock clock
     ) {
@@ -85,6 +87,7 @@ public class ShareSummaryImageService {
         this.imageClient = imageClient;
         this.httpClient = httpClient;
         this.executor = executor;
+        this.notificationService = notificationService;
         this.properties = properties;
         this.clock = clock;
     }
@@ -239,6 +242,7 @@ public class ShareSummaryImageService {
             image.setErrorMessage(null);
             image.setFinishedAt(now());
             imageMapper.updateImage(image);
+            publishImageSuccess(image);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             failImage(image, ShareSummaryImageStatus.FAILED, "Image generation was interrupted.");
@@ -516,6 +520,18 @@ public class ShareSummaryImageService {
         image.setErrorMessage(StringUtils.hasText(message) ? message : "Image generation failed.");
         image.setFinishedAt(now());
         imageMapper.updateImage(image);
+    }
+
+    private void publishImageSuccess(ShareSummaryImageRecord image) {
+        if (notificationService == null) {
+            return;
+        }
+        try {
+            ShareSummaryRunRecord run = shareSummaryMapper.selectRun(image.getRunId());
+            notificationService.publishShareSummaryImageSuccess(run, image);
+        } catch (RuntimeException exception) {
+            log.warn("share_summary_image_notification_failed imageId={} runId={} message={}", image.getId(), image.getRunId(), exception.getMessage(), exception);
+        }
     }
 
     private ShareSummaryRunRecord existingRun(long runId) {

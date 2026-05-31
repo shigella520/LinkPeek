@@ -59,6 +59,33 @@ public class ProviderConfiguration {
         );
     }
 
+    @Bean(name = "notificationWebhookHttpClient")
+    public HttpClient notificationWebhookHttpClient(LinkPeekProperties properties) {
+        return HttpClient.newBuilder()
+                .connectTimeout(properties.getDownloadTimeout())
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+    }
+
+    @Bean(name = "notificationWebhookExecutor", destroyMethod = "shutdown")
+    public ExecutorService notificationWebhookExecutor() {
+        AtomicInteger threadIndex = new AtomicInteger();
+        return new ThreadPoolExecutor(
+                1,
+                2,
+                30L,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(128),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "notification-webhook-" + threadIndex.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
+
     @Bean
     public CrawlerMatcher crawlerMatcher(LinkPeekProperties properties) {
         return new CrawlerMatcher(properties.getCrawlerSignatures());

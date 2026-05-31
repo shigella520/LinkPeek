@@ -138,6 +138,71 @@ public class StatisticsConfiguration {
             ensureColumn(jdbcTemplate, "share_summary_image_config", "endpoint_path", "TEXT NOT NULL DEFAULT '/v1/images/generations'");
             ensureColumn(jdbcTemplate, "share_summary_image_config", "quality", "TEXT NOT NULL DEFAULT 'auto'");
             ensureColumn(jdbcTemplate, "share_summary_image", "quality", "TEXT");
+            ensureNotificationTables(jdbcTemplate);
+        }
+
+        private void ensureNotificationTables(JdbcTemplate jdbcTemplate) {
+            ensureTable(jdbcTemplate, "notification_channel", """
+                    CREATE TABLE IF NOT EXISTS notification_channel (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        enabled INTEGER NOT NULL,
+                        type TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        method TEXT NOT NULL,
+                        headers_json TEXT,
+                        secret TEXT,
+                        timeout_seconds INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """);
+            ensureTable(jdbcTemplate, "notification_task", """
+                    CREATE TABLE IF NOT EXISTS notification_task (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        enabled INTEGER NOT NULL,
+                        event_type TEXT NOT NULL,
+                        filters_json TEXT,
+                        template_json TEXT NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """);
+            ensureTable(jdbcTemplate, "notification_task_channel", """
+                    CREATE TABLE IF NOT EXISTS notification_task_channel (
+                        task_id INTEGER NOT NULL,
+                        channel_id INTEGER NOT NULL,
+                        PRIMARY KEY (task_id, channel_id)
+                    )
+                    """);
+            ensureTable(jdbcTemplate, "notification_delivery", """
+                    CREATE TABLE IF NOT EXISTS notification_delivery (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        event_type TEXT NOT NULL,
+                        event_key TEXT NOT NULL,
+                        notification_task_id INTEGER NOT NULL,
+                        notification_task_name TEXT NOT NULL,
+                        channel_id INTEGER NOT NULL,
+                        channel_name TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        attempt_count INTEGER NOT NULL DEFAULT 0,
+                        request_url TEXT NOT NULL,
+                        request_body_snapshot TEXT,
+                        response_status INTEGER,
+                        response_body_snapshot TEXT,
+                        error_message TEXT,
+                        duration_ms INTEGER NOT NULL DEFAULT 0,
+                        created_at INTEGER NOT NULL,
+                        finished_at INTEGER
+                    )
+                    """);
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_channel_enabled ON notification_channel (enabled, type)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_task_event_enabled ON notification_task (event_type, enabled)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_delivery_event_key ON notification_delivery (event_key)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_delivery_status_created ON notification_delivery (status, created_at)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_delivery_task_created ON notification_delivery (notification_task_id, created_at)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_delivery_channel_created ON notification_delivery (channel_id, created_at)");
         }
 
         private void ensureTable(JdbcTemplate jdbcTemplate, String tableName, String createSql) {
