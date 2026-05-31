@@ -5,17 +5,24 @@ import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryLinkRow;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord;
 import io.github.shigella520.linkpeek.server.admin.persistence.AiProviderMapper;
+import io.github.shigella520.linkpeek.server.admin.persistence.ProviderConfigMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryLinkMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryMapper;
+import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
+import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.net.http.HttpTimeoutException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -146,17 +153,74 @@ class ShareSummaryServiceTest {
         org.junit.jupiter.api.Assertions.assertTrue(run.getErrorMessage().contains("below the configured minimum 2"));
     }
 
+    @Test
+    void aiProviderTimeoutRecordsDowngradeAndFallsBackToNextProvider() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        mapper.task = task("DAILY", "09:00", null);
+        ShareSummaryLinkRow link = new ShareSummaryLinkRow();
+        link.setTitle("数据库标题 A");
+        link.setOccurrenceCount(1);
+        FakeShareSummaryLinkMapper linkMapper = new FakeShareSummaryLinkMapper();
+        linkMapper.summaryLinks = List.of(link);
+        FakeAiProviderMapper providerMapper = new FakeAiProviderMapper();
+        AiProviderRecord timeoutProvider = provider(1L, "timeout-provider", 10);
+        AiProviderRecord fallbackProvider = provider(2L, "fallback-provider", 20);
+        providerMapper.providers = List.of(timeoutProvider, fallbackProvider);
+        FakeAiTitleClient aiTitleClient = new FakeAiTitleClient(timeoutProvider.getId());
+        AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                new EnabledAutoDowngradeConfigMapper(),
+                providerMapper,
+                Clock.fixed(Instant.parse("2026-06-04T02:00:00Z"), ZONE)
+        );
+        ShareSummaryService service = service(
+                mapper,
+                linkMapper,
+                providerMapper,
+                aiTitleClient,
+                downgradeService,
+                "2026-06-04T02:00:00Z"
+        );
+
+        ShareSummaryRunRecord run = service.runTask(1L);
+
+        assertEquals("SUCCESS", run.getStatus());
+        assertEquals("timeout-provider/fallback-provider", run.getAiProviderNames());
+        assertEquals("fallback summary", run.getReport());
+        assertEquals(List.of(fallbackProvider.getId(), timeoutProvider.getId()), providerMapper.selectAllProviders().stream()
+                .map(AiProviderRecord::getId)
+                .toList());
+    }
+
     private ShareSummaryService service(FakeShareSummaryMapper mapper, String instant) {
         return service(mapper, new FakeShareSummaryLinkMapper(), instant);
     }
 
     private ShareSummaryService service(FakeShareSummaryMapper mapper, ShareSummaryLinkMapper linkMapper, String instant) {
-        return new ShareSummaryService(
+        return service(
                 mapper,
                 linkMapper,
                 new FakeAiProviderMapper(),
                 new AiTitleClient(null, null),
                 null,
+                instant
+        );
+    }
+
+    private ShareSummaryService service(
+            FakeShareSummaryMapper mapper,
+            ShareSummaryLinkMapper linkMapper,
+            AiProviderMapper providerMapper,
+            AiTitleClient aiTitleClient,
+            AiProviderDowngradeService downgradeService,
+            String instant
+    ) {
+        return new ShareSummaryService(
+                mapper,
+                linkMapper,
+                providerMapper,
+                aiTitleClient,
+                null,
+                downgradeService,
                 Clock.fixed(Instant.parse(instant), ZONE)
         );
     }
@@ -182,6 +246,18 @@ class ShareSummaryServiceTest {
 
     private long toMillis(String localDateTime) {
         return LocalDateTime.parse(localDateTime).atZone(ZONE).toInstant().toEpochMilli();
+    }
+
+    private AiProviderRecord provider(Long id, String name, int sortOrder) {
+        AiProviderRecord provider = new AiProviderRecord();
+        provider.setId(id);
+        provider.setName(name);
+        provider.setEnabled(true);
+        provider.setSortOrder(sortOrder);
+        provider.setBaseUrl("https://api.example.com/v1");
+        provider.setModel("test-model");
+        provider.setApiKey("sk-test");
+        return provider;
     }
 
     private static final class FakeShareSummaryMapper implements ShareSummaryMapper {
@@ -280,19 +356,26 @@ class ShareSummaryServiceTest {
     }
 
     private static final class FakeAiProviderMapper implements AiProviderMapper {
+        private List<AiProviderRecord> providers = List.of();
+
         @Override
         public List<AiProviderRecord> selectAllProviders() {
-            return List.of();
+            return providers.stream()
+                    .sorted(Comparator.comparingInt(AiProviderRecord::getSortOrder).thenComparing(AiProviderRecord::getId))
+                    .toList();
         }
 
         @Override
         public List<AiProviderRecord> selectEnabledProviders() {
-            return List.of();
+            return selectAllProviders().stream().filter(AiProviderRecord::isEnabled).toList();
         }
 
         @Override
         public AiProviderRecord selectProvider(long id) {
-            return null;
+            return providers.stream()
+                    .filter(provider -> provider.getId() == id)
+                    .findFirst()
+                    .orElse(null);
         }
 
         @Override
@@ -311,12 +394,64 @@ class ShareSummaryServiceTest {
 
         @Override
         public int updateProviderSortOrder(long id, int sortOrder, long updatedAt) {
-            return 0;
+            AiProviderRecord provider = selectProvider(id);
+            if (provider == null) {
+                return 0;
+            }
+            provider.setSortOrder(sortOrder);
+            provider.setUpdatedAt(updatedAt);
+            return 1;
         }
 
         @Override
         public int deleteProvider(long id) {
             return 0;
+        }
+    }
+
+    private static final class FakeAiTitleClient extends AiTitleClient {
+        private final Long timeoutProviderId;
+
+        private FakeAiTitleClient(Long timeoutProviderId) {
+            super(null, null);
+            this.timeoutProviderId = timeoutProviderId;
+        }
+
+        @Override
+        public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
+            if (provider.getId().equals(timeoutProviderId)) {
+                throw new HttpTimeoutException("request timed out");
+            }
+            return new AiTextResult(Optional.of("fallback summary"), 12);
+        }
+    }
+
+    private static final class EnabledAutoDowngradeConfigMapper implements ProviderConfigMapper {
+        @Override
+        public List<io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord> selectAllConfigs() {
+            return List.of();
+        }
+
+        @Override
+        public List<io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord> selectProviderConfigs(String providerId) {
+            return List.of();
+        }
+
+        @Override
+        public io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord selectConfig(String providerId, String configKey) {
+            io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord record = new io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord();
+            record.setProviderId(providerId);
+            record.setConfigKey(configKey);
+            if (AiProviderDowngradeService.AUTO_DOWNGRADE_ENABLED_KEY.equals(configKey)) {
+                record.setConfigValue("true");
+            } else if (AiProviderDowngradeService.AUTO_DOWNGRADE_TIMEOUT_THRESHOLD_KEY.equals(configKey)) {
+                record.setConfigValue("1");
+            }
+            return record;
+        }
+
+        @Override
+        public void upsertConfig(io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord config) {
         }
     }
 }

@@ -10,6 +10,7 @@ import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTriggerType
 import io.github.shigella520.linkpeek.server.admin.persistence.AiProviderMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryLinkMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryMapper;
+import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
 import org.slf4j.Logger;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
+import java.net.http.HttpTimeoutException;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -52,6 +54,7 @@ public class ShareSummaryService {
     private final AiProviderMapper aiProviderMapper;
     private final AiTitleClient aiTitleClient;
     private final ShareSummaryImageService shareSummaryImageService;
+    private final AiProviderDowngradeService aiProviderDowngradeService;
     private final Clock clock;
     private final AtomicBoolean scheduledRunning = new AtomicBoolean(false);
 
@@ -61,6 +64,7 @@ public class ShareSummaryService {
             AiProviderMapper aiProviderMapper,
             AiTitleClient aiTitleClient,
             ShareSummaryImageService shareSummaryImageService,
+            AiProviderDowngradeService aiProviderDowngradeService,
             Clock clock
     ) {
         this.shareSummaryMapper = shareSummaryMapper;
@@ -68,6 +72,7 @@ public class ShareSummaryService {
         this.aiProviderMapper = aiProviderMapper;
         this.aiTitleClient = aiTitleClient;
         this.shareSummaryImageService = shareSummaryImageService;
+        this.aiProviderDowngradeService = aiProviderDowngradeService;
         this.clock = clock;
     }
 
@@ -375,6 +380,7 @@ public class ShareSummaryService {
                 AiTitleClient.AiTextResult result = aiTitleClient.generateTextResult(provider, prompt);
                 durationMs += result.durationMs();
                 providerNames.add(provider.getName());
+                recordAiProviderSuccess(provider);
                 Optional<String> report = result.text()
                         .map(String::strip)
                         .filter(StringUtils::hasText);
@@ -396,9 +402,22 @@ public class ShareSummaryService {
                         exception.getMessage(),
                         exception
                 );
+                recordAiProviderTimeout(provider, exception);
             }
         }
         throw new IllegalStateException(StringUtils.hasText(lastError) ? lastError : "AI summary request failed.");
+    }
+
+    private void recordAiProviderSuccess(AiProviderRecord provider) {
+        if (aiProviderDowngradeService != null) {
+            aiProviderDowngradeService.recordSuccess(provider);
+        }
+    }
+
+    private void recordAiProviderTimeout(AiProviderRecord provider, Throwable exception) {
+        if (aiProviderDowngradeService != null && exception instanceof HttpTimeoutException) {
+            aiProviderDowngradeService.recordTimeout(provider, exception);
+        }
     }
 
     private String summaryContent(Window window, List<ShareSummaryLinkRow> links) {

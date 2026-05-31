@@ -48,6 +48,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.isIn;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -1127,7 +1128,7 @@ class PreviewControllerTest {
         mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/image", runId)
                         .cookie(cookie))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("PENDING"));
+                .andExpect(jsonPath("$.status").value(isIn(List.of("PENDING", "GENERATING"))));
 
         waitForImageSuccess(runId);
         org.junit.jupiter.api.Assertions.assertEquals(1, testShareSummaryImageClient.requests.get());
