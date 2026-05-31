@@ -57,8 +57,8 @@ public class NotificationTemplateService {
         return templateJson.strip();
     }
 
-    public String normalizeChannelBodyTemplate(NotificationEventType eventType, String bodyTemplate) {
-        validateChannelBodyTemplate(eventType, bodyTemplate);
+    public String normalizeChannelBodyTemplate(String bodyTemplate) {
+        validateChannelBodyTemplate(bodyTemplate);
         return bodyTemplate.strip();
     }
 
@@ -83,7 +83,6 @@ public class NotificationTemplateService {
         if (!invalid.isEmpty()) {
             throw new TemplateValidationException("Notification template contains unsupported placeholders: " + String.join(", ", invalid), invalid);
         }
-        assertValidJson(renderWithValues(templateJson, sampleValues(schema)));
     }
 
     public String render(NotificationEventType eventType, String templateJson, Map<String, Object> values) {
@@ -92,10 +91,10 @@ public class NotificationTemplateService {
         if (rendered.length() > MAX_RENDERED_LENGTH) {
             throw new TemplateValidationException("Rendered notification body must not exceed 256 KB.", List.of());
         }
-        return assertValidJson(rendered);
+        return rendered;
     }
 
-    public void validateChannelBodyTemplate(NotificationEventType eventType, String bodyTemplate) {
+    public void validateChannelBodyTemplate(String bodyTemplate) {
         if (!StringUtils.hasText(bodyTemplate)) {
             throw new TemplateValidationException("Webhook body template is required.", List.of());
         }
@@ -106,9 +105,8 @@ public class NotificationTemplateService {
         if (placeholders.size() > MAX_PLACEHOLDER_COUNT) {
             throw new TemplateValidationException("Webhook body template contains too many placeholders.", List.of());
         }
-        Set<String> allowed = allowedChannelBodyPlaceholders(eventType);
         List<String> invalid = placeholders.stream()
-                .filter(placeholder -> !allowed.contains(placeholder))
+                .filter(placeholder -> !CHANNEL_MESSAGE_PLACEHOLDERS.contains(placeholder))
                 .distinct()
                 .sorted()
                 .toList();
@@ -117,9 +115,9 @@ public class NotificationTemplateService {
         }
     }
 
-    public String renderChannelBody(NotificationEventType eventType, String bodyTemplate, Map<String, Object> values, String messageBody) {
-        validateChannelBodyTemplate(eventType, bodyTemplate);
-        Map<String, Object> channelValues = new LinkedHashMap<>(values == null ? Map.of() : values);
+    public String renderChannelBody(String bodyTemplate, String messageBody) {
+        validateChannelBodyTemplate(bodyTemplate);
+        Map<String, Object> channelValues = new LinkedHashMap<>();
         channelValues.put("message.body", messageBody == null ? "" : messageBody);
         channelValues.put("message.bodyJson", messageBody == null ? "" : messageBody);
         String rendered = renderWithValues(bodyTemplate, channelValues, Set.of("message.bodyJson"));
@@ -127,12 +125,6 @@ public class NotificationTemplateService {
             throw new TemplateValidationException("Rendered webhook body must not exceed 256 KB.", List.of());
         }
         return rendered;
-    }
-
-    public Set<String> allowedChannelBodyPlaceholders(NotificationEventType eventType) {
-        java.util.HashSet<String> allowed = new java.util.HashSet<>(schema(eventType).placeholderNames());
-        allowed.addAll(CHANNEL_MESSAGE_PLACEHOLDERS);
-        return allowed;
     }
 
     public List<String> extractPlaceholders(String template) {
@@ -170,14 +162,6 @@ public class NotificationTemplateService {
         return buffer.toString();
     }
 
-    private String assertValidJson(String rendered) {
-        try {
-            return objectMapper.writeValueAsString(objectMapper.readTree(rendered));
-        } catch (JsonProcessingException exception) {
-            throw new TemplateValidationException("Notification template must render to valid JSON.", List.of());
-        }
-    }
-
     private String jsonValue(Object value) {
         try {
             return objectMapper.writeValueAsString(value);
@@ -192,14 +176,6 @@ public class NotificationTemplateService {
         }
         String json = jsonValue(String.valueOf(value));
         return json.substring(1, json.length() - 1);
-    }
-
-    private Map<String, Object> sampleValues(EventSchema schema) {
-        Map<String, Object> values = new LinkedHashMap<>();
-        for (Placeholder placeholder : schema.placeholders()) {
-            values.put(placeholder.name(), placeholder.example());
-        }
-        return values;
     }
 
     private EventSchema shareSummaryImageSuccessSchema() {

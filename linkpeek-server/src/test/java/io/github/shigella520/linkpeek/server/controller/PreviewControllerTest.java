@@ -1205,7 +1205,7 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"eventType":"SHARE_SUMMARY_IMAGE_SUCCESS","templateJson":"{\\"title\\":\\"{{image.ogTitle}}\\",\\"count\\":{{run.linkCount}}}"}
+                                {"eventType":"SHARE_SUMMARY_IMAGE_SUCCESS","templateJson":"标题：{{image.ogTitle}}\\n链接：{{image.ogShareUrl}}"}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.valid").value(true));
@@ -1224,12 +1224,20 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"Example","enabled":true,"url":"http://93.184.216.34/linkpeek","headersJson":{"X-Test":"yes"},"bodyTemplate":"{\\"text\\":\\"{{message.body}}\\",\\"payload\\":{{message.bodyJson}},\\"shareUrl\\":\\"{{image.ogShareUrl}}\\"}","secret":"secret","timeoutSeconds":10}
+                                {"name":"Example","enabled":true,"url":"http://93.184.216.34/linkpeek","headersJson":{"X-Test":"yes"},"bodyTemplate":"{\\"text\\":\\"{{message.body}}\\"}","secret":"secret","timeoutSeconds":10}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.headersJson.X-Test").value("yes"))
-                .andExpect(jsonPath("$.bodyTemplate").value(containsString("message.bodyJson")))
+                .andExpect(jsonPath("$.bodyTemplate").value(containsString("message.body")))
                 .andExpect(jsonPath("$.secretConfigured").value(true));
+
+        mockMvc.perform(post("/api/admin/notifications/channels")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"Invalid","enabled":true,"url":"http://93.184.216.34/linkpeek","headersJson":{},"bodyTemplate":"{\\"title\\":\\"{{image.ogTitle}}\\"}","timeoutSeconds":10}
+                                """))
+                .andExpect(status().isBadRequest());
         Long channelId = jdbcTemplate.queryForObject("SELECT id FROM notification_channel WHERE name = ?", Long.class, "Example");
         jdbcTemplate.update("UPDATE notification_channel SET url = ? WHERE id = ?", "http://127.0.0.1/linkpeek", channelId);
 
@@ -1242,7 +1250,7 @@ class PreviewControllerTest {
                                   "enabled":true,
                                   "eventType":"SHARE_SUMMARY_IMAGE_SUCCESS",
                                   "filters":{"periodTypes":["MONTHLY"],"triggerTypes":["MANUAL"]},
-                                  "templateJson":"{\\"title\\":\\"{{image.ogTitle}}\\",\\"shareUrl\\":\\"{{image.ogShareUrl}}\\",\\"count\\":{{run.linkCount}}}",
+                                  "templateJson":"{{run.taskName}} 已生成分享图：{{image.ogShareUrl}}，共 {{run.linkCount}} 条链接",
                                   "channelIds":[%d]
                                 }
                                 """.formatted(channelId)))
@@ -1373,8 +1381,8 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.items[0].eventKey").value("SHARE_SUMMARY_IMAGE_SUCCESS:" + imageId))
                 .andExpect(jsonPath("$.items[0].status").value("FAILED"))
                 .andExpect(jsonPath("$.items[0].requestBodySnapshot").value(containsString("https://preview.example.com/share-summary/reports/token")))
-                .andExpect(jsonPath("$.items[0].requestBodySnapshot").value(containsString("\"payload\":{\"title\":\"LinkPeek - 2026年5月月报\"")))
-                .andExpect(jsonPath("$.items[0].requestBodySnapshot").value(containsString("\\\"count\\\":7")));
+                .andExpect(jsonPath("$.items[0].requestBodySnapshot").value(containsString("月报 已生成分享图")))
+                .andExpect(jsonPath("$.items[0].requestBodySnapshot").value(containsString("共 7 条链接")));
     }
 
     @Test

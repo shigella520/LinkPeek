@@ -1377,16 +1377,13 @@
     }
 
     function renderNotificationChannelPlaceholders() {
-        const eventSchema = state.notificationEvents[0];
         const container = document.getElementById("notification-channel-placeholder-list");
-        if (!eventSchema) {
-            container.innerHTML = `<p class="muted">请先读取事件类型。</p>`;
+        if (!container) {
             return;
         }
         const placeholders = [
             {group: "message", name: "message.body", description: "通知任务渲染后的消息正文，作为字符串插入。"},
-            {group: "message", name: "message.bodyJson", description: "通知任务渲染后的消息正文，原样插入 JSON。"},
-            ...(eventSchema.placeholders || [])
+            {group: "message", name: "message.bodyJson", description: "通知任务渲染后的消息正文，原样插入 JSON。"}
         ];
         const groups = groupBy(placeholders, (placeholder) => placeholder.group || "other");
         container.innerHTML = Object.entries(groups).map(([group, groupPlaceholders]) => `
@@ -2556,19 +2553,14 @@
     }
 
     function defaultNotificationTemplate() {
-        return `{
-  "event": "{{event.type}}",
-  "title": "{{image.ogTitle}}",
-  "description": "{{image.ogDescription}}",
-  "shareUrl": "{{image.ogShareUrl}}",
-  "imageUrl": "{{image.ogImageUrl}}",
-  "taskName": "{{run.taskName}}",
-  "periodType": "{{run.periodType}}",
-  "window": "{{run.windowStartLabel}} 至 {{run.windowEndLabel}}",
-  "linkCount": {{run.linkCount}},
-  "uniqueLinkCount": {{run.uniqueLinkCount}},
-  "report": "{{run.report}}"
-}`;
+        return `{{run.taskName}} 已生成分享图
+
+周期：{{run.periodType}}
+范围：{{run.windowStartLabel}} 至 {{run.windowEndLabel}}
+链接：{{run.linkCount}} 条，去重 {{run.uniqueLinkCount}} 条
+
+标题：{{image.ogTitle}}
+链接：{{image.ogShareUrl}}`;
     }
 
     function defaultNotificationChannelBodyTemplate() {

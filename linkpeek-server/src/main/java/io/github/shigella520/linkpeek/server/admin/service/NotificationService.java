@@ -143,9 +143,7 @@ public class NotificationService {
         long startedAt = System.nanoTime();
         try {
             String body = templateService.renderChannelBody(
-                    NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS,
                     channel.getBodyTemplate(),
-                    Map.of(),
                     messageBody
             );
             SendResult result = sendWebhook(channel, NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS.name(), now(), body);
@@ -262,7 +260,7 @@ public class NotificationService {
     ) {
         String messageBody = templateService.render(eventType, task.getTemplateJson(), values);
         for (NotificationChannelRecord channel : notificationMapper.selectEnabledChannelsForTask(task.getId())) {
-            String body = templateService.renderChannelBody(eventType, channel.getBodyTemplate(), values, messageBody);
+            String body = templateService.renderChannelBody(channel.getBodyTemplate(), messageBody);
             NotificationDeliveryRecord delivery = new NotificationDeliveryRecord();
             delivery.setEventType(eventType.name());
             delivery.setEventKey(eventKey);
@@ -578,7 +576,7 @@ public class NotificationService {
 
     private String normalizeChannelBodyTemplate(String bodyTemplate) {
         String normalized = StringUtils.hasText(bodyTemplate) ? bodyTemplate.strip() : DEFAULT_CHANNEL_BODY_TEMPLATE;
-        templateService.validateChannelBodyTemplate(NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS, normalized);
+        templateService.validateChannelBodyTemplate(normalized);
         return normalized;
     }
 
