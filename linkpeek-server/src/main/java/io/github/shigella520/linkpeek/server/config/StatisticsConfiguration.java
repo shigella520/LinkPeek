@@ -151,12 +151,14 @@ public class StatisticsConfiguration {
                         url TEXT NOT NULL,
                         method TEXT NOT NULL,
                         headers_json TEXT,
+                        body_template TEXT NOT NULL DEFAULT '{{message.bodyJson}}',
                         secret TEXT,
                         timeout_seconds INTEGER NOT NULL,
                         created_at INTEGER NOT NULL,
                         updated_at INTEGER NOT NULL
                     )
                     """);
+            ensureColumn(jdbcTemplate, "notification_channel", "body_template", "TEXT NOT NULL DEFAULT '{{message.bodyJson}}'");
             ensureTable(jdbcTemplate, "notification_task", """
                     CREATE TABLE IF NOT EXISTS notification_task (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,

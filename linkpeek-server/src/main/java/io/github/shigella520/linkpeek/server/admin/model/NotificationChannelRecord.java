@@ -8,6 +8,7 @@ public class NotificationChannelRecord {
     private String url;
     private String method;
     private String headersJson;
+    private String bodyTemplate;
     private String secret;
     private int timeoutSeconds;
     private long createdAt;
@@ -67,6 +68,14 @@ public class NotificationChannelRecord {
 
     public void setHeadersJson(String headersJson) {
         this.headersJson = headersJson;
+    }
+
+    public String getBodyTemplate() {
+        return bodyTemplate;
+    }
+
+    public void setBodyTemplate(String bodyTemplate) {
+        this.bodyTemplate = bodyTemplate;
     }
 
     public String getSecret() {

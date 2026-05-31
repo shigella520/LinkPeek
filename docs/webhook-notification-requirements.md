@@ -30,8 +30,8 @@ LinkPeek 已经支持分享总结任务，并可在分享总结报告成功后�
 
 | 术语 | 说明 |
 | --- | --- |
-| 通知渠道 | 一个可发送 Webhook 请求的目标配置，例如 URL、请求头和超时时间。 |
-| 通知任务 | 一条事件匹配和消息模板配置，关联一个或多个通知渠道。 |
+| 通知渠道 | 一个可发送 Webhook 请求的目标配置，例如 URL、请求头、HTTP Body 模板和超时时间。 |
+| 通知任务 | 一条事件匹配和消息正文模板配置，关联一个或多个通知渠道。 |
 | 内部事件 | LinkPeek 内部发生的业务事件。第一版仅 `SHARE_SUMMARY_IMAGE_SUCCESS`。 |
 | 事件数据 | 内部事件携带的结构化数据，用于模板渲染和条件匹配。 |
 | 占位符 | 模板中的变量引用，例如 `{{image.ogPageUrl}}`。 |
@@ -42,15 +42,18 @@ LinkPeek 已经支持分享总结任务，并可在分享总结报告成功后�
 
 ```text
 配置通知渠道
+      -> 使用 key/value 表单配置 HTTP 头部
+      -> 配置 HTTP Body 模板
   -> 配置通知任务
       -> 选择事件类型
       -> 基于事件类型查看可用占位符
-      -> 配置消息模板
+      -> 配置消息正文模板
       -> 关联一个或多个通知渠道
   -> 分享总结 AI 图片生成成功
   -> 系统产生 SHARE_SUMMARY_IMAGE_SUCCESS 事件
   -> 查找匹配的启用通知任务
-  -> 渲染模板
+  -> 渲染任务消息正文模板
+  -> 使用渠道 HTTP Body 模板组装最终请求体
   -> 向关联渠道发送 Webhook
   -> 记录每个渠道的发送结果
 ```
@@ -196,9 +199,9 @@ LinkPeek 已经支持分享总结任务，并可在分享总结报告成功后�
 
 ## 消息模板
 
-### 模板格式
+### 任务消息正文模板
 
-第一版建议模板直接表示 Webhook JSON 请求体。
+通知任务负责把事件数据渲染为标准消息正文。第一版要求任务消息正文模板渲染后是合法 JSON，便于渠道模板继续包装或原样发送。
 
 示例：
 
@@ -218,14 +221,44 @@ LinkPeek 已经支持分享总结任务，并可在分享总结报告成功后�
 }
 ```
 
+### 渠道 HTTP Body 模板
+
+通知渠道负责把任务消息正文组装成目标 Webhook 服务需要的 HTTP Body。渠道模板既可以直接引用事件占位符，也可以引用任务渲染后的消息正文。
+
+默认渠道模板：
+
+```text
+{{message.bodyJson}}
+```
+
+该默认值表示原样发送任务消息正文，与旧的“任务模板直接作为请求体”行为等价。
+
+对接 PushDeer 一类服务时，可以使用类似模板：
+
+```json
+{
+  "text": "{{message.body}}",
+  "pushkey": "PUSH_KEY"
+}
+```
+
+渠道模板额外支持：
+
+| 占位符 | 类型 | 说明 |
+| --- | --- | --- |
+| `{{message.body}}` | string | 任务消息正文作为字符串插入，会执行 JSON 字符串转义。 |
+| `{{message.bodyJson}}` | json | 任务消息正文原样插入，适合默认透传或嵌入 `payload` 字段。 |
+
 ### 渲染规则
 
 - `{{name}}` 引用当前事件支持的占位符。
+- 渲染顺序为：先渲染任务消息正文模板，再渲染渠道 HTTP Body 模板。
 - 字符串占位符写在 JSON 字符串内时，必须执行 JSON 字符串转义。
 - 数字占位符可以不加引号，渲染为 JSON number。
 - 空值在字符串上下文中渲染为空字符串。
 - 空值在非字符串上下文中渲染为 `null`。
-- 模板渲染后必须是合法 JSON，否则本次发送失败并记录错误。
+- 任务消息正文模板渲染后必须是合法 JSON，否则本次发送失败并记录错误。
+- 渠道 HTTP Body 模板不强制是 JSON，但默认 `Content-Type` 为 `application/json`，建议保持合法 JSON。
 
 ### 模板限制
 
@@ -234,7 +267,7 @@ LinkPeek 已经支持分享总结任务，并可在分享总结报告成功后�
 | 项 | 限制 |
 | --- | --- |
 | 模板长度 | 最大 20 KB。 |
-| 渲染后请求体 | 最大 256 KB。 |
+| 渲染后消息正文或请求体 | 最大 256 KB。 |
 | 占位符数量 | 最大 200 个。 |
 
 第一版不支持：
@@ -258,6 +291,7 @@ LinkPeek 已经支持分享总结任务，并可在分享总结报告成功后�
 | `url` | TEXT | Webhook URL。 |
 | `method` | TEXT | 第一版固定为 `POST`。 |
 | `headers_json` | TEXT | 自定义请求头 JSON 对象。 |
+| `body_template` | TEXT | HTTP Body 模板，默认 `{{message.bodyJson}}`。 |
 | `secret` | TEXT | 可选签名密钥，保存后不明文回显。 |
 | `timeout_seconds` | INTEGER | 请求超时，默认 10 秒，范围 1-60 秒。 |
 | `created_at` | INTEGER | 创建时间。 |
@@ -273,7 +307,7 @@ Content-Type: application/json
 User-Agent: LinkPeek-Webhook/1.0
 ```
 
-用户配置的 `headers_json` 可以追加自定义请求头，但不允许覆盖以下安全相关请求头：
+前端以 key/value 表单维护自定义请求头，服务端保存为 `headers_json`。用户配置的 `headers_json` 可以追加自定义请求头，但不允许覆盖以下安全相关请求头：
 
 - `Host`
 - `Content-Length`
@@ -312,7 +346,7 @@ X-LinkPeek-Signature: sha256={hmac_sha256(secret, timestamp + "." + body)}
 | `enabled` | INTEGER | 是否启用。 |
 | `event_type` | TEXT | 第一版只允许 `SHARE_SUMMARY_IMAGE_SUCCESS`。 |
 | `filters_json` | TEXT | 匹配条件 JSON。 |
-| `template_json` | TEXT | Webhook JSON 请求体模板。 |
+| `template_json` | TEXT | 消息正文模板，渲染后必须是合法 JSON。 |
 | `created_at` | INTEGER | 创建时间。 |
 | `updated_at` | INTEGER | 更新时间。 |
 
@@ -449,6 +483,17 @@ SHARE_SUMMARY_IMAGE_SUCCESS:{image.id}
 - 删除渠道。
 - 测试发送。
 
+渠道表单：
+
+- 渠道名称。
+- Webhook URL。
+- 超时秒数。
+- 启用状态。
+- HTTP 头部 key/value 列表。
+- HTTP Body 模板。
+- 渠道 Body 可用占位符面板，包含事件占位符和 `message.body` / `message.bodyJson`。
+- 可选签名密钥。
+
 列表展示：
 
 - 渠道名称。
@@ -473,7 +518,7 @@ SHARE_SUMMARY_IMAGE_SUCCESS:{image.id}
 - 启用状态。
 - 事件类型。
 - 事件匹配条件。
-- 消息模板。
+- 消息正文模板。
 - 关联通知渠道，多选。
 - 当前事件可用占位符面板。
 
@@ -612,6 +657,7 @@ CREATE TABLE IF NOT EXISTS notification_channel (
     url TEXT NOT NULL,
     method TEXT NOT NULL,
     headers_json TEXT,
+    body_template TEXT NOT NULL DEFAULT '{{message.bodyJson}}',
     secret TEXT,
     timeout_seconds INTEGER NOT NULL,
     created_at INTEGER NOT NULL,

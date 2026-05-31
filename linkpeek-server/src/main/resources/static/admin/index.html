@@ -707,10 +707,30 @@
                 <input id="notification-channel-enabled" type="checkbox">
                 <span>启用渠道</span>
             </label>
+            <div class="wide notification-header-editor">
+                <div class="subsection-head subsection-head-actions">
+                    <div>
+                        <p class="panel-kicker">Headers</p>
+                        <h4>HTTP 头部</h4>
+                    </div>
+                    <button type="button" class="secondary" id="notification-channel-add-header">添加头部</button>
+                </div>
+                <div id="notification-channel-headers" class="header-pair-list"></div>
+            </div>
             <label class="wide">
-                <span>自定义 Headers JSON</span>
-                <textarea id="notification-channel-headers" rows="5" placeholder='{"X-Token":"..."}'></textarea>
+                <span>HTTP Body 模板</span>
+                <textarea id="notification-channel-body-template" rows="8" required></textarea>
+                <span class="field-hint">可使用事件占位符，也可以用 {{message.body}} 或 {{message.bodyJson}} 引用通知任务渲染后的消息正文。</span>
             </label>
+            <div class="wide notification-placeholder-panel">
+                <div class="subsection-head">
+                    <div>
+                        <p class="panel-kicker">Placeholders</p>
+                        <h4>渠道 Body 可用占位符</h4>
+                    </div>
+                </div>
+                <div id="notification-channel-placeholder-list" class="placeholder-list"></div>
+            </div>
             <label class="wide">
                 <span>签名密钥</span>
                 <input id="notification-channel-secret" type="password" autocomplete="off" placeholder="留空表示不修改">
@@ -761,7 +781,7 @@
                 <input id="notification-filter-trigger-types" type="text" autocomplete="off" placeholder="SCHEDULED,MANUAL">
             </label>
             <label class="wide">
-                <span>消息模板 JSON</span>
+                <span>消息正文模板 JSON</span>
                 <textarea id="notification-task-template" rows="10" required></textarea>
             </label>
             <div class="wide notification-placeholder-panel">

@@ -55,6 +55,7 @@ public class NotificationService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final int SNAPSHOT_LIMIT = 8_000;
     private static final int ERROR_LIMIT = 500;
+    private static final String DEFAULT_CHANNEL_BODY_TEMPLATE = "{{message.bodyJson}}";
     private static final Set<String> BLOCKED_HEADERS = Set.of(
             "host",
             "content-length",
@@ -136,11 +137,17 @@ public class NotificationService {
 
     public TestResponse testChannel(long channelId) {
         NotificationChannelRecord channel = existingChannel(channelId);
-        String body = """
+        String messageBody = """
                 {"event":"TEST","message":"LinkPeek webhook test"}
                 """.strip();
         long startedAt = System.nanoTime();
         try {
+            String body = templateService.renderChannelBody(
+                    NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS,
+                    channel.getBodyTemplate(),
+                    Map.of(),
+                    messageBody
+            );
             SendResult result = sendWebhook(channel, NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS.name(), now(), body);
             return new TestResponse(
                     result.success(),
@@ -253,8 +260,9 @@ public class NotificationService {
             Map<String, Object> values,
             NotificationTaskRecord task
     ) {
-        String body = templateService.render(eventType, task.getTemplateJson(), values);
+        String messageBody = templateService.render(eventType, task.getTemplateJson(), values);
         for (NotificationChannelRecord channel : notificationMapper.selectEnabledChannelsForTask(task.getId())) {
+            String body = templateService.renderChannelBody(eventType, channel.getBodyTemplate(), values, messageBody);
             NotificationDeliveryRecord delivery = new NotificationDeliveryRecord();
             delivery.setEventType(eventType.name());
             delivery.setEventKey(eventKey);
@@ -479,6 +487,7 @@ public class NotificationService {
         channel.setMethod(METHOD_POST);
         channel.setUrl(normalizeUrl(request.url()));
         channel.setHeadersJson(normalizeHeaders(request.headersJson()));
+        channel.setBodyTemplate(normalizeChannelBodyTemplate(request.bodyTemplate()));
         String secret = optionalStrip(request.secret());
         if (!StringUtils.hasText(secret) && existing != null && StringUtils.hasText(existing.getSecret())) {
             secret = existing.getSecret();
@@ -565,6 +574,12 @@ public class NotificationService {
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Webhook headers must be valid JSON.", exception);
         }
+    }
+
+    private String normalizeChannelBodyTemplate(String bodyTemplate) {
+        String normalized = StringUtils.hasText(bodyTemplate) ? bodyTemplate.strip() : DEFAULT_CHANNEL_BODY_TEMPLATE;
+        templateService.validateChannelBodyTemplate(NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS, normalized);
+        return normalized;
     }
 
     private String normalizeFilters(JsonNode filters) {
@@ -736,6 +751,7 @@ public class NotificationService {
             Boolean enabled,
             String url,
             JsonNode headersJson,
+            String bodyTemplate,
             String secret,
             Integer timeoutSeconds
     ) {
@@ -749,6 +765,7 @@ public class NotificationService {
             String url,
             String method,
             JsonNode headersJson,
+            String bodyTemplate,
             boolean secretConfigured,
             int timeoutSeconds,
             long createdAt,
@@ -763,6 +780,7 @@ public class NotificationService {
                     record.getUrl(),
                     record.getMethod(),
                     parseJson(record.getHeadersJson()),
+                    StringUtils.hasText(record.getBodyTemplate()) ? record.getBodyTemplate() : DEFAULT_CHANNEL_BODY_TEMPLATE,
                     StringUtils.hasText(record.getSecret()),
                     record.getTimeoutSeconds(),
                     record.getCreatedAt(),

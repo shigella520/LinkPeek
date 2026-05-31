@@ -56,4 +56,21 @@ class NotificationTemplateServiceTest {
                 )
         );
     }
+
+    @Test
+    void rendersChannelBodyWithRenderedMessagePlaceholders() throws Exception {
+        String rendered = service.renderChannelBody(
+                NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS,
+                """
+                        {"text":"{{message.body}}","payload":{{message.bodyJson}},"title":"{{image.ogTitle}}"}
+                        """,
+                Map.of("image.ogTitle", "月报"),
+                "{\"count\":7}"
+        );
+
+        JsonNode json = objectMapper.readTree(rendered);
+        assertEquals("{\"count\":7}", json.path("text").asText());
+        assertEquals(7, json.path("payload").path("count").asInt());
+        assertEquals("月报", json.path("title").asText());
+    }
 }

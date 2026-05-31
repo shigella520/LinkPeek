@@ -21,6 +21,10 @@ public class NotificationTemplateService {
     private static final int MAX_TEMPLATE_LENGTH = 20 * 1024;
     private static final int MAX_RENDERED_LENGTH = 256 * 1024;
     private static final int MAX_PLACEHOLDER_COUNT = 200;
+    private static final Set<String> CHANNEL_MESSAGE_PLACEHOLDERS = Set.of(
+            "message.body",
+            "message.bodyJson"
+    );
 
     private final ObjectMapper objectMapper;
 
@@ -51,6 +55,11 @@ public class NotificationTemplateService {
     public String normalizeTemplate(NotificationEventType eventType, String templateJson) {
         validateTemplate(eventType, templateJson);
         return templateJson.strip();
+    }
+
+    public String normalizeChannelBodyTemplate(NotificationEventType eventType, String bodyTemplate) {
+        validateChannelBodyTemplate(eventType, bodyTemplate);
+        return bodyTemplate.strip();
     }
 
     public void validateTemplate(NotificationEventType eventType, String templateJson) {
@@ -86,6 +95,46 @@ public class NotificationTemplateService {
         return assertValidJson(rendered);
     }
 
+    public void validateChannelBodyTemplate(NotificationEventType eventType, String bodyTemplate) {
+        if (!StringUtils.hasText(bodyTemplate)) {
+            throw new TemplateValidationException("Webhook body template is required.", List.of());
+        }
+        if (bodyTemplate.length() > MAX_TEMPLATE_LENGTH) {
+            throw new TemplateValidationException("Webhook body template must not exceed 20 KB.", List.of());
+        }
+        List<String> placeholders = extractPlaceholders(bodyTemplate);
+        if (placeholders.size() > MAX_PLACEHOLDER_COUNT) {
+            throw new TemplateValidationException("Webhook body template contains too many placeholders.", List.of());
+        }
+        Set<String> allowed = allowedChannelBodyPlaceholders(eventType);
+        List<String> invalid = placeholders.stream()
+                .filter(placeholder -> !allowed.contains(placeholder))
+                .distinct()
+                .sorted()
+                .toList();
+        if (!invalid.isEmpty()) {
+            throw new TemplateValidationException("Webhook body template contains unsupported placeholders: " + String.join(", ", invalid), invalid);
+        }
+    }
+
+    public String renderChannelBody(NotificationEventType eventType, String bodyTemplate, Map<String, Object> values, String messageBody) {
+        validateChannelBodyTemplate(eventType, bodyTemplate);
+        Map<String, Object> channelValues = new LinkedHashMap<>(values == null ? Map.of() : values);
+        channelValues.put("message.body", messageBody == null ? "" : messageBody);
+        channelValues.put("message.bodyJson", messageBody == null ? "" : messageBody);
+        String rendered = renderWithValues(bodyTemplate, channelValues, Set.of("message.bodyJson"));
+        if (rendered.length() > MAX_RENDERED_LENGTH) {
+            throw new TemplateValidationException("Rendered webhook body must not exceed 256 KB.", List.of());
+        }
+        return rendered;
+    }
+
+    public Set<String> allowedChannelBodyPlaceholders(NotificationEventType eventType) {
+        java.util.HashSet<String> allowed = new java.util.HashSet<>(schema(eventType).placeholderNames());
+        allowed.addAll(CHANNEL_MESSAGE_PLACEHOLDERS);
+        return allowed;
+    }
+
     public List<String> extractPlaceholders(String template) {
         List<String> placeholders = new ArrayList<>();
         if (!StringUtils.hasText(template)) {
@@ -99,6 +148,10 @@ public class NotificationTemplateService {
     }
 
     private String renderWithValues(String templateJson, Map<String, Object> values) {
+        return renderWithValues(templateJson, values, Set.of());
+    }
+
+    private String renderWithValues(String templateJson, Map<String, Object> values, Set<String> rawPlaceholders) {
         String rendered = templateJson;
         for (String placeholder : extractPlaceholders(templateJson).stream().distinct().toList()) {
             String quotedPattern = "\"\\s*\\{\\{\\s*" + Pattern.quote(placeholder) + "\\s*}}\\s*\"";
@@ -108,8 +161,10 @@ public class NotificationTemplateService {
         Matcher matcher = PLACEHOLDER_PATTERN.matcher(rendered);
         StringBuffer buffer = new StringBuffer();
         while (matcher.find()) {
-            Object value = values.get(matcher.group(1));
-            matcher.appendReplacement(buffer, Matcher.quoteReplacement(jsonStringFragment(value)));
+            String placeholder = matcher.group(1);
+            Object value = values.get(placeholder);
+            String replacement = rawPlaceholders.contains(placeholder) ? String.valueOf(value == null ? "" : value) : jsonStringFragment(value);
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
         }
         matcher.appendTail(buffer);
         return buffer.toString();

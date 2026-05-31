@@ -1156,6 +1156,31 @@ td .share-summary-task-actions {
     background: #fafbfc;
 }
 
+.notification-header-editor {
+    display: grid;
+    gap: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    background: #fafbfc;
+}
+
+.header-pair-list {
+    display: grid;
+    gap: 10px;
+}
+
+.header-pair-row {
+    display: grid;
+    grid-template-columns: minmax(160px, 0.8fr) minmax(180px, 1.2fr) auto;
+    gap: 10px;
+    align-items: end;
+}
+
+.header-pair-row button {
+    min-width: 64px;
+}
+
 .placeholder-list {
     display: grid;
     gap: 14px;
@@ -1391,7 +1416,8 @@ td button.danger {
     .log-controls,
     .preview-event-controls,
     .share-summary-filter-form,
-    .inline-config-form {
+    .inline-config-form,
+    .header-pair-row {
         grid-template-columns: 1fr;
     }
 
