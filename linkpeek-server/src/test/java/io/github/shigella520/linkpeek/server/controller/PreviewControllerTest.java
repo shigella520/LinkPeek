@@ -317,7 +317,9 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("/api/admin/ai-title-config")))
                 .andExpect(content().string(containsString("/api/admin/preview-events")))
                 .andExpect(content().string(containsString("/api/admin/share-summary")))
-                .andExpect(content().string(containsString("/api/admin/notifications")));
+                .andExpect(content().string(containsString("/api/admin/notifications")))
+                .andExpect(content().string(containsString("renderNotificationDeliveryEvent")))
+                .andExpect(content().string(containsString("eventKeyTargetId")));
 
         mockMvc.perform(get("/admin/login.js"))
                 .andExpect(status().isOk())

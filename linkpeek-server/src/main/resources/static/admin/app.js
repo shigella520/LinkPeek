@@ -1209,7 +1209,7 @@
                 <tr>
                     <td class="nowrap">${escapeHtml(formatTimestamp(delivery.createdAt))}</td>
                     <td>${escapeHtml(delivery.notificationTaskName || "-")}<div class="keyline">${escapeHtml(delivery.channelName || "-")}</div></td>
-                    <td>${escapeHtml(delivery.eventType || "-")}<div class="keyline">${escapeHtml(delivery.eventKey || "-")}</div></td>
+                    <td>${renderNotificationDeliveryEvent(delivery)}</td>
                     <td>${renderNotificationStatus(delivery.status)}${delivery.errorMessage ? `<div class="keyline summary-error-hint" title="${escapeAttribute(delivery.errorMessage)}">${escapeHtml(delivery.errorMessage)}</div>` : ""}</td>
                     <td>${escapeHtml(delivery.responseStatus || "-")}<div class="keyline">${escapeHtml(delivery.attemptCount || 0)} 次</div></td>
                     <td>${escapeHtml(formatDuration(delivery.durationMs))}</td>
@@ -1217,6 +1217,45 @@
             `).join("");
         }
         renderNotificationDeliveryPagination(payload);
+    }
+
+    function renderNotificationDeliveryEvent(delivery) {
+        const eventType = delivery.eventType || "";
+        const eventKey = delivery.eventKey || "";
+        const eventLabel = notificationEventLabel(eventType);
+        const targetLabel = notificationEventTargetLabel(eventType, eventKey);
+        const title = eventKey ? `事件标识：${eventKey}` : eventType;
+        return `
+            <span title="${escapeAttribute(eventType)}">${escapeHtml(eventLabel || "-")}</span>
+            <div class="keyline" title="${escapeAttribute(title)}">${escapeHtml(targetLabel || "关联对象未知")}</div>
+        `;
+    }
+
+    function notificationEventLabel(eventType) {
+        const schema = state.notificationEvents.find((event) => event.eventType === eventType);
+        return schema?.label || notificationEventTypeFallbackLabel(eventType);
+    }
+
+    function notificationEventTypeFallbackLabel(eventType) {
+        return {
+            SHARE_SUMMARY_IMAGE_SUCCESS: "分享总结图片生成成功"
+        }[eventType] || eventType;
+    }
+
+    function notificationEventTargetLabel(eventType, eventKey) {
+        const targetId = eventKeyTargetId(eventType, eventKey);
+        if (eventType === "SHARE_SUMMARY_IMAGE_SUCCESS" && targetId) {
+            return `分享图记录 #${targetId}`;
+        }
+        return eventKey || "";
+    }
+
+    function eventKeyTargetId(eventType, eventKey) {
+        const prefix = `${eventType}:`;
+        if (!eventType || !eventKey || !eventKey.startsWith(prefix)) {
+            return "";
+        }
+        return eventKey.slice(prefix.length);
     }
 
     function renderNotificationDeliveryPagination(payload) {
