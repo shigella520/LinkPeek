@@ -700,7 +700,7 @@
                 </td>
                     <td class="nowrap">${escapeHtml(periodLabel(task.periodType))}</td>
                     <td class="nowrap">${escapeHtml(scheduleLabel(task))}</td>
-                    <td class="nowrap">${escapeHtml(task.maxLinks || 100)}</td>
+                    <td class="nowrap">${escapeHtml(task.minLinks || 1)} / ${escapeHtml(task.maxLinks || 100)}</td>
                 <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
                 <td>
                     <div class="row-actions share-summary-task-actions">
@@ -763,7 +763,7 @@
                     <td class="nowrap">${escapeHtml(formatTimestamp(run.startedAt))}</td>
                     <td>${escapeHtml(run.taskName || "-")}<div class="keyline">${escapeHtml(run.triggerType || "-")}</div></td>
                     <td class="summary-window-cell">${renderSummaryWindow(run.windowStart, run.windowEnd)}</td>
-                    <td>${renderRunStatus(run.status)}</td>
+                    <td>${renderRunStatus(run.status)}${renderRunErrorHint(run.errorMessage)}</td>
                     <td>${escapeHtml(run.linkCount || 0)} / ${escapeHtml(run.uniqueLinkCount || 0)} / ${escapeHtml(run.inputLinkCount || 0)}</td>
                     <td>${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
                     <td>${renderShareSummaryImageCell(run)}</td>
@@ -919,7 +919,7 @@
             return `${weekdayLabel(task.dayOfWeek)} ${task.runTime || ""}`;
         }
         if (task.periodType === "MONTHLY") {
-            return `${task.dayOfMonth || 1} 号 ${task.runTime || ""}`;
+            return `月末 ${task.runTime || ""}`;
         }
         return task.runTime || "";
     }
@@ -1177,13 +1177,18 @@
             periodType,
             runTime: document.getElementById("share-summary-task-run-time").value,
             dayOfWeek: periodType === "WEEKLY" ? Number(document.getElementById("share-summary-task-day-of-week").value) : null,
-            dayOfMonth: periodType === "MONTHLY" ? Number(document.getElementById("share-summary-task-day-of-month").value) : null,
             prompt: document.getElementById("share-summary-task-prompt").value.trim(),
-            maxLinks: Number(document.getElementById("share-summary-task-max-links").value || 100)
+            maxLinks: Number(document.getElementById("share-summary-task-max-links").value || 100),
+            minLinks: Number(document.getElementById("share-summary-task-min-links").value || 1)
         };
         const maxLinksError = validateShareSummaryMaxLinks(payload.maxLinks);
         if (maxLinksError) {
             setFeedback("share-summary-task-modal-feedback", maxLinksError, "is-error");
+            return;
+        }
+        const minLinksError = validateShareSummaryMinLinks(payload.minLinks);
+        if (minLinksError) {
+            setFeedback("share-summary-task-modal-feedback", minLinksError, "is-error");
             return;
         }
         const url = id ? `/api/admin/share-summary/tasks/${encodeURIComponent(id)}` : "/api/admin/share-summary/tasks";
@@ -1337,8 +1342,8 @@
         document.getElementById("share-summary-task-period").value = task.periodType || "DAILY";
         document.getElementById("share-summary-task-run-time").value = task.runTime || "09:00";
         document.getElementById("share-summary-task-day-of-week").value = task.dayOfWeek || 1;
-        document.getElementById("share-summary-task-day-of-month").value = task.dayOfMonth || 1;
         document.getElementById("share-summary-task-max-links").value = task.maxLinks || 100;
+        document.getElementById("share-summary-task-min-links").value = task.minLinks || 1;
         document.getElementById("share-summary-task-enabled").checked = Boolean(task.enabled);
         document.getElementById("share-summary-task-prompt").value = task.prompt || "";
         openModal("share-summary-task-modal");
@@ -1361,15 +1366,15 @@
         document.getElementById("share-summary-task-period").value = "DAILY";
         document.getElementById("share-summary-task-run-time").value = "09:00";
         document.getElementById("share-summary-task-day-of-week").value = "1";
-        document.getElementById("share-summary-task-day-of-month").value = "1";
         document.getElementById("share-summary-task-max-links").value = "100";
+        document.getElementById("share-summary-task-min-links").value = "1";
         updateShareSummaryPeriodFields();
     }
 
     function updateShareSummaryPeriodFields() {
         const periodType = document.getElementById("share-summary-task-period").value;
         document.getElementById("share-summary-task-weekday-field").hidden = periodType !== "WEEKLY";
-        document.getElementById("share-summary-task-monthday-field").hidden = periodType !== "MONTHLY";
+        document.getElementById("share-summary-task-monthly-field").hidden = periodType !== "MONTHLY";
     }
 
     async function openShareSummaryRunDetail(runId) {
@@ -1602,6 +1607,20 @@
             return "最大链接数必须是 1-500 之间的整数。";
         }
         return "";
+    }
+
+    function validateShareSummaryMinLinks(value) {
+        if (!Number.isInteger(value) || value < 1 || value > 500) {
+            return "最小链接数必须是 1-500 之间的整数。";
+        }
+        return "";
+    }
+
+    function renderRunErrorHint(errorMessage) {
+        if (!errorMessage) {
+            return "";
+        }
+        return `<div class="keyline summary-error-hint" title="${escapeAttribute(errorMessage)}">${escapeHtml(errorMessage)}</div>`;
     }
 
     function renderShareSummaryRunDetail(run, images = []) {

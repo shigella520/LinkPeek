@@ -40,6 +40,9 @@ public class ShareSummaryService {
     private static final int DEFAULT_MAX_LINKS = 100;
     private static final int MIN_MAX_LINKS = 1;
     private static final int MAX_MAX_LINKS = 500;
+    private static final int DEFAULT_MIN_LINKS = 1;
+    private static final int MIN_MIN_LINKS = 1;
+    private static final int MAX_MIN_LINKS = 500;
     private static final int CATCH_UP_LIMIT = 7;
     private static final long RUNNING_TIMEOUT_MILLIS = 30 * 60 * 1000L;
     private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接标题列表，生成一份结构清晰、信息密度高的中文分享总结。";
@@ -171,88 +174,106 @@ public class ShareSummaryService {
         ShareSummaryPeriodType periodType = ShareSummaryPeriodType.fromValue(task.getPeriodType());
         ZoneId zone = clock.getZone();
         LocalDateTime nowDateTime = LocalDateTime.ofInstant(Instant.now(clock), zone);
-        LocalDate today = nowDateTime.toLocalDate();
         LocalTime runTime = parseRunTime(task.getRunTime());
-        LocalDate cursorEnd = latestDueWindowEnd(periodType, today, nowDateTime, runTime, task);
-        if (cursorEnd == null) {
-            return List.of();
-        }
+        LocalDateTime latestDueTrigger = latestDueTrigger(periodType, nowDateTime, runTime, task);
 
         ShareSummaryRunRecord latest = shareSummaryMapper.selectLatestCompletedScheduledRun(task.getId());
-        LocalDate firstEnd = latest == null
-                ? previousWindowEnd(periodType, cursorEnd)
-                : millisToDate(latest.getWindowEnd(), zone);
+        LocalDateTime nextTrigger = latest == null
+                ? latestDueTrigger
+                : nextTriggerAfter(periodType, millisToDateTime(latest.getWindowEnd(), zone), runTime, task);
         List<Window> windows = new ArrayList<>();
-        LocalDate nextEnd = nextWindowEnd(periodType, firstEnd);
-        while (!nextEnd.isAfter(cursorEnd)) {
-            windows.add(windowEndingAt(periodType, nextEnd, zone));
+        while (!nextTrigger.isAfter(latestDueTrigger)) {
+            windows.add(windowForTrigger(periodType, nextTrigger, zone));
             if (windows.size() >= CATCH_UP_LIMIT) {
                 break;
             }
-            nextEnd = nextWindowEnd(periodType, nextEnd);
+            nextTrigger = nextTriggerAfter(periodType, nextTrigger, runTime, task);
         }
         return windows;
     }
 
-    private LocalDate latestDueWindowEnd(
+    private LocalDateTime latestDueTrigger(
             ShareSummaryPeriodType periodType,
-            LocalDate today,
             LocalDateTime nowDateTime,
             LocalTime runTime,
             ShareSummaryTaskRecord task
     ) {
         return switch (periodType) {
-            case DAILY -> nowDateTime.toLocalTime().compareTo(runTime) >= 0 ? today : today.minusDays(1);
-            case WEEKLY -> latestWeeklyWindowEnd(nowDateTime, runTime, task.getDayOfWeek());
-            case MONTHLY -> latestMonthlyWindowEnd(nowDateTime, runTime, task.getDayOfMonth());
+            case DAILY -> latestDailyTrigger(nowDateTime, runTime);
+            case WEEKLY -> latestWeeklyTrigger(nowDateTime, runTime, task.getDayOfWeek());
+            case MONTHLY -> latestMonthlyTrigger(nowDateTime, runTime);
         };
     }
 
-    private LocalDate latestWeeklyWindowEnd(LocalDateTime nowDateTime, LocalTime runTime, Integer dayOfWeek) {
+    private LocalDateTime latestDailyTrigger(LocalDateTime nowDateTime, LocalTime runTime) {
+        LocalDateTime trigger = nowDateTime.toLocalDate().atTime(runTime);
+        return trigger.isAfter(nowDateTime) ? trigger.minusDays(1) : trigger;
+    }
+
+    private LocalDateTime latestWeeklyTrigger(LocalDateTime nowDateTime, LocalTime runTime, Integer dayOfWeek) {
         DayOfWeek configuredDay = DayOfWeek.of(dayOfWeek);
         LocalDate scheduledDate = nowDateTime.toLocalDate().with(TemporalAdjusters.previousOrSame(configuredDay));
-        if (scheduledDate.equals(nowDateTime.toLocalDate()) && nowDateTime.toLocalTime().compareTo(runTime) < 0) {
-            scheduledDate = scheduledDate.minusWeeks(1);
-        }
-        return scheduledDate.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+        LocalDateTime trigger = scheduledDate.atTime(runTime);
+        return trigger.isAfter(nowDateTime) ? trigger.minusWeeks(1) : trigger;
     }
 
-    private LocalDate latestMonthlyWindowEnd(LocalDateTime nowDateTime, LocalTime runTime, Integer dayOfMonth) {
+    private LocalDateTime latestMonthlyTrigger(LocalDateTime nowDateTime, LocalTime runTime) {
         YearMonth currentMonth = YearMonth.from(nowDateTime);
-        LocalDate scheduledDate = currentMonth.atDay(Math.min(dayOfMonth, currentMonth.lengthOfMonth()));
-        if (nowDateTime.toLocalDate().isBefore(scheduledDate)
-                || (nowDateTime.toLocalDate().equals(scheduledDate) && nowDateTime.toLocalTime().compareTo(runTime) < 0)) {
-            scheduledDate = currentMonth.minusMonths(1).atDay(dayOfMonth);
+        LocalDateTime trigger = currentMonth.atEndOfMonth().atTime(runTime);
+        if (trigger.isAfter(nowDateTime)) {
+            trigger = currentMonth.minusMonths(1).atEndOfMonth().atTime(runTime);
         }
-        return scheduledDate.withDayOfMonth(1);
+        return trigger;
     }
 
-    private LocalDate previousWindowEnd(ShareSummaryPeriodType periodType, LocalDate windowEnd) {
+    private LocalDateTime nextTriggerAfter(
+            ShareSummaryPeriodType periodType,
+            LocalDateTime after,
+            LocalTime runTime,
+            ShareSummaryTaskRecord task
+    ) {
         return switch (periodType) {
-            case DAILY -> windowEnd.minusDays(1);
-            case WEEKLY -> windowEnd.minusWeeks(1);
-            case MONTHLY -> windowEnd.minusMonths(1);
+            case DAILY -> nextDailyTriggerAfter(after, runTime);
+            case WEEKLY -> nextWeeklyTriggerAfter(after, runTime, task.getDayOfWeek());
+            case MONTHLY -> nextMonthlyTriggerAfter(after, runTime);
         };
     }
 
-    private LocalDate nextWindowEnd(ShareSummaryPeriodType periodType, LocalDate windowEnd) {
-        return switch (periodType) {
-            case DAILY -> windowEnd.plusDays(1);
-            case WEEKLY -> windowEnd.plusWeeks(1);
-            case MONTHLY -> windowEnd.plusMonths(1);
-        };
+    private LocalDateTime nextDailyTriggerAfter(LocalDateTime after, LocalTime runTime) {
+        LocalDateTime trigger = after.toLocalDate().atTime(runTime);
+        return trigger.isAfter(after) ? trigger : trigger.plusDays(1);
     }
 
-    private Window windowEndingAt(ShareSummaryPeriodType periodType, LocalDate windowEnd, ZoneId zone) {
-        LocalDate windowStart = previousWindowEnd(periodType, windowEnd);
+    private LocalDateTime nextWeeklyTriggerAfter(LocalDateTime after, LocalTime runTime, Integer dayOfWeek) {
+        DayOfWeek configuredDay = DayOfWeek.of(dayOfWeek);
+        LocalDate scheduledDate = after.toLocalDate().with(TemporalAdjusters.nextOrSame(configuredDay));
+        LocalDateTime trigger = scheduledDate.atTime(runTime);
+        return trigger.isAfter(after) ? trigger : trigger.plusWeeks(1);
+    }
+
+    private LocalDateTime nextMonthlyTriggerAfter(LocalDateTime after, LocalTime runTime) {
+        YearMonth month = YearMonth.from(after);
+        LocalDateTime trigger = month.atEndOfMonth().atTime(runTime);
+        if (!trigger.isAfter(after)) {
+            trigger = month.plusMonths(1).atEndOfMonth().atTime(runTime);
+        }
+        return trigger;
+    }
+
+    private Window windowForTrigger(ShareSummaryPeriodType periodType, LocalDateTime trigger, ZoneId zone) {
+        LocalDate windowStart = switch (periodType) {
+            case DAILY -> trigger.toLocalDate();
+            case WEEKLY -> trigger.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            case MONTHLY -> trigger.toLocalDate().withDayOfMonth(1);
+        };
         return new Window(
                 windowStart.atStartOfDay(zone).toInstant().toEpochMilli(),
-                windowEnd.atStartOfDay(zone).toInstant().toEpochMilli()
+                trigger.atZone(zone).toInstant().toEpochMilli()
         );
     }
 
-    private LocalDate millisToDate(long millis, ZoneId zone) {
-        return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate();
+    private LocalDateTime millisToDateTime(long millis, ZoneId zone) {
+        return Instant.ofEpochMilli(millis).atZone(zone).toLocalDateTime();
     }
 
     private ShareSummaryRunRecord executeWindow(
@@ -308,6 +329,15 @@ public class ShareSummaryService {
         if (inputLinks.isEmpty()) {
             run.setStatus(ShareSummaryRunStatus.EMPTY.name());
             run.setReport("");
+            run.setErrorMessage("No link titles were found in the summary window.");
+            run.setFinishedAt(now());
+            shareSummaryMapper.updateRun(run);
+            return;
+        }
+        if (uniqueCount < task.getMinLinks()) {
+            run.setStatus(ShareSummaryRunStatus.EMPTY.name());
+            run.setReport("");
+            run.setErrorMessage("Link title count %d is below the configured minimum %d.".formatted(uniqueCount, task.getMinLinks()));
             run.setFinishedAt(now());
             shareSummaryMapper.updateRun(run);
             return;
@@ -402,24 +432,16 @@ public class ShareSummaryService {
         task.setRunTime(normalizeRunTime(request.runTime()));
         task.setPrompt(required(request.prompt(), "Prompt"));
         task.setMaxLinks(normalizeMaxLinks(request.maxLinks()));
+        task.setMinLinks(normalizeMinLinks(request.minLinks()));
         task.setDayOfWeek(periodType == ShareSummaryPeriodType.WEEKLY ? normalizeDayOfWeek(request.dayOfWeek()) : null);
-        task.setDayOfMonth(periodType == ShareSummaryPeriodType.MONTHLY ? normalizeDayOfMonth(request.dayOfMonth()) : null);
         return task;
     }
 
     private Window manualWindow(ShareSummaryTaskRecord task) {
-        List<Window> windows = dueWindows(task);
-        if (!windows.isEmpty()) {
-            return windows.get(windows.size() - 1);
-        }
         ShareSummaryPeriodType periodType = ShareSummaryPeriodType.fromValue(task.getPeriodType());
         ZoneId zone = clock.getZone();
-        LocalDate today = LocalDate.now(clock);
-        return windowEndingAt(periodType, switch (periodType) {
-            case DAILY -> today;
-            case WEEKLY -> today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-            case MONTHLY -> today.withDayOfMonth(1);
-        }, zone);
+        LocalDateTime nowDateTime = LocalDateTime.ofInstant(Instant.now(clock), zone);
+        return windowForTrigger(periodType, nowDateTime, zone);
     }
 
     private ShareSummaryTaskRecord existingTask(long taskId) {
@@ -476,17 +498,18 @@ public class ShareSummaryService {
         return dayOfWeek;
     }
 
-    private Integer normalizeDayOfMonth(Integer dayOfMonth) {
-        if (dayOfMonth == null || dayOfMonth < 1 || dayOfMonth > 28) {
-            throw new IllegalArgumentException("Day of month must be between 1 and 28.");
-        }
-        return dayOfMonth;
-    }
-
     private int normalizeMaxLinks(Integer maxLinks) {
         int value = maxLinks == null ? DEFAULT_MAX_LINKS : maxLinks;
         if (value < MIN_MAX_LINKS || value > MAX_MAX_LINKS) {
             throw new IllegalArgumentException("Max links must be between 1 and 500.");
+        }
+        return value;
+    }
+
+    private int normalizeMinLinks(Integer minLinks) {
+        int value = minLinks == null ? DEFAULT_MIN_LINKS : minLinks;
+        if (value < MIN_MIN_LINKS || value > MAX_MIN_LINKS) {
+            throw new IllegalArgumentException("Min links must be between 1 and 500.");
         }
         return value;
     }
@@ -528,9 +551,9 @@ public class ShareSummaryService {
             String periodType,
             String runTime,
             Integer dayOfWeek,
-            Integer dayOfMonth,
             String prompt,
-            Integer maxLinks
+            Integer maxLinks,
+            Integer minLinks
     ) {
     }
 

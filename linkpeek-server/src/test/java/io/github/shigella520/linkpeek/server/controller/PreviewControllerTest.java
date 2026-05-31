@@ -35,8 +35,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
-import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -880,7 +880,7 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2}
+                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2,"minLinks":1}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").exists())
@@ -891,14 +891,15 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.dayOfWeek").doesNotExist())
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist())
                 .andExpect(jsonPath("$.prompt").value("总结重点"))
-                .andExpect(jsonPath("$.maxLinks").value(2));
+                .andExpect(jsonPath("$.maxLinks").value(2))
+                .andExpect(jsonPath("$.minLinks").value(1));
 
         Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "每日总结");
         mockMvc.perform(put("/api/admin/share-summary/tasks/{taskId}", taskId)
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"周总结","enabled":true,"periodType":"WEEKLY","runTime":"10:30","dayOfWeek":3,"prompt":"按主题聚合","maxLinks":2}
+                                {"name":"周总结","enabled":true,"periodType":"WEEKLY","runTime":"10:30","dayOfWeek":3,"prompt":"按主题聚合","maxLinks":2,"minLinks":1}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.periodType").value("WEEKLY"))
@@ -909,21 +910,13 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"周总结","enabled":true,"periodType":"DAILY","runTime":"00:00","prompt":"按主题聚合","maxLinks":2}
+                                {"name":"周总结","enabled":true,"periodType":"DAILY","runTime":"00:00","prompt":"按主题聚合","maxLinks":2,"minLinks":1}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.periodType").value("DAILY"))
                 .andExpect(jsonPath("$.runTime").value("00:00"))
                 .andExpect(jsonPath("$.dayOfWeek").doesNotExist())
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist());
-
-        mockMvc.perform(post("/api/admin/share-summary/tasks")
-                        .cookie(cookie)
-                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"name":"非法月任务","enabled":true,"periodType":"MONTHLY","runTime":"09:00","dayOfMonth":31,"prompt":"总结","maxLinks":100}
-                                """))
-                .andExpect(status().isBadRequest());
 
         mockMvc.perform(get("/api/admin/share-summary/tasks")
                         .cookie(cookie))
@@ -933,7 +926,7 @@ class PreviewControllerTest {
 
         ExpectedWindow window = currentDailyManualWindow();
         long windowStart = window.start();
-        long windowEnd = window.end();
+        long beforeRun = System.currentTimeMillis();
         insertStatsLink("key-a", "https://example.com/a", "数据库标题 A", windowStart + 1_000L);
         insertStatsLink("key-b", "https://example.com/b", "数据库标题 B", windowStart + 2_000L);
         insertStatsLink("key-c", "https://example.com/c", "数据库标题 C", windowStart + 3_000L);
@@ -943,9 +936,9 @@ class PreviewControllerTest {
         insertPreviewCreatedEvent("key-a", "https://source.example.com/a2", windowStart + 3_000L, true, true);
         insertPreviewCreatedEvent("key-c", "https://source.example.com/c", windowStart + 4_000L, false, false);
         insertPreviewCreatedEvent("key-empty", "https://source.example.com/empty", windowStart + 5_000L, false, false);
-        insertPreviewCreatedEvent("key-a", "https://source.example.com/outside", windowEnd + 1_000L, true, true);
+        insertPreviewCreatedEvent("key-a", "https://source.example.com/outside", beforeRun + 60_000L, true, true);
 
-        mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
+        MvcResult runResult = mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.taskId").value(taskId))
@@ -953,7 +946,6 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.triggerType").value("MANUAL"))
                 .andExpect(jsonPath("$.periodType").value("DAILY"))
                 .andExpect(jsonPath("$.windowStart").value(windowStart))
-                .andExpect(jsonPath("$.windowEnd").value(windowEnd))
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
                 .andExpect(jsonPath("$.linkCount").value(5))
                 .andExpect(jsonPath("$.uniqueLinkCount").value(3))
@@ -961,7 +953,14 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.promptSnapshot").value("按主题聚合"))
                 .andExpect(jsonPath("$.aiProviderNames").value("local"))
                 .andExpect(jsonPath("$.aiDurationMs").value(34))
-                .andExpect(jsonPath("$.report").value("分享总结报告"));
+                .andExpect(jsonPath("$.report").value("分享总结报告"))
+                .andReturn();
+        long afterRun = System.currentTimeMillis();
+        Long actualWindowEnd = jdbcTemplate.queryForObject("SELECT window_end FROM share_summary_run WHERE task_id = ?", Long.class, taskId);
+        org.junit.jupiter.api.Assertions.assertNotNull(actualWindowEnd);
+        org.junit.jupiter.api.Assertions.assertTrue(actualWindowEnd >= beforeRun);
+        org.junit.jupiter.api.Assertions.assertTrue(actualWindowEnd <= afterRun);
+        org.junit.jupiter.api.Assertions.assertTrue(runResult.getResponse().getContentAsString().contains("\"windowEnd\":" + actualWindowEnd));
 
         org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.textRequests.get());
         AiTextPrompt prompt = testAiTitleClient.textPrompt.get();
@@ -1020,6 +1019,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.linkCount").value(0))
                 .andExpect(jsonPath("$.uniqueLinkCount").value(0))
                 .andExpect(jsonPath("$.inputLinkCount").value(0))
+                .andExpect(jsonPath("$.errorMessage").value("No link titles were found in the summary window."))
                 .andExpect(jsonPath("$.report").value(""));
 
         mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
@@ -1028,6 +1028,38 @@ class PreviewControllerTest {
                         .content("{\"windowStart\":1000,\"windowEnd\":2000}"))
                 .andExpect(status().isBadRequest());
 
+        org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.textRequests.get());
+    }
+
+    @Test
+    void adminShareSummaryManualRunBelowMinimumLinksRecordsReasonAndSkipsAi() throws Exception {
+        Cookie cookie = adminCookie();
+        mockMvc.perform(post("/api/admin/share-summary/tasks")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"门槛总结","enabled":false,"periodType":"DAILY","runTime":"09:00","prompt":"总结","maxLinks":100,"minLinks":2}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.minLinks").value(2));
+        Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "门槛总结");
+        ExpectedWindow window = currentDailyManualWindow();
+        insertStatsLink("min-key", "https://example.com/min", "门槛标题", window.start() + 1_000L);
+        insertPreviewCreatedEvent("min-key", "https://source.example.com/min", window.start() + 1_000L, true, true);
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("EMPTY"))
+                .andExpect(jsonPath("$.uniqueLinkCount").value(1))
+                .andExpect(jsonPath("$.inputLinkCount").value(1))
+                .andExpect(jsonPath("$.errorMessage").value("Link title count 1 is below the configured minimum 2."));
+
+        mockMvc.perform(get("/api/admin/share-summary/runs")
+                        .cookie(cookie)
+                        .param("taskId", String.valueOf(taskId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.items[0].errorMessage").value("Link title count 1 is below the configured minimum 2."));
         org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.textRequests.get());
     }
 
@@ -1077,7 +1109,7 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"图片总结","enabled":false,"periodType":"MONTHLY","runTime":"09:00","dayOfMonth":1,"prompt":"总结","maxLinks":5}
+                                {"name":"图片总结","enabled":false,"periodType":"MONTHLY","runTime":"09:00","prompt":"总结","maxLinks":5,"minLinks":1}
                                 """))
                 .andExpect(status().isOk());
         Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "图片总结");
@@ -1548,21 +1580,18 @@ class PreviewControllerTest {
 
     private static ExpectedWindow currentDailyManualWindow() {
         ZoneId zone = ZoneId.systemDefault();
-        LocalDate endDate = LocalDate.now(zone);
-        LocalDate startDate = endDate.minusDays(1);
         return new ExpectedWindow(
-                startDate.atStartOfDay(zone).toInstant().toEpochMilli(),
-                endDate.atStartOfDay(zone).toInstant().toEpochMilli()
+                LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli(),
+                System.currentTimeMillis()
         );
     }
 
     private static ExpectedWindow currentMonthlyManualWindow() {
         ZoneId zone = ZoneId.systemDefault();
-        LocalDate endDate = YearMonth.now(zone).atDay(1);
-        LocalDate startDate = endDate.minusMonths(1);
+        ZonedDateTime now = ZonedDateTime.now(zone);
         return new ExpectedWindow(
-                startDate.atStartOfDay(zone).toInstant().toEpochMilli(),
-                endDate.atStartOfDay(zone).toInstant().toEpochMilli()
+                now.toLocalDate().withDayOfMonth(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+                now.toInstant().toEpochMilli()
         );
     }
 

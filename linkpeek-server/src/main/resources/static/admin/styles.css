@@ -1205,6 +1205,19 @@ td .share-summary-task-actions {
     font-weight: 650;
 }
 
+.image-config-switch {
+    min-height: 44px;
+    align-self: end;
+}
+
+.summary-error-hint {
+    max-width: 180px;
+    color: #b45309;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .prompt-preview {
     display: -webkit-box;
     max-width: 680px;

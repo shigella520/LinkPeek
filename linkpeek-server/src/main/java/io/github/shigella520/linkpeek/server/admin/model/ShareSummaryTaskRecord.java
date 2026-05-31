@@ -7,9 +7,9 @@ public class ShareSummaryTaskRecord {
     private String periodType;
     private String runTime;
     private Integer dayOfWeek;
-    private Integer dayOfMonth;
     private String prompt;
     private int maxLinks;
+    private int minLinks;
     private boolean deleted;
     private Long deletedAt;
     private long createdAt;
@@ -63,14 +63,6 @@ public class ShareSummaryTaskRecord {
         this.dayOfWeek = dayOfWeek;
     }
 
-    public Integer getDayOfMonth() {
-        return dayOfMonth;
-    }
-
-    public void setDayOfMonth(Integer dayOfMonth) {
-        this.dayOfMonth = dayOfMonth;
-    }
-
     public String getPrompt() {
         return prompt;
     }
@@ -85,6 +77,14 @@ public class ShareSummaryTaskRecord {
 
     public void setMaxLinks(int maxLinks) {
         this.maxLinks = maxLinks;
+    }
+
+    public int getMinLinks() {
+        return minLinks;
+    }
+
+    public void setMinLinks(int minLinks) {
+        this.minLinks = minLinks;
     }
 
     public boolean isDeleted() {

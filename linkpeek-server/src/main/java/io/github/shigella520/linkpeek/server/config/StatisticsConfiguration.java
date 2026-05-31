@@ -65,6 +65,7 @@ public class StatisticsConfiguration {
                 DataSource dataSource,
                 ResourceDatabasePopulator statisticsSchemaPopulator
         ) {
+            rebuildShareSummaryTablesWithoutDayOfMonth(new JdbcTemplate(dataSource));
             statisticsSchemaPopulator.execute(dataSource);
             applyIdempotentMigrations(dataSource);
         }
@@ -80,8 +81,10 @@ public class StatisticsConfiguration {
             ensureColumn(jdbcTemplate, "stats_event", "ai_duration_ms", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "stats_event", "crawl_duration_ms", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "ai_provider", "request_timeout_seconds", "INTEGER NOT NULL DEFAULT 45");
+            rebuildShareSummaryTablesWithoutDayOfMonth(jdbcTemplate);
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted_at", "INTEGER");
+            ensureColumn(jdbcTemplate, "share_summary_task", "min_links", "INTEGER NOT NULL DEFAULT 1");
             ensureTable(jdbcTemplate, "share_summary_image_config", """
                     CREATE TABLE IF NOT EXISTS share_summary_image_config (
                         id INTEGER PRIMARY KEY,
@@ -138,14 +141,62 @@ public class StatisticsConfiguration {
         }
 
         private void ensureTable(JdbcTemplate jdbcTemplate, String tableName, String createSql) {
-            Integer count = jdbcTemplate.queryForObject(
-                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
-                    Integer.class,
-                    tableName
-            );
-            if (count == null || count == 0) {
+            if (!tableExists(jdbcTemplate, tableName)) {
                 jdbcTemplate.execute(createSql);
             }
+        }
+
+        private void rebuildShareSummaryTablesWithoutDayOfMonth(JdbcTemplate jdbcTemplate) {
+            if (!tableExists(jdbcTemplate, "share_summary_task")
+                    || !columnExists(jdbcTemplate, "share_summary_task", "day_of_month")) {
+                return;
+            }
+            jdbcTemplate.execute("DROP TABLE IF EXISTS share_summary_image");
+            jdbcTemplate.execute("DROP TABLE IF EXISTS share_summary_run");
+            jdbcTemplate.execute("DROP TABLE IF EXISTS share_summary_task");
+            jdbcTemplate.execute("""
+                    CREATE TABLE share_summary_task (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        enabled INTEGER NOT NULL,
+                        period_type TEXT NOT NULL,
+                        run_time TEXT NOT NULL,
+                        day_of_week INTEGER,
+                        prompt TEXT NOT NULL,
+                        max_links INTEGER NOT NULL,
+                        min_links INTEGER NOT NULL DEFAULT 1,
+                        deleted INTEGER NOT NULL DEFAULT 0,
+                        deleted_at INTEGER,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """);
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_task_enabled ON share_summary_task (enabled, deleted, period_type)");
+            jdbcTemplate.execute("""
+                    CREATE TABLE share_summary_run (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        task_id INTEGER NOT NULL,
+                        task_name TEXT NOT NULL,
+                        trigger_type TEXT NOT NULL,
+                        period_type TEXT NOT NULL,
+                        window_start INTEGER NOT NULL,
+                        window_end INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        link_count INTEGER NOT NULL DEFAULT 0,
+                        unique_link_count INTEGER NOT NULL DEFAULT 0,
+                        input_link_count INTEGER NOT NULL DEFAULT 0,
+                        prompt_snapshot TEXT NOT NULL,
+                        ai_provider_names TEXT,
+                        ai_duration_ms INTEGER NOT NULL DEFAULT 0,
+                        report TEXT,
+                        error_message TEXT,
+                        started_at INTEGER NOT NULL,
+                        finished_at INTEGER
+                    )
+                    """);
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_run_task_window ON share_summary_run (task_id, window_start, window_end)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_run_started_at ON share_summary_run (started_at)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_run_status ON share_summary_run (status)");
         }
 
         private void ensureColumn(
@@ -154,13 +205,25 @@ public class StatisticsConfiguration {
                 String columnName,
                 String columnDefinition
         ) {
-            boolean exists = jdbcTemplate.queryForList("PRAGMA table_info(" + tableName + ")")
+            if (!columnExists(jdbcTemplate, tableName, columnName)) {
+                jdbcTemplate.execute("ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnDefinition);
+            }
+        }
+
+        private boolean tableExists(JdbcTemplate jdbcTemplate, String tableName) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    Integer.class,
+                    tableName
+            );
+            return count != null && count > 0;
+        }
+
+        private boolean columnExists(JdbcTemplate jdbcTemplate, String tableName, String columnName) {
+            return jdbcTemplate.queryForList("PRAGMA table_info(" + tableName + ")")
                     .stream()
                     .map(row -> String.valueOf(row.get("name")).toLowerCase(Locale.ROOT))
                     .anyMatch(columnName::equals);
-            if (!exists) {
-                jdbcTemplate.execute("ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + columnDefinition);
-            }
         }
     }
 }

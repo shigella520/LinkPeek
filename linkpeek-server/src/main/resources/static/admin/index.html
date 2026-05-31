@@ -183,7 +183,7 @@
                             <th>任务</th>
                             <th>周期</th>
                             <th>执行时间</th>
-                            <th>最大链接</th>
+                            <th>链接数</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
@@ -463,13 +463,17 @@
                     <option value="7">周日</option>
                 </select>
             </label>
-            <label id="share-summary-task-monthday-field">
-                <span>几号</span>
-                <input id="share-summary-task-day-of-month" type="number" min="1" max="28" value="1">
+            <label id="share-summary-task-monthly-field">
+                <span>每月触发日</span>
+                <input type="text" value="月末" disabled>
             </label>
             <label>
                 <span>最大链接数</span>
                 <input id="share-summary-task-max-links" type="number" min="1" max="500" value="100" required>
+            </label>
+            <label>
+                <span>最小链接数</span>
+                <input id="share-summary-task-min-links" type="number" min="1" max="500" value="1" required>
             </label>
             <label class="checkbox-row">
                 <input id="share-summary-task-enabled" type="checkbox">
@@ -495,13 +499,15 @@
             <button type="button" class="secondary" id="share-summary-image-config-cancel-button">取消</button>
         </div>
         <form id="share-summary-image-config-form" class="grid-form">
-            <label class="checkbox-field">
+            <label class="switch-row image-config-switch">
                 <input id="share-summary-image-enabled" type="checkbox">
-                <span>启用 AI 生图</span>
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                <span class="switch-text">启用 AI 生图</span>
             </label>
-            <label class="checkbox-field">
+            <label class="switch-row image-config-switch">
                 <input id="share-summary-image-auto-generate" type="checkbox">
-                <span>分享总结成功后自动生成</span>
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                <span class="switch-text">分享总结成功后自动生成</span>
             </label>
             <label>
                 <span>Provider</span>
