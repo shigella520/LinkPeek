@@ -556,12 +556,22 @@ textarea:focus {
 
 .checkbox-row {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 8px;
 }
 
 .checkbox-row input {
+    flex: 0 0 auto;
     width: auto;
+    margin-top: 2px;
+}
+
+.checkbox-row span {
+    min-width: 0;
+}
+
+.checkbox-row .keyline {
+    display: block;
 }
 
 .provider-grid {
@@ -1156,6 +1166,83 @@ td .share-summary-task-actions {
     background: #fafbfc;
 }
 
+.notification-filter-panel {
+    display: grid;
+    gap: 12px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px;
+    background: #fafbfc;
+}
+
+.notification-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+}
+
+.notification-filter-field {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+}
+
+.notification-filter-field > span:first-child {
+    color: var(--muted);
+    font-size: 13px;
+    font-weight: 650;
+}
+
+.notification-filter-field-wide {
+    grid-column: 1 / -1;
+}
+
+.notification-filter-select {
+    position: relative;
+}
+
+.notification-filter-select summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 43px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: #ffffff;
+    color: var(--text);
+    cursor: pointer;
+    list-style: none;
+}
+
+.notification-filter-select summary::-webkit-details-marker {
+    display: none;
+}
+
+.notification-filter-select summary::after {
+    content: "";
+    flex: 0 0 auto;
+    width: 8px;
+    height: 8px;
+    border-right: 1.5px solid var(--muted);
+    border-bottom: 1.5px solid var(--muted);
+    transform: rotate(45deg);
+}
+
+.notification-filter-select[open] summary {
+    border-color: rgba(10, 132, 255, 0.58);
+    box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.12);
+}
+
+.notification-filter-select[open] summary::after {
+    transform: rotate(225deg);
+}
+
+.notification-filter-select .checkbox-list {
+    margin-top: 8px;
+}
+
 .notification-header-editor {
     display: grid;
     gap: 12px;
@@ -1417,7 +1504,8 @@ td button.danger {
     .preview-event-controls,
     .share-summary-filter-form,
     .inline-config-form,
-    .header-pair-row {
+    .header-pair-row,
+    .notification-filter-grid {
         grid-template-columns: 1fr;
     }
 

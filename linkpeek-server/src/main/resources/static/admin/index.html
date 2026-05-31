@@ -768,18 +768,38 @@
                 <span>关联渠道</span>
                 <div id="notification-task-channel-options" class="checkbox-list"></div>
             </label>
-            <label>
-                <span>分享总结任务 ID</span>
-                <input id="notification-filter-share-task-ids" type="text" autocomplete="off" placeholder="留空表示全部，例如 1,2">
-            </label>
-            <label>
-                <span>周期类型</span>
-                <input id="notification-filter-period-types" type="text" autocomplete="off" placeholder="DAILY,WEEKLY,MONTHLY">
-            </label>
-            <label>
-                <span>触发方式</span>
-                <input id="notification-filter-trigger-types" type="text" autocomplete="off" placeholder="SCHEDULED,MANUAL">
-            </label>
+            <div class="wide notification-filter-panel">
+                <div class="subsection-head">
+                    <div>
+                        <p class="panel-kicker">Filters</p>
+                        <h4>事件过滤规则</h4>
+                    </div>
+                </div>
+                <div id="notification-filter-fields" class="notification-filter-grid">
+                    <div class="notification-filter-field notification-filter-field-wide">
+                        <span>分享总结任务</span>
+                        <details id="notification-filter-share-task-dropdown" class="notification-filter-select">
+                            <summary><span id="notification-filter-share-task-summary">全部任务</span></summary>
+                            <div id="notification-filter-share-task-options" class="checkbox-list"></div>
+                        </details>
+                        <span class="field-hint">按任务名选择，留空表示全部任务。</span>
+                    </div>
+                    <div class="notification-filter-field">
+                        <span>周期类型</span>
+                        <details id="notification-filter-period-dropdown" class="notification-filter-select">
+                            <summary><span id="notification-filter-period-summary">全部周期</span></summary>
+                            <div id="notification-filter-period-options" class="checkbox-list"></div>
+                        </details>
+                    </div>
+                    <div class="notification-filter-field">
+                        <span>触发方式</span>
+                        <details id="notification-filter-trigger-dropdown" class="notification-filter-select">
+                            <summary><span id="notification-filter-trigger-summary">全部方式</span></summary>
+                            <div id="notification-filter-trigger-options" class="checkbox-list"></div>
+                        </details>
+                    </div>
+                </div>
+            </div>
             <label class="wide">
                 <span>消息正文模板 JSON</span>
                 <textarea id="notification-task-template" rows="10" required></textarea>

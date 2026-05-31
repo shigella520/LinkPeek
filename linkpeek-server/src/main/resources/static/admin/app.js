@@ -1,6 +1,15 @@
 (function () {
     const FREESTYLE_STYLE = "FREESTYLE";
     const CONFIRM_TIMEOUT_MS = 5000;
+    const NOTIFICATION_FILTER_PERIOD_TYPES = [
+        {value: "DAILY", label: "每日"},
+        {value: "WEEKLY", label: "每周"},
+        {value: "MONTHLY", label: "每月"}
+    ];
+    const NOTIFICATION_FILTER_TRIGGER_TYPES = [
+        {value: "SCHEDULED", label: "定时"},
+        {value: "MANUAL", label: "手动"}
+    ];
 
     const state = {
         prompts: [],
@@ -924,6 +933,86 @@
                 .concat(state.shareSummaryTasks.map((task) => `<option value="${escapeAttribute(task.id)}">${escapeHtml(task.name)}</option>`))
                 .join("");
         document.getElementById("share-summary-run-filter-task").innerHTML = filterOptions;
+        renderNotificationFilterOptions();
+    }
+
+    function renderNotificationFilterOptions() {
+        renderNotificationShareTaskFilterOptions();
+        renderNotificationEnumFilterOptions("notification-filter-period-options", NOTIFICATION_FILTER_PERIOD_TYPES, "notification-filter-period");
+        renderNotificationEnumFilterOptions("notification-filter-trigger-options", NOTIFICATION_FILTER_TRIGGER_TYPES, "notification-filter-trigger");
+    }
+
+    function renderNotificationShareTaskFilterOptions() {
+        const container = document.getElementById("notification-filter-share-task-options");
+        if (!container) {
+            return;
+        }
+        container.innerHTML = state.shareSummaryTasks.map((task) => `
+            <label class="checkbox-row">
+                <input type="checkbox" value="${escapeAttribute(task.id)}" data-notification-filter-share-task>
+                <span>${escapeHtml(task.name)}${task.enabled ? "" : "（停用）"}<span class="keyline">${escapeHtml(periodLabel(task.periodType))} · ${escapeHtml(scheduleLabel(task))}</span></span>
+            </label>
+        `).join("") || `<p class="muted">暂无分享总结任务</p>`;
+        container.querySelectorAll("[data-notification-filter-share-task]").forEach((input) => {
+            input.addEventListener("change", updateNotificationFilterSummaries);
+        });
+        updateNotificationFilterSummaries();
+    }
+
+    function renderNotificationEnumFilterOptions(containerId, options, dataAttribute) {
+        const container = document.getElementById(containerId);
+        if (!container) {
+            return;
+        }
+        container.innerHTML = options.map((option) => `
+            <label class="checkbox-row">
+                <input type="checkbox" value="${escapeAttribute(option.value)}" data-${dataAttribute}>
+                <span>${escapeHtml(option.label)}<span class="keyline">${escapeHtml(option.value)}</span></span>
+            </label>
+        `).join("");
+        container.querySelectorAll(`input[data-${dataAttribute}]`).forEach((input) => {
+            input.addEventListener("change", updateNotificationFilterSummaries);
+        });
+        updateNotificationFilterSummaries();
+    }
+
+    function updateNotificationFilterSummaries() {
+        setNotificationFilterSummary(
+                "notification-filter-share-task-summary",
+                checkedOptionLabels("[data-notification-filter-share-task]:checked"),
+                "全部任务"
+        );
+        setNotificationFilterSummary(
+                "notification-filter-period-summary",
+                checkedOptionLabels("[data-notification-filter-period]:checked"),
+                "全部周期"
+        );
+        setNotificationFilterSummary(
+                "notification-filter-trigger-summary",
+                checkedOptionLabels("[data-notification-filter-trigger]:checked"),
+                "全部方式"
+        );
+    }
+
+    function checkedOptionLabels(selector) {
+        return Array.from(document.querySelectorAll(selector))
+                .map((input) => {
+                    const label = input.closest("label");
+                    return label?.querySelector("span")?.childNodes?.[0]?.textContent?.trim() || input.value;
+                })
+                .filter(Boolean);
+    }
+
+    function setNotificationFilterSummary(elementId, labels, fallback) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            return;
+        }
+        if (!labels.length) {
+            element.textContent = fallback;
+            return;
+        }
+        element.textContent = labels.length > 2 ? `${labels.slice(0, 2).join("、")} 等 ${labels.length} 项` : labels.join("、");
     }
 
     function renderNotificationEventOptions() {
@@ -1487,23 +1576,37 @@
             setFeedback("notification-task-modal-feedback", "通知任务至少需要关联一个渠道。", "is-error");
             return null;
         }
-        const shareSummaryTaskIds = csvNumbers(document.getElementById("notification-filter-share-task-ids").value);
-        if (shareSummaryTaskIds == null) {
-            setFeedback("notification-task-modal-feedback", "分享总结任务 ID 必须是逗号分隔的数字。", "is-error");
-            return null;
-        }
         return {
             name: document.getElementById("notification-task-name").value.trim(),
             enabled: document.getElementById("notification-task-enabled").checked,
             eventType: document.getElementById("notification-task-event-type").value,
             filters: {
-                shareSummaryTaskIds,
-                periodTypes: csvStrings(document.getElementById("notification-filter-period-types").value),
-                triggerTypes: csvStrings(document.getElementById("notification-filter-trigger-types").value)
+                shareSummaryTaskIds: checkedNumberValues("[data-notification-filter-share-task]:checked"),
+                periodTypes: checkedValues("[data-notification-filter-period]:checked"),
+                triggerTypes: checkedValues("[data-notification-filter-trigger]:checked")
             },
             templateJson: document.getElementById("notification-task-template").value.trim(),
             channelIds
         };
+    }
+
+    function checkedValues(selector) {
+        return Array.from(document.querySelectorAll(selector))
+                .map((input) => String(input.value || "").trim())
+                .filter(Boolean);
+    }
+
+    function checkedNumberValues(selector) {
+        return checkedValues(selector)
+                .map((value) => Number(value))
+                .filter((value) => Number.isInteger(value) && value > 0);
+    }
+
+    function setCheckedValues(selector, values) {
+        const valueSet = new Set((values || []).map((value) => String(value).toUpperCase()));
+        document.querySelectorAll(selector).forEach((input) => {
+            input.checked = valueSet.has(String(input.value).toUpperCase());
+        });
     }
 
     async function copyShareSummaryUrl(url) {
@@ -2043,6 +2146,7 @@
         document.getElementById("notification-task-template").value = defaultNotificationTemplate();
         openModal("notification-task-modal");
         renderNotificationChannelOptions();
+        renderNotificationFilterOptions();
         renderNotificationEventOptions();
         setFeedback("notification-task-modal-feedback", "", "");
         document.getElementById("notification-task-name").focus();
@@ -2050,17 +2154,18 @@
 
     function openNotificationTaskModalForEdit(task) {
         resetNotificationTaskForm();
+        renderNotificationChannelOptions();
+        renderNotificationFilterOptions();
+        renderNotificationEventOptions();
         document.getElementById("notification-task-modal-title").textContent = `编辑通知任务：${task.name || task.id}`;
         document.getElementById("notification-task-id").value = task.id || "";
         document.getElementById("notification-task-name").value = task.name || "";
         document.getElementById("notification-task-event-type").value = task.eventType || "SHARE_SUMMARY_IMAGE_SUCCESS";
         document.getElementById("notification-task-enabled").checked = Boolean(task.enabled);
-        document.getElementById("notification-filter-share-task-ids").value = (task.filters?.shareSummaryTaskIds || []).join(",");
-        document.getElementById("notification-filter-period-types").value = (task.filters?.periodTypes || []).join(",");
-        document.getElementById("notification-filter-trigger-types").value = (task.filters?.triggerTypes || []).join(",");
         document.getElementById("notification-task-template").value = task.templateJson || defaultNotificationTemplate();
-        openModal("notification-task-modal");
-        renderNotificationChannelOptions();
+        setCheckedValues("[data-notification-filter-share-task]", task.filters?.shareSummaryTaskIds || []);
+        setCheckedValues("[data-notification-filter-period]", task.filters?.periodTypes || []);
+        setCheckedValues("[data-notification-filter-trigger]", task.filters?.triggerTypes || []);
         (task.channelIds || []).forEach((channelId) => {
             const input = document.querySelector(`[data-notification-task-channel][value="${CSS.escape(String(channelId))}"]`);
             if (input) {
@@ -2068,6 +2173,8 @@
             }
         });
         renderNotificationPlaceholders();
+        updateNotificationFilterSummaries();
+        openModal("notification-task-modal");
         setFeedback("notification-task-modal-feedback", "", "");
         document.getElementById("notification-task-name").focus();
     }
@@ -2084,12 +2191,16 @@
         document.getElementById("notification-task-form").reset();
         document.getElementById("notification-task-id").value = "";
         document.getElementById("notification-task-enabled").checked = true;
-        document.getElementById("notification-filter-share-task-ids").value = "";
-        document.getElementById("notification-filter-period-types").value = "";
-        document.getElementById("notification-filter-trigger-types").value = "";
         document.querySelectorAll("[data-notification-task-channel]").forEach((input) => {
             input.checked = false;
         });
+        document.querySelectorAll("[data-notification-filter-share-task], [data-notification-filter-period], [data-notification-filter-trigger]").forEach((input) => {
+            input.checked = false;
+        });
+        document.querySelectorAll("#notification-filter-fields details").forEach((details) => {
+            details.open = false;
+        });
+        updateNotificationFilterSummaries();
     }
 
     async function openShareSummaryRunDetail(runId) {
@@ -2442,27 +2553,6 @@
             parts.push(filters.triggerTypes.join("/"));
         }
         return parts.join(" · ") || "匹配全部分享图成功事件";
-    }
-
-    function csvNumbers(value) {
-        const parts = csvStrings(value);
-        const numbers = [];
-        for (const part of parts) {
-            const number = Number(part);
-            if (!Number.isInteger(number) || number <= 0) {
-                return null;
-            }
-            numbers.push(number);
-        }
-        return numbers;
-    }
-
-    function csvStrings(value) {
-        return String(value || "")
-                .split(",")
-                .map((item) => item.trim())
-                .filter(Boolean)
-                .map((item) => item.toUpperCase());
     }
 
     function defaultNotificationTemplate() {
