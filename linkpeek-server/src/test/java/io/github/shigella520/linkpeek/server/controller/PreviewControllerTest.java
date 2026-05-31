@@ -881,7 +881,7 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2,"minLinks":1}
+                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2000,"minLinks":2000}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").exists())
@@ -892,8 +892,8 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.dayOfWeek").doesNotExist())
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist())
                 .andExpect(jsonPath("$.prompt").value("总结重点"))
-                .andExpect(jsonPath("$.maxLinks").value(2))
-                .andExpect(jsonPath("$.minLinks").value(1));
+                .andExpect(jsonPath("$.maxLinks").value(2000))
+                .andExpect(jsonPath("$.minLinks").value(2000));
 
         Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "每日总结");
         mockMvc.perform(put("/api/admin/share-summary/tasks/{taskId}", taskId)
@@ -918,6 +918,15 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.runTime").value("00:00"))
                 .andExpect(jsonPath("$.dayOfWeek").doesNotExist())
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist());
+
+        mockMvc.perform(put("/api/admin/share-summary/tasks/{taskId}", taskId)
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"周总结","enabled":true,"periodType":"DAILY","runTime":"00:00","prompt":"按主题聚合","maxLinks":2001,"minLinks":1}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().string(containsString("Max links must be between 1 and 2000.")));
 
         mockMvc.perform(get("/api/admin/share-summary/tasks")
                         .cookie(cookie))

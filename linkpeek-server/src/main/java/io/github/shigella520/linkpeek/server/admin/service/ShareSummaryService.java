@@ -41,10 +41,10 @@ public class ShareSummaryService {
     private static final Logger log = LoggerFactory.getLogger(ShareSummaryService.class);
     private static final int DEFAULT_MAX_LINKS = 100;
     private static final int MIN_MAX_LINKS = 1;
-    private static final int MAX_MAX_LINKS = 500;
+    private static final int MAX_MAX_LINKS = 2_000;
     private static final int DEFAULT_MIN_LINKS = 1;
     private static final int MIN_MIN_LINKS = 1;
-    private static final int MAX_MIN_LINKS = 500;
+    private static final int MAX_MIN_LINKS = 2_000;
     private static final int CATCH_UP_LIMIT = 7;
     private static final long RUNNING_TIMEOUT_MILLIS = 30 * 60 * 1000L;
     private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接标题列表，生成一份结构清晰、信息密度高的中文分享总结。";
@@ -520,7 +520,7 @@ public class ShareSummaryService {
     private int normalizeMaxLinks(Integer maxLinks) {
         int value = maxLinks == null ? DEFAULT_MAX_LINKS : maxLinks;
         if (value < MIN_MAX_LINKS || value > MAX_MAX_LINKS) {
-            throw new IllegalArgumentException("Max links must be between 1 and 500.");
+            throw new IllegalArgumentException("Max links must be between 1 and 2000.");
         }
         return value;
     }
@@ -528,7 +528,7 @@ public class ShareSummaryService {
     private int normalizeMinLinks(Integer minLinks) {
         int value = minLinks == null ? DEFAULT_MIN_LINKS : minLinks;
         if (value < MIN_MIN_LINKS || value > MAX_MIN_LINKS) {
-            throw new IllegalArgumentException("Min links must be between 1 and 500.");
+            throw new IllegalArgumentException("Min links must be between 1 and 2000.");
         }
         return value;
     }

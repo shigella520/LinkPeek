@@ -1603,15 +1603,15 @@
     }
 
     function validateShareSummaryMaxLinks(value) {
-        if (!Number.isInteger(value) || value < 1 || value > 500) {
-            return "最大链接数必须是 1-500 之间的整数。";
+        if (!Number.isInteger(value) || value < 1 || value > 2000) {
+            return "最大链接数必须是 1-2000 之间的整数。";
         }
         return "";
     }
 
     function validateShareSummaryMinLinks(value) {
-        if (!Number.isInteger(value) || value < 1 || value > 500) {
-            return "最小链接数必须是 1-500 之间的整数。";
+        if (!Number.isInteger(value) || value < 1 || value > 2000) {
+            return "最小链接数必须是 1-2000 之间的整数。";
         }
         return "";
     }
