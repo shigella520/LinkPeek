@@ -198,6 +198,11 @@
         WHERE id = #{id}
     </select>
 
+    <delete id="deleteRun">
+        DELETE FROM share_summary_run
+        WHERE id = #{id}
+    </delete>
+
     <select id="selectLatestCompletedScheduledRun" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord">
         SELECT <include refid="runColumns"/>
         FROM share_summary_run

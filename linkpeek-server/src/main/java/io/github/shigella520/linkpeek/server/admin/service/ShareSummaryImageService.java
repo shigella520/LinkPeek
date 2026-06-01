@@ -17,6 +17,8 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import javax.imageio.ImageIO;
@@ -160,6 +162,16 @@ public class ShareSummaryImageService {
         return imageMapper.selectImagesForRun(runId).stream()
                 .map(ImageResponse::fromRecord)
                 .toList();
+    }
+
+    public int deleteImagesForRun(long runId) {
+        if (imageMapper.selectActiveImage(runId) != null) {
+            throw new IllegalStateException("Share summary image generation is in progress.");
+        }
+        List<ShareSummaryImageRecord> images = imageMapper.selectImagesForRun(runId);
+        int deleted = imageMapper.deleteImagesForRun(runId);
+        deleteStoredImagesAfterCommit(images);
+        return deleted;
     }
 
     public ImageResponse image(long imageId) {
@@ -532,6 +544,36 @@ public class ShareSummaryImageService {
         } catch (RuntimeException exception) {
             log.warn("share_summary_image_notification_failed imageId={} runId={} message={}", image.getId(), image.getRunId(), exception.getMessage(), exception);
         }
+    }
+
+    private void deleteStoredImage(ShareSummaryImageRecord image) {
+        if (image == null || !StringUtils.hasText(image.getStorageKey())) {
+            return;
+        }
+        try {
+            Path path = storageRoot().resolve(image.getStorageKey()).normalize();
+            if (!path.startsWith(storageRoot())) {
+                log.warn("share_summary_image_delete_skipped_invalid_path imageId={} storageKey={}", image.getId(), image.getStorageKey());
+                return;
+            }
+            Files.deleteIfExists(path);
+        } catch (IOException exception) {
+            log.warn("share_summary_image_file_delete_failed imageId={} storageKey={} message={}", image.getId(), image.getStorageKey(), exception.getMessage(), exception);
+        }
+    }
+
+    private void deleteStoredImagesAfterCommit(List<ShareSummaryImageRecord> images) {
+        Runnable cleanup = () -> images.forEach(this::deleteStoredImage);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            cleanup.run();
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                cleanup.run();
+            }
+        });
     }
 
     private ShareSummaryRunRecord existingRun(long runId) {

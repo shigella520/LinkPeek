@@ -30,4 +30,6 @@ public interface ShareSummaryImageMapper {
     int selectNextAttemptNo(@Param("runId") long runId);
 
     List<ShareSummaryImageRecord> selectImagesForRun(@Param("runId") long runId);
+
+    int deleteImagesForRun(@Param("runId") long runId);
 }

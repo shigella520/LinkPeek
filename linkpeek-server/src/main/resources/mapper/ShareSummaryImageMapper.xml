@@ -224,4 +224,9 @@
         WHERE run_id = #{runId}
         ORDER BY attempt_no DESC, id DESC
     </select>
+
+    <delete id="deleteImagesForRun">
+        DELETE FROM share_summary_image
+        WHERE run_id = #{runId}
+    </delete>
 </mapper>

@@ -35,6 +35,8 @@ public interface ShareSummaryMapper {
 
     ShareSummaryRunRecord selectRun(@Param("id") long id);
 
+    int deleteRun(@Param("id") long id);
+
     ShareSummaryRunRecord selectLatestCompletedScheduledRun(@Param("taskId") long taskId);
 
     ShareSummaryRunRecord selectScheduledRunForWindow(

@@ -66,4 +66,6 @@ public interface NotificationMapper {
     );
 
     NotificationDeliveryRecord selectDelivery(@Param("id") long id);
+
+    int deleteDelivery(@Param("id") long id);
 }

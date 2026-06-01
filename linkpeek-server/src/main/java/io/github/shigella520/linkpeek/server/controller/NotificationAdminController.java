@@ -189,4 +189,14 @@ public class NotificationAdminController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
     }
+
+    @DeleteMapping("/deliveries/{deliveryId}")
+    public NotificationService.DeleteResponse deleteDelivery(HttpServletRequest request, @PathVariable long deliveryId) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return notificationService.deleteDelivery(deliveryId);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
+        }
+    }
 }

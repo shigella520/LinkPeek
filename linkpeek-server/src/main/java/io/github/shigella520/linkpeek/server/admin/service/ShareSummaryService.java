@@ -17,6 +17,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -132,6 +133,20 @@ public class ShareSummaryService {
             throw new IllegalArgumentException("Share summary run was not found.");
         }
         return withImageSummary(run);
+    }
+
+    @Transactional
+    public DeleteRunResponse deleteRun(long runId) {
+        ShareSummaryRunRecord run = shareSummaryMapper.selectRun(runId);
+        if (run == null) {
+            throw new IllegalArgumentException("Share summary run was not found.");
+        }
+        if (ShareSummaryRunStatus.RUNNING.name().equals(run.getStatus())) {
+            throw new IllegalStateException("Share summary run is in progress.");
+        }
+        int deletedImages = shareSummaryImageService == null ? 0 : shareSummaryImageService.deleteImagesForRun(runId);
+        int deletedRuns = shareSummaryMapper.deleteRun(runId);
+        return new DeleteRunResponse(deletedRuns, deletedImages);
     }
 
     @Scheduled(fixedDelay = 60_000L, initialDelay = 30_000L)
@@ -586,6 +601,9 @@ public class ShareSummaryService {
     }
 
     public record DeleteResponse(int deleted) {
+    }
+
+    public record DeleteRunResponse(int deleted, int deletedImages) {
     }
 
     public record Window(long startMillis, long endMillis) {

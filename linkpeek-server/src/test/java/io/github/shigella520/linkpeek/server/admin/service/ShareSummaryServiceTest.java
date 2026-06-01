@@ -26,6 +26,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class ShareSummaryServiceTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
@@ -130,6 +131,34 @@ class ShareSummaryServiceTest {
 
         assertEquals(toMillis("2026-06-01T00:00"), run.getWindowStart());
         assertEquals(toMillis("2026-06-04T10:00"), run.getWindowEnd());
+    }
+
+    @Test
+    void deleteRunRemovesExistingRun() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        ShareSummaryRunRecord run = new ShareSummaryRunRecord();
+        run.setId(12L);
+        run.setStatus("SUCCESS");
+        mapper.run = run;
+        ShareSummaryService service = service(mapper, "2026-06-04T02:00:00Z");
+
+        ShareSummaryService.DeleteRunResponse response = service.deleteRun(12L);
+
+        assertEquals(1, response.deleted());
+        assertEquals(0, response.deletedImages());
+        assertNull(mapper.run);
+    }
+
+    @Test
+    void deleteRunRejectsRunningRun() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        ShareSummaryRunRecord run = new ShareSummaryRunRecord();
+        run.setId(12L);
+        run.setStatus("RUNNING");
+        mapper.run = run;
+        ShareSummaryService service = service(mapper, "2026-06-04T02:00:00Z");
+
+        assertThrows(IllegalStateException.class, () -> service.deleteRun(12L));
     }
 
     @Test
@@ -318,6 +347,15 @@ class ShareSummaryServiceTest {
         @Override
         public ShareSummaryRunRecord selectRun(long id) {
             return run != null && run.getId() == id ? run : null;
+        }
+
+        @Override
+        public int deleteRun(long id) {
+            if (run != null && run.getId() == id) {
+                run = null;
+                return 1;
+            }
+            return 0;
         }
 
         @Override

@@ -23,6 +23,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Clock;
@@ -135,6 +136,36 @@ class ShareSummaryImageServiceTest {
                 "style",
                 300
         )));
+    }
+
+    @Test
+    void deleteImagesForRunRemovesStoredFilesAndRows() throws Exception {
+        FakeImageMapper imageMapper = new FakeImageMapper(config());
+        LinkPeekProperties properties = new LinkPeekProperties();
+        properties.setCacheDir(cacheDir);
+        ShareSummaryImageService service = new ShareSummaryImageService(
+                imageMapper,
+                new FakeShareSummaryMapper(successfulRun()),
+                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new RedirectingImageHttpClient(),
+                new DirectExecutorService(),
+                null,
+                properties,
+                Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
+        );
+        ShareSummaryImageRecord image = existingSuccessfulImage();
+        image.setId(77L);
+        image.setStorageKey("share-summary/images/1/77.png");
+        imageMapper.images.add(image);
+        Path imagePath = cacheDir.resolve(image.getStorageKey());
+        Files.createDirectories(imagePath.getParent());
+        Files.write(imagePath, new byte[]{1, 2, 3});
+
+        int deleted = service.deleteImagesForRun(1L);
+
+        assertEquals(1, deleted);
+        assertTrue(Files.notExists(imagePath));
+        assertTrue(imageMapper.selectImagesForRun(1L).isEmpty());
     }
 
     private ShareSummaryImageConfigRecord config() {
@@ -287,6 +318,13 @@ class ShareSummaryImageServiceTest {
                     .toList();
         }
 
+        @Override
+        public int deleteImagesForRun(long runId) {
+            int before = images.size();
+            images.removeIf(image -> image.getRunId() == runId);
+            return before - images.size();
+        }
+
         private ShareSummaryImageRecord latestImage() {
             return selectLatestImage(1);
         }
@@ -345,6 +383,11 @@ class ShareSummaryImageServiceTest {
         @Override
         public ShareSummaryRunRecord selectRun(long id) {
             return run;
+        }
+
+        @Override
+        public int deleteRun(long id) {
+            return 0;
         }
 
         @Override

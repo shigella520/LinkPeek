@@ -1203,7 +1203,7 @@
         const items = Array.isArray(payload.items) ? payload.items : [];
         const body = document.getElementById("notification-delivery-table");
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="6" class="muted">暂无发送记录</td></tr>`;
+            body.innerHTML = `<tr><td colspan="7" class="muted">暂无发送记录</td></tr>`;
         } else {
             body.innerHTML = items.map((delivery) => `
                 <tr>
@@ -1213,10 +1213,43 @@
                     <td>${renderNotificationStatus(delivery.status)}${delivery.errorMessage ? `<div class="keyline summary-error-hint" title="${escapeAttribute(delivery.errorMessage)}">${escapeHtml(delivery.errorMessage)}</div>` : ""}</td>
                     <td>${escapeHtml(delivery.responseStatus || "-")}<div class="keyline">${escapeHtml(delivery.attemptCount || 0)} 次</div></td>
                     <td>${escapeHtml(formatDuration(delivery.durationMs))}</td>
+                    <td>
+                        <div class="row-actions single-action">
+                            <button type="button" class="danger" data-delete-notification-delivery="${escapeAttribute(delivery.id)}">删除</button>
+                        </div>
+                    </td>
                 </tr>
             `).join("");
         }
+        body.querySelectorAll("[data-delete-notification-delivery]").forEach((button) => {
+            button.addEventListener("click", async () => deleteNotificationDelivery(button));
+        });
         renderNotificationDeliveryPagination(payload);
+    }
+
+    async function deleteNotificationDelivery(button) {
+        if (!confirmDangerAction(button, "确认删除")) {
+            return;
+        }
+        button.disabled = true;
+        setFeedback("notification-delivery-feedback", "正在删除发送记录...", "");
+        try {
+            await fetchJson(`/api/admin/notifications/deliveries/${encodeURIComponent(button.dataset.deleteNotificationDelivery)}`, {method: "DELETE"});
+            await reloadNotificationDeliveriesAfterDelete();
+            setFeedback("notification-delivery-feedback", "发送记录已删除。", "is-success");
+        } catch (error) {
+            resetDangerAction(button);
+            button.disabled = false;
+            setFeedback("notification-delivery-feedback", error.message, "is-error");
+        }
+    }
+
+    async function reloadNotificationDeliveriesAfterDelete() {
+        const remainingItems = Math.max(0, (state.notificationDeliveries.items || []).length - 1);
+        if (remainingItems === 0 && state.notificationDeliveries.page > 1) {
+            state.notificationDeliveries.page -= 1;
+        }
+        await loadNotificationDeliveries();
     }
 
     function renderNotificationDeliveryEvent(delivery) {
@@ -1292,8 +1325,40 @@
         body.querySelectorAll("[data-view-share-run]").forEach((button) => {
             button.addEventListener("click", () => openShareSummaryRunDetail(button.dataset.viewShareRun));
         });
+        body.querySelectorAll("[data-delete-share-run]").forEach((button) => {
+            button.addEventListener("click", async () => deleteShareSummaryRun(button));
+        });
         bindShareSummaryImageButtons(body);
         renderShareSummaryRunPagination(payload);
+    }
+
+    async function deleteShareSummaryRun(button) {
+        if (!confirmDangerAction(button, "确认删除")) {
+            return;
+        }
+        const runId = button.dataset.deleteShareRun;
+        button.disabled = true;
+        setFeedback("share-summary-history-feedback", "正在删除分享总结记录...", "");
+        try {
+            await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}`, {method: "DELETE"});
+            if (state.activeShareSummaryRunId && String(state.activeShareSummaryRunId) === String(runId)) {
+                closeShareSummaryRunModal(false);
+            }
+            await reloadShareSummaryRunsAfterDelete();
+            setFeedback("share-summary-history-feedback", "分享总结记录已删除。", "is-success");
+        } catch (error) {
+            resetDangerAction(button);
+            button.disabled = false;
+            setFeedback("share-summary-history-feedback", error.message, "is-error");
+        }
+    }
+
+    async function reloadShareSummaryRunsAfterDelete() {
+        const remainingItems = Math.max(0, (state.shareSummaryRuns.items || []).length - 1);
+        if (remainingItems === 0 && state.shareSummaryRuns.page > 1) {
+            state.shareSummaryRuns.page -= 1;
+        }
+        await loadShareSummaryRuns();
     }
 
     function renderShareSummaryImageCell(run) {
@@ -1322,6 +1387,7 @@
                 ${renderShareSummaryImageActionButton(run, canGenerate, hasImage)}
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG</button>
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图</button>
+                <button type="button" class="danger" data-delete-share-run="${escapeAttribute(run.id)}">删除</button>
             </div>
         `;
     }

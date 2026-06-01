@@ -231,6 +231,13 @@ public class NotificationService {
         return delivery;
     }
 
+    public DeleteResponse deleteDelivery(long deliveryId) {
+        if (notificationMapper.selectDelivery(deliveryId) == null) {
+            throw new IllegalArgumentException("Notification delivery was not found.");
+        }
+        return new DeleteResponse(notificationMapper.deleteDelivery(deliveryId));
+    }
+
     public void publishShareSummaryImageSuccess(ShareSummaryRunRecord run, ShareSummaryImageRecord image) {
         if (run == null || image == null || image.getId() == null) {
             return;

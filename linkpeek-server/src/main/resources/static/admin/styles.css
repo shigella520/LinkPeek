@@ -785,6 +785,11 @@ table {
     width: 86px;
 }
 
+.notification-delivery-table th:nth-child(7),
+.notification-delivery-table td:nth-child(7) {
+    width: 92px;
+}
+
 .share-summary-task-table th:nth-child(1),
 .share-summary-task-table td:nth-child(1) {
     width: 38%;
@@ -983,6 +988,10 @@ td .row-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
     min-width: 0;
+}
+
+td .row-actions.single-action {
+    grid-template-columns: 1fr;
 }
 
 .share-summary-run-table td .row-actions button {

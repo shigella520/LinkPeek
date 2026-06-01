@@ -310,4 +310,9 @@
         FROM notification_delivery
         WHERE id = #{id}
     </select>
+
+    <delete id="deleteDelivery">
+        DELETE FROM notification_delivery
+        WHERE id = #{id}
+    </delete>
 </mapper>

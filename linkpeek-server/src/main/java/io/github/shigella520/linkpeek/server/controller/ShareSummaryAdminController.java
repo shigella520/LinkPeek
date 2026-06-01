@@ -122,6 +122,18 @@ public class ShareSummaryAdminController {
         }
     }
 
+    @DeleteMapping("/runs/{runId}")
+    public ShareSummaryService.DeleteRunResponse deleteRun(HttpServletRequest request, @PathVariable long runId) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return shareSummaryService.deleteRun(runId);
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
+        }
+    }
+
     @GetMapping("/image-config")
     public ShareSummaryImageService.ConfigResponse imageConfig(HttpServletRequest request) {
         adminAuthService.requireAuthenticated(request);
