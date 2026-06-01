@@ -380,7 +380,8 @@ body.admin-sidebar-pinned .admin-pin-button {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    display: grid;
+    display: flex;
+    flex-direction: column;
     gap: 22px;
     padding-bottom: 8px;
 }
