@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260530-share-summary-ai-image">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260601-admin-button-layout">
 </head>
 <body>
 <header class="topbar">
@@ -78,6 +78,8 @@
                         <p class="panel-kicker">AI</p>
                         <h2>AI 服务配置</h2>
                     </div>
+                </div>
+                <div class="panel-action-row">
                     <button type="button" id="ai-new-button">新建 AI Provider</button>
                 </div>
                 <p id="ai-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -124,6 +126,8 @@
                         <p class="panel-kicker">Links</p>
                         <h2>链接创建记录</h2>
                     </div>
+                </div>
+                <div class="panel-action-row">
                     <button type="submit" form="preview-event-form">刷新记录</button>
                 </div>
                 <form id="preview-event-form" class="preview-event-controls">
@@ -170,10 +174,10 @@
                         <p class="panel-kicker">Share Summary</p>
                         <h2>分享总结</h2>
                     </div>
-                    <div class="panel-actions">
-                        <button type="button" class="secondary" id="share-summary-image-config-button">AI 生图配置</button>
-                        <button type="button" id="share-summary-new-button">新建任务</button>
-                    </div>
+                </div>
+                <div class="panel-action-row">
+                    <button type="button" class="secondary" id="share-summary-image-config-button">AI 生图配置</button>
+                    <button type="button" id="share-summary-new-button">新建任务</button>
                 </div>
                 <p id="share-summary-feedback" class="feedback" role="status" aria-live="polite"></p>
                 <div class="table-shell share-summary-task-shell">
@@ -257,10 +261,10 @@
                         <p class="panel-kicker">Webhook</p>
                         <h2>通知</h2>
                     </div>
-                    <div class="panel-actions">
-                        <button type="button" class="secondary" id="notification-channel-new-button">新建渠道</button>
-                        <button type="button" id="notification-task-new-button">新建通知任务</button>
-                    </div>
+                </div>
+                <div class="panel-action-row">
+                    <button type="button" class="secondary" id="notification-channel-new-button">新建渠道</button>
+                    <button type="button" id="notification-task-new-button">新建通知任务</button>
                 </div>
                 <p id="notification-feedback" class="feedback" role="status" aria-live="polite"></p>
                 <div class="prompt-subsection prompt-subsection-first">
@@ -412,6 +416,8 @@
                         <p class="panel-kicker">Logs</p>
                         <h2>服务日志</h2>
                     </div>
+                </div>
+                <div class="panel-action-row">
                     <button type="submit" form="log-form">刷新日志</button>
                 </div>
                 <form id="log-form" class="log-controls">
@@ -456,9 +462,11 @@
                         <p class="panel-kicker">Stats</p>
                         <h2>清理统计数据</h2>
                     </div>
-                    <button type="button" class="danger" id="purge-button">清理全部统计数据</button>
                 </div>
                 <p class="description">删除全部统计事件和链接聚合记录，执行后无法恢复。</p>
+                <div class="panel-action-row panel-action-row-start">
+                    <button type="button" class="danger" id="purge-button">清理全部统计数据</button>
+                </div>
                 <p id="purge-feedback" class="feedback" role="status" aria-live="polite"></p>
             </section>
         </div>
@@ -824,6 +832,6 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260531-webhook-notification"></script>
+<script src="/admin/app.js?v=20260601-admin-button-layout"></script>
 </body>
 </html>

@@ -1382,7 +1382,7 @@
         const canGenerate = run.status === "SUCCESS";
         const hasImage = Boolean(run.ogImageUrl);
         return `
-            <div class="row-actions">
+            <div class="row-actions share-summary-run-actions">
                 <button type="button" class="secondary" data-view-share-run="${escapeAttribute(run.id)}">详情</button>
                 ${renderShareSummaryImageActionButton(run, canGenerate, hasImage)}
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG</button>
