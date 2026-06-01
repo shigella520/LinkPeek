@@ -21,17 +21,20 @@ public class StatisticsMaintenanceService {
     private final StatsLinkMapper statsLinkMapper;
     private final LinkPeekProperties properties;
     private final Clock clock;
+    private final StatisticsEventDeduplicator eventDeduplicator;
 
     public StatisticsMaintenanceService(
             StatsEventMapper statsEventMapper,
             StatsLinkMapper statsLinkMapper,
             LinkPeekProperties properties,
-            Clock clock
+            Clock clock,
+            StatisticsEventDeduplicator eventDeduplicator
     ) {
         this.statsEventMapper = statsEventMapper;
         this.statsLinkMapper = statsLinkMapper;
         this.properties = properties;
         this.clock = clock;
+        this.eventDeduplicator = eventDeduplicator;
     }
 
     @Scheduled(cron = "0 20 3 * * *")
@@ -43,6 +46,7 @@ public class StatisticsMaintenanceService {
     public PurgeResult purgeAllData() {
         int deletedEvents = statsEventMapper.deleteAllEvents();
         int deletedLinks = statsLinkMapper.deleteAllLinks();
+        eventDeduplicator.clear();
         log.info(
                 "statistics_cleanup_all completed deletedEvents={} deletedLinks={}",
                 deletedEvents,

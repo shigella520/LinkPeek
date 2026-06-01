@@ -15,6 +15,7 @@ import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClie
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
 import io.github.shigella520.linkpeek.server.ai.AiTitlePrompt;
+import io.github.shigella520.linkpeek.server.stats.service.StatisticsEventDeduplicator;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -117,6 +118,9 @@ class PreviewControllerTest {
     @Autowired
     private NotificationService notificationService;
 
+    @Autowired
+    private StatisticsEventDeduplicator statisticsEventDeduplicator;
+
     @BeforeEach
     void setUp() throws IOException {
         Files.walk(TEST_CACHE_DIR)
@@ -149,6 +153,7 @@ class PreviewControllerTest {
         testPreviewProvider.reset();
         testAiTitleClient.reset();
         testShareSummaryImageClient.reset();
+        statisticsEventDeduplicator.clear();
     }
 
     @AfterAll
@@ -359,6 +364,61 @@ class PreviewControllerTest {
     }
 
     @Test
+    void duplicateCrawlerPreviewCreatedEventsAreSkippedWithinDedupeTtl() throws Exception {
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isOk());
+        long firstLastSeenAt = jdbcTemplate.queryForObject(
+                "SELECT last_seen_at FROM stats_link WHERE preview_key = ?",
+                Long.class,
+                key().value()
+        );
+
+        Thread.sleep(25);
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "Applebot/0.1"))
+                .andExpect(status().isOk());
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM stats_event WHERE event_type = 'PREVIEW_CREATED' AND client_type = 'CRAWLER'",
+                        Integer.class
+                )
+        );
+        org.junit.jupiter.api.Assertions.assertTrue(
+                jdbcTemplate.queryForObject(
+                        "SELECT last_seen_at FROM stats_link WHERE preview_key = ?",
+                        Long.class,
+                        key().value()
+                ) > firstLastSeenAt
+        );
+    }
+
+    @Test
+    void browserPreviewOpenedEventsAreNotDeduped() throws Exception {
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "Mozilla/5.0"))
+                .andExpect(status().isFound());
+
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "Mozilla/5.0"))
+                .andExpect(status().isFound());
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                2,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM stats_event WHERE event_type = 'PREVIEW_OPENED' AND client_type = 'BROWSER'",
+                        Integer.class
+                )
+        );
+    }
+
+    @Test
     void browserRequestRedirectsToOriginalUrl() throws Exception {
         mockMvc.perform(get("/preview")
                         .param("url", "https://video.example.com/watch/abc")
@@ -418,7 +478,7 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals("原始帖子正文，包含需要被 AI 总结的信息。", testAiTitleClient.prompt.get().rawContent());
         org.junit.jupiter.api.Assertions.assertTrue(testAiTitleClient.prompt.get().titleFormatPrompt().contains("只返回一行中文标题文本"));
         org.junit.jupiter.api.Assertions.assertEquals(
-                2,
+                1,
                 jdbcTemplate.queryForObject(
                         "SELECT COUNT(*) FROM stats_event WHERE event_type = 'PREVIEW_CREATED' AND ai_requested = 1 AND ai_succeeded = 1",
                         Integer.class
@@ -577,7 +637,7 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(
                 1,
                 jdbcTemplate.queryForObject(
-                        "SELECT COUNT(*) FROM stats_event WHERE event_type = 'PREVIEW_CREATED' AND cache_hit = 1",
+                        "SELECT COUNT(*) FROM stats_event WHERE event_type = 'PREVIEW_CREATED'",
                         Integer.class
                 )
         );

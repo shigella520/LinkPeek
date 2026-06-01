@@ -23,15 +23,18 @@ public class StatisticsRecorder {
     private final StatsEventMapper statsEventMapper;
     private final StatsLinkMapper statsLinkMapper;
     private final Clock clock;
+    private final StatisticsEventDeduplicator eventDeduplicator;
 
     public StatisticsRecorder(
             StatsEventMapper statsEventMapper,
             StatsLinkMapper statsLinkMapper,
-            Clock clock
+            Clock clock,
+            StatisticsEventDeduplicator eventDeduplicator
     ) {
         this.statsEventMapper = statsEventMapper;
         this.statsLinkMapper = statsLinkMapper;
         this.clock = clock;
+        this.eventDeduplicator = eventDeduplicator;
     }
 
     public void recordPreviewCreated(
@@ -237,7 +240,7 @@ public class StatisticsRecorder {
                         occurredAt
                 ));
             }
-            statsEventMapper.insertEvent(eventRecord(
+            StatisticsEventRecord eventRecord = eventRecord(
                     occurredAt,
                     previewKey,
                     providerId,
@@ -255,7 +258,26 @@ public class StatisticsRecorder {
                     crawlDurationMs,
                     durationMs,
                     errorCode
-            ));
+            );
+            StatisticsEventDeduplicator.EventKey dedupeKey = dedupeKey(eventRecord);
+            if (dedupeKey != null && !eventDeduplicator.shouldRecord(dedupeKey, occurredAt)) {
+                log.debug(
+                        "statistics_duplicate_event_skipped eventType={} previewKey={} provider={} clientType={}",
+                        eventType,
+                        previewKey == null ? "n/a" : previewKey,
+                        providerId == null ? "n/a" : providerId,
+                        clientType
+                );
+                return;
+            }
+            try {
+                statsEventMapper.insertEvent(eventRecord);
+            } catch (RuntimeException exception) {
+                if (dedupeKey != null) {
+                    eventDeduplicator.forget(dedupeKey);
+                }
+                throw exception;
+            }
         } catch (RuntimeException exception) {
             log.warn(
                     "statistics_record_failed eventType={} previewKey={} provider={}",
@@ -265,6 +287,29 @@ public class StatisticsRecorder {
                     exception
             );
         }
+    }
+
+    private StatisticsEventDeduplicator.EventKey dedupeKey(StatisticsEventRecord eventRecord) {
+        if (!shouldDedupe(eventRecord)) {
+            return null;
+        }
+        return new StatisticsEventDeduplicator.EventKey(
+                eventRecord.getPreviewKey(),
+                eventRecord.getProviderId(),
+                StatisticsEventType.valueOf(eventRecord.getEventType()),
+                StatisticsClientType.valueOf(eventRecord.getClientType()),
+                eventRecord.getHttpStatus(),
+                eventRecord.getSourceUrl(),
+                eventRecord.getRequestedStyle(),
+                eventRecord.getActualStyle()
+        );
+    }
+
+    private boolean shouldDedupe(StatisticsEventRecord eventRecord) {
+        return StatisticsEventType.PREVIEW_CREATED.name().equals(eventRecord.getEventType())
+                && StatisticsClientType.CRAWLER.name().equals(eventRecord.getClientType())
+                && eventRecord.getPreviewKey() != null
+                && !eventRecord.getPreviewKey().isBlank();
     }
 
     private StatisticsLinkRecord linkRecord(

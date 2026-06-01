@@ -15,6 +15,8 @@ public class LinkPeekProperties {
     private long cacheTtlSeconds = 86400;
     private double cacheMaxSizeGb = 10.0;
     private int statsRetentionDays = 180;
+    private Duration statsEventDedupeTtl = Duration.ofMinutes(2);
+    private int statsEventDedupeMaxEntries = 10_000;
     private String statsAdminPassword;
     private Path serviceLogPath = Path.of("/data/logs/linkpeek.log");
     private Duration downloadTimeout = Duration.ofSeconds(120);
@@ -84,6 +86,22 @@ public class LinkPeekProperties {
 
     public void setStatsRetentionDays(int statsRetentionDays) {
         this.statsRetentionDays = statsRetentionDays;
+    }
+
+    public Duration getStatsEventDedupeTtl() {
+        return statsEventDedupeTtl;
+    }
+
+    public void setStatsEventDedupeTtl(Duration statsEventDedupeTtl) {
+        this.statsEventDedupeTtl = statsEventDedupeTtl;
+    }
+
+    public int getStatsEventDedupeMaxEntries() {
+        return statsEventDedupeMaxEntries;
+    }
+
+    public void setStatsEventDedupeMaxEntries(int statsEventDedupeMaxEntries) {
+        this.statsEventDedupeMaxEntries = statsEventDedupeMaxEntries;
     }
 
     public String getStatsAdminPassword() {

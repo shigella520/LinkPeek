@@ -4,6 +4,7 @@ import io.github.shigella520.linkpeek.core.model.PreviewKey;
 import io.github.shigella520.linkpeek.server.admin.model.AdminPreviewEventRow;
 import io.github.shigella520.linkpeek.server.admin.persistence.AdminPreviewEventMapper;
 import io.github.shigella520.linkpeek.server.cache.DiskCacheManager;
+import io.github.shigella520.linkpeek.server.stats.service.StatisticsEventDeduplicator;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -18,10 +19,16 @@ public class AdminPreviewEventService {
 
     private final AdminPreviewEventMapper adminPreviewEventMapper;
     private final DiskCacheManager cacheManager;
+    private final StatisticsEventDeduplicator eventDeduplicator;
 
-    public AdminPreviewEventService(AdminPreviewEventMapper adminPreviewEventMapper, DiskCacheManager cacheManager) {
+    public AdminPreviewEventService(
+            AdminPreviewEventMapper adminPreviewEventMapper,
+            DiskCacheManager cacheManager,
+            StatisticsEventDeduplicator eventDeduplicator
+    ) {
         this.adminPreviewEventMapper = adminPreviewEventMapper;
         this.cacheManager = cacheManager;
+        this.eventDeduplicator = eventDeduplicator;
     }
 
     public PreviewEventPage previewEvents(Integer page, Integer size, String query) {
@@ -45,6 +52,7 @@ public class AdminPreviewEventService {
     public CacheClearResponse clearCache(String previewKeyValue) {
         PreviewKey previewKey = validatedPreviewKey(previewKeyValue);
         DiskCacheManager.CacheEvictionResult result = cacheManager.evictPreview(previewKey);
+        eventDeduplicator.forgetPreviewKey(previewKey.value());
         return new CacheClearResponse(previewKey.value(), result.deletedFiles());
     }
 
