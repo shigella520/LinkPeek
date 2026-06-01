@@ -5,13 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260601-admin-button-layout">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260601-admin-pinned-drawer">
 </head>
 <body>
 <header class="topbar">
-    <div>
-        <p class="eyebrow">Management</p>
-        <h1>LinkPeek Admin</h1>
+    <div class="topbar-brand">
+        <button
+            type="button"
+            id="admin-menu-button"
+            class="admin-menu-button"
+            aria-label="打开后台导航"
+            aria-controls="admin-nav-drawer"
+            aria-expanded="false"
+            hidden
+        >
+            <span class="admin-menu-icon" aria-hidden="true"></span>
+        </button>
+        <div>
+            <p class="eyebrow">Management</p>
+            <h1>LinkPeek Admin</h1>
+        </div>
     </div>
     <nav class="topbar-actions">
         <a href="/dashboard">Dashboard</a>
@@ -19,9 +32,64 @@
     </nav>
 </header>
 
-<main>
+<main class="admin-main">
     <section id="admin-shell" class="admin-shell" hidden>
-        <div class="workspace">
+        <button
+            type="button"
+            id="admin-drawer-backdrop"
+            class="admin-drawer-backdrop"
+            aria-label="关闭后台导航"
+            hidden
+        ></button>
+        <aside id="admin-nav-drawer" class="admin-sidebar" aria-label="后台导航" aria-hidden="true" inert>
+            <div class="admin-drawer-head">
+                <div>
+                    <p class="eyebrow">Navigate</p>
+                    <h2>管理模块</h2>
+                </div>
+                <button
+                    type="button"
+                    id="admin-drawer-close-button"
+                    class="admin-drawer-close-button"
+                    aria-label="关闭后台导航"
+                >
+                    <span class="admin-close-icon" aria-hidden="true"></span>
+                </button>
+            </div>
+            <nav class="admin-nav">
+                <div class="admin-nav-group">
+                    <p>内容生成</p>
+                    <button type="button" class="admin-nav-button" data-admin-nav-target="prompts">提示词</button>
+                    <button type="button" class="admin-nav-button" data-admin-nav-target="ai-providers">AI 服务</button>
+                    <button type="button" class="admin-nav-button" data-admin-nav-target="provider-config">Provider</button>
+                </div>
+                <div class="admin-nav-group">
+                    <p>运营</p>
+                    <button type="button" class="admin-nav-button" data-admin-nav-target="preview-events">链接记录</button>
+                    <button type="button" class="admin-nav-button" data-admin-nav-target="share-summary">分享总结</button>
+                    <button type="button" class="admin-nav-button" data-admin-nav-target="notifications">通知</button>
+                </div>
+                <div class="admin-nav-group">
+                    <p>系统</p>
+                    <button type="button" class="admin-nav-button" data-admin-nav-target="service-logs">服务日志</button>
+                    <button type="button" class="admin-nav-button" data-admin-nav-target="purge">统计清理</button>
+                </div>
+            </nav>
+            <div class="admin-drawer-foot">
+                <button
+                    type="button"
+                    id="admin-pin-sidebar-button"
+                    class="admin-pin-button"
+                    aria-label="固定边栏"
+                    aria-pressed="false"
+                    title="固定边栏"
+                >
+                    <span class="admin-pin-icon" aria-hidden="true"></span>
+                </button>
+            </div>
+        </aside>
+        <div class="admin-content">
+            <div class="workspace">
             <section class="panel" id="prompts">
                 <div class="panel-head">
                     <div>
@@ -469,6 +537,7 @@
                 </div>
                 <p id="purge-feedback" class="feedback" role="status" aria-live="polite"></p>
             </section>
+            </div>
         </div>
     </section>
 </main>
@@ -832,6 +901,6 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260601-admin-button-layout"></script>
+<script src="/admin/app.js?v=20260601-admin-pinned-drawer"></script>
 </body>
 </html>

@@ -50,7 +50,7 @@
     };
 
     function init() {
-        bindCollapsiblePanels();
+        bindAdminNavigation();
         bindLogout();
         bindPurge();
         bindPromptForm();
@@ -66,69 +66,160 @@
         checkSession();
     }
 
-    function bindCollapsiblePanels() {
-        document.querySelectorAll("#admin-shell .workspace > .panel").forEach((panel) => {
-            const panelHead = panel.querySelector(":scope > .panel-head");
-            if (!panelHead || panel.querySelector(":scope > .panel-body")) {
-                return;
-            }
+    function bindAdminNavigation() {
+        const menuButton = document.getElementById("admin-menu-button");
+        const closeButton = document.getElementById("admin-drawer-close-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        const pinButton = document.getElementById("admin-pin-sidebar-button");
 
-            const panelId = panel.id || `admin-panel-${Math.random().toString(36).slice(2)}`;
-            panel.id = panelId;
-            const body = document.createElement("div");
-            body.className = "panel-body";
-            body.id = `${panelId}-body`;
-            Array.from(panel.children).forEach((child) => {
-                if (child !== panelHead) {
-                    body.appendChild(child);
-                }
-            });
-            panel.appendChild(body);
-
-            const toggle = document.createElement("button");
-            toggle.type = "button";
-            toggle.className = "secondary panel-toggle";
-            toggle.setAttribute("aria-controls", body.id);
-            toggle.addEventListener("click", () => {
-                setPanelExpanded(panel, panel.classList.contains("is-collapsed"), true);
-            });
-            panelHead.appendChild(toggle);
-            panelHead.addEventListener("click", (event) => {
-                const interactiveTarget = event.target.closest("button, a, input, select, textarea, label");
-                if (interactiveTarget) {
-                    if (interactiveTarget !== toggle && interactiveTarget.closest(".panel-head") === panelHead) {
-                        setPanelExpanded(panel, true, true);
-                    }
-                    return;
-                }
-                setPanelExpanded(panel, panel.classList.contains("is-collapsed"), true);
-            });
-
-            const shouldExpand = window.location.hash === `#${panelId}` || localStorage.getItem(panelStorageKey(panelId)) === "expanded";
-            setPanelExpanded(panel, shouldExpand, false);
+        menuButton.addEventListener("click", openAdminNavigation);
+        closeButton.addEventListener("click", closeAdminNavigation);
+        backdrop.addEventListener("click", closeAdminNavigation);
+        pinButton.addEventListener("click", () => {
+            setAdminSidebarPinned(!isAdminSidebarPinned(), true);
         });
+        document.querySelectorAll("[data-admin-nav-target]").forEach((button) => {
+            button.addEventListener("click", () => {
+                activateAdminPanel(button.dataset.adminNavTarget, true);
+                if (!isAdminSidebarPinnedActive()) {
+                    closeAdminNavigation();
+                }
+            });
+        });
+        window.addEventListener("hashchange", () => {
+            activateAdminPanel(panelIdFromLocation(), false);
+        });
+        window.addEventListener("resize", syncAdminNavigationMode);
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && document.body.classList.contains("admin-nav-open")) {
+                closeAdminNavigation();
+            }
+        });
+        setAdminSidebarPinned(localStorage.getItem(pinnedSidebarStorageKey()) === "true", false);
+        activateAdminPanel(panelIdFromLocation(), false);
     }
 
-    function setPanelExpanded(panel, expanded, persist) {
-        const toggle = panel.querySelector(":scope > .panel-head .panel-toggle");
-        const body = panel.querySelector(":scope > .panel-body");
-        if (!toggle || !body) {
+    function openAdminNavigation() {
+        const drawer = document.getElementById("admin-nav-drawer");
+        const menuButton = document.getElementById("admin-menu-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        document.body.classList.add("admin-nav-open");
+        drawer.setAttribute("aria-hidden", "false");
+        drawer.removeAttribute("inert");
+        menuButton.setAttribute("aria-expanded", "true");
+        backdrop.hidden = isAdminSidebarPinnedActive();
+    }
+
+    function closeAdminNavigation() {
+        const drawer = document.getElementById("admin-nav-drawer");
+        const menuButton = document.getElementById("admin-menu-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        document.body.classList.remove("admin-nav-open");
+        if (isAdminSidebarPinnedActive()) {
+            drawer.setAttribute("aria-hidden", "false");
+            drawer.removeAttribute("inert");
+        } else {
+            drawer.setAttribute("aria-hidden", "true");
+            drawer.setAttribute("inert", "");
+        }
+        menuButton.setAttribute("aria-expanded", "false");
+        backdrop.hidden = true;
+    }
+
+    function setAdminSidebarPinned(pinned, persist) {
+        const drawer = document.getElementById("admin-nav-drawer");
+        const menuButton = document.getElementById("admin-menu-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        const pinButton = document.getElementById("admin-pin-sidebar-button");
+        document.body.classList.toggle("admin-sidebar-pinned", pinned);
+        pinButton.setAttribute("aria-pressed", pinned ? "true" : "false");
+        pinButton.setAttribute("aria-label", pinned ? "取消固定边栏" : "固定边栏");
+        pinButton.title = pinned ? "取消固定边栏" : "固定边栏";
+        if (persist) {
+            localStorage.setItem(pinnedSidebarStorageKey(), pinned ? "true" : "false");
+        }
+        syncAdminNavigationMode();
+    }
+
+    function isAdminSidebarPinned() {
+        return document.body.classList.contains("admin-sidebar-pinned");
+    }
+
+    function isAdminSidebarPinnedActive() {
+        return isAdminSidebarPinned() && window.matchMedia("(min-width: 720px)").matches;
+    }
+
+    function syncAdminNavigationMode() {
+        const drawer = document.getElementById("admin-nav-drawer");
+        const menuButton = document.getElementById("admin-menu-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        const pinnedActive = isAdminSidebarPinnedActive();
+        if (pinnedActive) {
+            document.body.classList.remove("admin-nav-open");
+            drawer.setAttribute("aria-hidden", "false");
+            drawer.removeAttribute("inert");
+            menuButton.setAttribute("aria-expanded", "false");
+            backdrop.hidden = true;
             return;
         }
-        const title = panel.querySelector(":scope > .panel-head h2")?.textContent?.trim() || "当前分段";
-        panel.classList.toggle("is-collapsed", !expanded);
-        panel.classList.toggle("is-expanded", expanded);
-        body.hidden = !expanded;
-        toggle.setAttribute("aria-expanded", String(expanded));
-        toggle.setAttribute("aria-label", `${expanded ? "折叠" : "展开"}${title}`);
-        toggle.textContent = expanded ? "收起" : "展开";
-        if (persist) {
-            localStorage.setItem(panelStorageKey(panel.id), expanded ? "expanded" : "collapsed");
+
+        const drawerOpen = document.body.classList.contains("admin-nav-open");
+        drawer.setAttribute("aria-hidden", drawerOpen ? "false" : "true");
+        drawer.toggleAttribute("inert", !drawerOpen);
+        menuButton.setAttribute("aria-expanded", drawerOpen ? "true" : "false");
+        backdrop.hidden = !drawerOpen;
+    }
+
+    function activateAdminPanel(panelId, updateHash) {
+        const panel = panelById(panelId) || panelById(defaultPanelId());
+        if (!panel) {
+            return;
+        }
+
+        document.querySelectorAll("#admin-shell .workspace > .panel").forEach((candidate) => {
+            candidate.hidden = candidate !== panel;
+        });
+        document.querySelectorAll("[data-admin-nav-target]").forEach((button) => {
+            const active = button.dataset.adminNavTarget === panel.id;
+            button.classList.toggle("is-active", active);
+            button.setAttribute("aria-current", active ? "page" : "false");
+        });
+        localStorage.setItem(activePanelStorageKey(), panel.id);
+
+        if (updateHash && window.location.hash !== `#${panel.id}`) {
+            history.pushState(null, "", `#${panel.id}`);
         }
     }
 
-    function panelStorageKey(panelId) {
-        return `linkpeek.admin.panel.${panelId}`;
+    function panelById(panelId) {
+        if (!panelId) {
+            return null;
+        }
+        return document.getElementById(panelId);
+    }
+
+    function panelIdFromLocation() {
+        const hashPanelId = window.location.hash.replace(/^#/, "");
+        if (panelById(hashPanelId)) {
+            return hashPanelId;
+        }
+        const storedPanelId = localStorage.getItem(activePanelStorageKey());
+        if (panelById(storedPanelId)) {
+            return storedPanelId;
+        }
+        return defaultPanelId();
+    }
+
+    function defaultPanelId() {
+        return "preview-events";
+    }
+
+    function activePanelStorageKey() {
+        return "linkpeek.admin.activePanel";
+    }
+
+    function pinnedSidebarStorageKey() {
+        return "linkpeek.admin.sidebarPinned";
     }
 
     async function checkSession() {
@@ -2391,6 +2482,7 @@
 
     function showAdmin() {
         document.getElementById("admin-shell").hidden = false;
+        document.getElementById("admin-menu-button").hidden = false;
         document.getElementById("logout-button").hidden = false;
     }
 
