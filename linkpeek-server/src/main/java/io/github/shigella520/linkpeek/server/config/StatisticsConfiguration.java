@@ -190,6 +190,7 @@ public class StatisticsConfiguration {
                         status TEXT NOT NULL,
                         attempt_count INTEGER NOT NULL DEFAULT 0,
                         request_url TEXT NOT NULL,
+                        request_body TEXT,
                         request_body_snapshot TEXT,
                         response_status INTEGER,
                         response_body_snapshot TEXT,
@@ -199,6 +200,7 @@ public class StatisticsConfiguration {
                         finished_at INTEGER
                     )
                     """);
+            ensureColumn(jdbcTemplate, "notification_delivery", "request_body", "TEXT");
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_channel_enabled ON notification_channel (enabled, type)");
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_task_event_enabled ON notification_task (event_type, enabled)");
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_notification_delivery_event_key ON notification_delivery (event_key)");

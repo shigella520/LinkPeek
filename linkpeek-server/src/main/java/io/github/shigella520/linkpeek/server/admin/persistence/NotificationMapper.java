@@ -49,6 +49,8 @@ public interface NotificationMapper {
 
     int updateDelivery(NotificationDeliveryRecord delivery);
 
+    int resetDeliveryForRetry(NotificationDeliveryRecord delivery);
+
     long countDeliveries(
             @Param("eventType") String eventType,
             @Param("taskId") Long taskId,

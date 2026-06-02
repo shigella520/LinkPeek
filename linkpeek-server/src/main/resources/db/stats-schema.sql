@@ -203,6 +203,7 @@ CREATE TABLE IF NOT EXISTS notification_delivery (
     status TEXT NOT NULL,
     attempt_count INTEGER NOT NULL DEFAULT 0,
     request_url TEXT NOT NULL,
+    request_body TEXT,
     request_body_snapshot TEXT,
     response_status INTEGER,
     response_body_snapshot TEXT,

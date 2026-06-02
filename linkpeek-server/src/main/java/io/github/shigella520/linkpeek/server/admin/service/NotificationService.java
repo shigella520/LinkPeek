@@ -238,6 +238,30 @@ public class NotificationService {
         return new DeleteResponse(notificationMapper.deleteDelivery(deliveryId));
     }
 
+    public NotificationDeliveryRecord retryDelivery(long deliveryId) {
+        NotificationDeliveryRecord delivery = delivery(deliveryId);
+        if (!NotificationDeliveryStatus.FAILED.name().equals(delivery.getStatus())) {
+            throw new IllegalStateException("Only failed notification deliveries can be retried.");
+        }
+        NotificationChannelRecord channel = existingChannel(delivery.getChannelId());
+        String body = retryRequestBody(delivery);
+        delivery.setStatus(NotificationDeliveryStatus.PENDING.name());
+        delivery.setAttemptCount(0);
+        delivery.setRequestUrl(channel.getUrl());
+        delivery.setRequestBody(body);
+        delivery.setRequestBodySnapshot(limit(body, SNAPSHOT_LIMIT));
+        delivery.setResponseStatus(null);
+        delivery.setResponseBodySnapshot(null);
+        delivery.setErrorMessage(null);
+        delivery.setDurationMs(0);
+        delivery.setFinishedAt(null);
+        if (notificationMapper.resetDeliveryForRetry(delivery) == 0) {
+            throw new IllegalStateException("Only failed notification deliveries can be retried.");
+        }
+        submitDelivery(delivery.getId(), channel, delivery.getEventType(), now(), body);
+        return delivery;
+    }
+
     public void publishShareSummaryImageSuccess(ShareSummaryRunRecord run, ShareSummaryImageRecord image) {
         if (run == null || image == null || image.getId() == null) {
             return;
@@ -278,6 +302,7 @@ public class NotificationService {
             delivery.setStatus(NotificationDeliveryStatus.PENDING.name());
             delivery.setAttemptCount(0);
             delivery.setRequestUrl(channel.getUrl());
+            delivery.setRequestBody(body);
             delivery.setRequestBodySnapshot(limit(body, SNAPSHOT_LIMIT));
             delivery.setDurationMs(0);
             delivery.setCreatedAt(now());
@@ -539,6 +564,20 @@ public class NotificationService {
             throw new IllegalArgumentException("Notification task was not found.");
         }
         return task;
+    }
+
+    private String retryRequestBody(NotificationDeliveryRecord delivery) {
+        if (StringUtils.hasText(delivery.getRequestBody())) {
+            return delivery.getRequestBody();
+        }
+        String snapshot = delivery.getRequestBodySnapshot();
+        if (!StringUtils.hasText(snapshot)) {
+            throw new IllegalStateException("Notification delivery request body is not available.");
+        }
+        if (snapshot.length() >= SNAPSHOT_LIMIT) {
+            throw new IllegalStateException("Notification delivery request body snapshot may be truncated and cannot be retried.");
+        }
+        return snapshot;
     }
 
     private TaskResponse taskResponse(NotificationTaskRecord task) {

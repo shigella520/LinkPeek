@@ -1,5 +1,7 @@
 package io.github.shigella520.linkpeek.server.admin.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 public class NotificationDeliveryRecord {
     private Long id;
     private String eventType;
@@ -11,6 +13,7 @@ public class NotificationDeliveryRecord {
     private String status;
     private int attemptCount;
     private String requestUrl;
+    private String requestBody;
     private String requestBodySnapshot;
     private Integer responseStatus;
     private String responseBodySnapshot;
@@ -97,6 +100,15 @@ public class NotificationDeliveryRecord {
 
     public void setRequestUrl(String requestUrl) {
         this.requestUrl = requestUrl;
+    }
+
+    @JsonIgnore
+    public String getRequestBody() {
+        return requestBody;
+    }
+
+    public void setRequestBody(String requestBody) {
+        this.requestBody = requestBody;
     }
 
     public String getRequestBodySnapshot() {

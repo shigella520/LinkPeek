@@ -1305,17 +1305,34 @@
                     <td>${escapeHtml(delivery.responseStatus || "-")}<div class="keyline">${escapeHtml(delivery.attemptCount || 0)} 次</div></td>
                     <td>${escapeHtml(formatDuration(delivery.durationMs))}</td>
                     <td>
-                        <div class="row-actions single-action">
+                        <div class="row-actions notification-delivery-actions">
+                            ${delivery.status === "FAILED" ? `<button type="button" class="secondary" data-retry-notification-delivery="${escapeAttribute(delivery.id)}">重发</button>` : ""}
                             <button type="button" class="danger" data-delete-notification-delivery="${escapeAttribute(delivery.id)}">删除</button>
                         </div>
                     </td>
                 </tr>
             `).join("");
         }
+        body.querySelectorAll("[data-retry-notification-delivery]").forEach((button) => {
+            button.addEventListener("click", async () => retryNotificationDelivery(button));
+        });
         body.querySelectorAll("[data-delete-notification-delivery]").forEach((button) => {
             button.addEventListener("click", async () => deleteNotificationDelivery(button));
         });
         renderNotificationDeliveryPagination(payload);
+    }
+
+    async function retryNotificationDelivery(button) {
+        button.disabled = true;
+        setFeedback("notification-delivery-feedback", "正在重新发送 Webhook...", "");
+        try {
+            await fetchJson(`/api/admin/notifications/deliveries/${encodeURIComponent(button.dataset.retryNotificationDelivery)}/retry`, {method: "POST"});
+            await loadNotificationDeliveries();
+            setFeedback("notification-delivery-feedback", "已提交重发，请稍后刷新查看结果。", "is-success");
+        } catch (error) {
+            button.disabled = false;
+            setFeedback("notification-delivery-feedback", error.message, "is-error");
+        }
     }
 
     async function deleteNotificationDelivery(button) {

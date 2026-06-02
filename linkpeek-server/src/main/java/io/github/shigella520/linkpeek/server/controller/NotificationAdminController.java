@@ -199,4 +199,16 @@ public class NotificationAdminController {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
     }
+
+    @PostMapping("/deliveries/{deliveryId}/retry")
+    public NotificationDeliveryRecord retryDelivery(HttpServletRequest request, @PathVariable long deliveryId) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return notificationService.retryDelivery(deliveryId);
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
+        }
+    }
 }

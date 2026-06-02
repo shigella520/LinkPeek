@@ -1040,7 +1040,7 @@ table {
 
 .notification-delivery-table th:nth-child(7),
 .notification-delivery-table td:nth-child(7) {
-    width: 82px;
+    width: 112px;
 }
 
 .share-summary-task-table th:nth-child(1),
@@ -1275,7 +1275,13 @@ td .row-actions.single-action {
     min-width: 64px;
 }
 
-.notification-delivery-table td .row-actions.single-action button {
+.notification-delivery-table td .notification-delivery-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.notification-delivery-table td .notification-delivery-actions button {
     width: auto;
     min-width: 56px;
     min-height: 30px;

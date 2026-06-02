@@ -40,6 +40,7 @@
         status,
         attempt_count,
         request_url,
+        request_body,
         request_body_snapshot,
         response_status,
         response_body_snapshot,
@@ -233,6 +234,7 @@
             status,
             attempt_count,
             request_url,
+            request_body,
             request_body_snapshot,
             response_status,
             response_body_snapshot,
@@ -251,6 +253,7 @@
             #{status},
             #{attemptCount},
             #{requestUrl},
+            #{requestBody},
             #{requestBodySnapshot},
             #{responseStatus},
             #{responseBodySnapshot},
@@ -266,12 +269,32 @@
         SET
             status = #{status},
             attempt_count = #{attemptCount},
+            request_url = #{requestUrl},
+            request_body = #{requestBody},
+            request_body_snapshot = #{requestBodySnapshot},
             response_status = #{responseStatus},
             response_body_snapshot = #{responseBodySnapshot},
             error_message = #{errorMessage},
             duration_ms = #{durationMs},
             finished_at = #{finishedAt}
         WHERE id = #{id}
+    </update>
+
+    <update id="resetDeliveryForRetry" parameterType="io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord">
+        UPDATE notification_delivery
+        SET
+            status = #{status},
+            attempt_count = #{attemptCount},
+            request_url = #{requestUrl},
+            request_body = #{requestBody},
+            request_body_snapshot = #{requestBodySnapshot},
+            response_status = #{responseStatus},
+            response_body_snapshot = #{responseBodySnapshot},
+            error_message = #{errorMessage},
+            duration_ms = #{durationMs},
+            finished_at = #{finishedAt}
+        WHERE id = #{id}
+          AND status = 'FAILED'
     </update>
 
     <sql id="deliveryFilter">
