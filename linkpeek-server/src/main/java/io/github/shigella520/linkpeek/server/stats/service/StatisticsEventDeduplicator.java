@@ -7,6 +7,7 @@ import io.github.shigella520.linkpeek.server.stats.model.StatisticsEventType;
 import java.time.Duration;
 import java.util.Comparator;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
@@ -26,33 +27,35 @@ public class StatisticsEventDeduplicator {
         this.properties = properties;
     }
 
-    public boolean shouldRecord(EventKey key, long nowMillis) {
+    public Claim tryClaimPreviewCreated(EventKey key, long nowMillis) {
         long ttlMillis = ttlMillis();
         int maxEntries = properties.getStatsEventDedupeMaxEntries();
         if (ttlMillis <= 0 || maxEntries <= 0) {
-            return true;
+            return Claim.untracked(key);
         }
 
         cleanupIfNeeded(nowMillis, ttlMillis, maxEntries);
 
-        AtomicBoolean duplicate = new AtomicBoolean();
+        AtomicBoolean claimed = new AtomicBoolean();
         long expiresAt = nowMillis + ttlMillis;
         eventExpirations.compute(key, (ignored, existingExpiresAt) -> {
             if (existingExpiresAt != null && existingExpiresAt > nowMillis) {
-                duplicate.set(true);
                 return existingExpiresAt;
             }
+            claimed.set(true);
             return expiresAt;
         });
 
-        if (!duplicate.get()) {
+        if (claimed.get()) {
             trimIfNeeded(maxEntries);
         }
-        return !duplicate.get();
+        return new Claim(key, claimed.get(), claimed.get(), expiresAt);
     }
 
-    public void forget(EventKey key) {
-        eventExpirations.remove(key);
+    public void release(Claim claim) {
+        if (claim != null && claim.tracked()) {
+            eventExpirations.remove(claim.key(), claim.expiresAt());
+        }
     }
 
     public void forgetPreviewKey(String previewKey) {
@@ -103,8 +106,20 @@ public class StatisticsEventDeduplicator {
             StatisticsClientType clientType,
             int httpStatus,
             String sourceUrl,
-            String requestedStyle,
-            String actualStyle
+            String requestedStyle
     ) {
+        public EventKey {
+            requestedStyle = requestedStyle == null || requestedStyle.isBlank() ? null : requestedStyle;
+        }
+    }
+
+    public record Claim(EventKey key, boolean acquired, boolean tracked, long expiresAt) {
+        private static Claim untracked(EventKey key) {
+            return new Claim(key, true, false, 0);
+        }
+
+        public Claim {
+            Objects.requireNonNull(key, "key");
+        }
     }
 }

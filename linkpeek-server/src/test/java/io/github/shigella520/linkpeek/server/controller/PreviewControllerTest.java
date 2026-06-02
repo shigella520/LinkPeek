@@ -15,7 +15,10 @@ import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClie
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
 import io.github.shigella520.linkpeek.server.ai.AiTitlePrompt;
+import io.github.shigella520.linkpeek.server.service.PreviewService;
+import io.github.shigella520.linkpeek.server.stats.model.StatisticsClientType;
 import io.github.shigella520.linkpeek.server.stats.service.StatisticsEventDeduplicator;
+import io.github.shigella520.linkpeek.server.stats.service.StatisticsRecorder;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -120,6 +123,9 @@ class PreviewControllerTest {
 
     @Autowired
     private StatisticsEventDeduplicator statisticsEventDeduplicator;
+
+    @Autowired
+    private StatisticsRecorder statisticsRecorder;
 
     @BeforeEach
     void setUp() throws IOException {
@@ -395,6 +401,60 @@ class PreviewControllerTest {
                         key().value()
                 ) > firstLastSeenAt
         );
+    }
+
+    @Test
+    void firstCrawlerRequestKeepsPreviewCreatedClaimWhenDuplicateFinishesFirst() throws Exception {
+        PreviewService.ResolvedPreview resolvedPreview = new PreviewService.ResolvedPreview(
+                URI.create("https://video.example.com/watch/abc"),
+                URI.create("https://video.example.com/watch/abc"),
+                key(),
+                testPreviewProvider
+        );
+        PreviewMetadata metadata = testPreviewProvider.resolve(resolvedPreview.sourceUrl());
+        StatisticsEventDeduplicator.Claim firstClaim = statisticsRecorder.claimPreviewCreated(
+                resolvedPreview,
+                StatisticsClientType.CRAWLER,
+                200,
+                null
+        );
+        StatisticsEventDeduplicator.Claim duplicateClaim = statisticsRecorder.claimPreviewCreated(
+                resolvedPreview,
+                StatisticsClientType.CRAWLER,
+                200,
+                null
+        );
+
+        statisticsRecorder.recordPreviewCreated(
+                new PreviewService.PreviewLoadResult(resolvedPreview, metadata, true),
+                StatisticsClientType.CRAWLER,
+                200,
+                7_000,
+                duplicateClaim
+        );
+        statisticsRecorder.recordPreviewCreated(
+                new PreviewService.PreviewLoadResult(resolvedPreview, metadata, false).withCrawlDuration(123),
+                StatisticsClientType.CRAWLER,
+                200,
+                456,
+                firstClaim
+        );
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                1,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM stats_event WHERE event_type = 'PREVIEW_CREATED' AND client_type = 'CRAWLER'",
+                        Integer.class
+                )
+        );
+        org.junit.jupiter.api.Assertions.assertFalse(Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+                "SELECT cache_hit FROM stats_event WHERE event_type = 'PREVIEW_CREATED'",
+                Boolean.class
+        )));
+        org.junit.jupiter.api.Assertions.assertEquals(123L, jdbcTemplate.queryForObject(
+                "SELECT crawl_duration_ms FROM stats_event WHERE event_type = 'PREVIEW_CREATED'",
+                Long.class
+        ));
     }
 
     @Test

@@ -10,6 +10,7 @@ import io.github.shigella520.linkpeek.server.service.PreviewService;
 import io.github.shigella520.linkpeek.server.service.PreviewWarmupService;
 import io.github.shigella520.linkpeek.server.stats.model.StatisticsClientType;
 import io.github.shigella520.linkpeek.server.stats.model.StatisticsErrorCode;
+import io.github.shigella520.linkpeek.server.stats.service.StatisticsEventDeduplicator;
 import io.github.shigella520.linkpeek.server.stats.service.StatisticsRecorder;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -96,6 +97,7 @@ public class PreviewController {
         String userAgent = request.getHeader(HttpHeaders.USER_AGENT);
         StatisticsClientType clientType = resolveClientType(userAgent);
         PreviewService.ResolvedPreview resolvedPreview = null;
+        StatisticsEventDeduplicator.Claim previewCreatedClaim = null;
 
         try {
             resolvedPreview = previewService.prepare(url);
@@ -117,10 +119,12 @@ public class PreviewController {
                 );
             }
 
+            previewCreatedClaim = statisticsRecorder.claimPreviewCreated(resolvedPreview, clientType, 200, style);
             PreviewService.PreviewLoadResult result = previewService.loadPreview(resolvedPreview, style);
             String body = htmlPageRenderer.renderPreview(result.metadata(), result.previewKey(), properties.getBaseUrl());
             long durationMs = elapsedMillis(startedAt);
-            statisticsRecorder.recordPreviewCreated(result, clientType, 200, durationMs);
+            statisticsRecorder.recordPreviewCreated(result, clientType, 200, durationMs, previewCreatedClaim);
+            previewCreatedClaim = null;
             log.info(
                     "preview_served previewKey={} provider={} cacheHit={} durationMs={} status={}",
                     result.previewKey().value(),
@@ -133,6 +137,7 @@ public class PreviewController {
                     .contentType(MediaType.TEXT_HTML)
                     .body(body);
         } catch (InvalidPreviewUrlException exception) {
+            statisticsRecorder.releasePreviewCreatedClaim(previewCreatedClaim);
             return errorResponse(
                     HttpStatus.BAD_REQUEST,
                     "Invalid URL",
@@ -144,6 +149,7 @@ public class PreviewController {
                     StatisticsErrorCode.INVALID_URL
             );
         } catch (UnsupportedPreviewUrlException exception) {
+            statisticsRecorder.releasePreviewCreatedClaim(previewCreatedClaim);
             return errorResponse(
                     HttpStatus.UNPROCESSABLE_ENTITY,
                     "Unsupported URL",
@@ -155,6 +161,7 @@ public class PreviewController {
                     StatisticsErrorCode.UNSUPPORTED_URL
             );
         } catch (PreviewException exception) {
+            statisticsRecorder.releasePreviewCreatedClaim(previewCreatedClaim);
             return errorResponse(
                     HttpStatus.BAD_GATEWAY,
                     "Preview Error",
@@ -165,6 +172,9 @@ public class PreviewController {
                     clientType,
                     StatisticsErrorCode.UPSTREAM_ERROR
             );
+        } catch (RuntimeException exception) {
+            statisticsRecorder.releasePreviewCreatedClaim(previewCreatedClaim);
+            throw exception;
         }
     }
 

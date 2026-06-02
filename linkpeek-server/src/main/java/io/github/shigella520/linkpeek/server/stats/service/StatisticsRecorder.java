@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.Locale;
 
 @Service
 public class StatisticsRecorder {
@@ -43,6 +44,16 @@ public class StatisticsRecorder {
             int httpStatus,
             long durationMs
     ) {
+        recordPreviewCreated(result, clientType, httpStatus, durationMs, null);
+    }
+
+    public void recordPreviewCreated(
+            PreviewService.PreviewLoadResult result,
+            StatisticsClientType clientType,
+            int httpStatus,
+            long durationMs,
+            StatisticsEventDeduplicator.Claim claim
+    ) {
         PreviewMetadata metadata = result.metadata();
         recordEvent(
                 result.previewKey().value(),
@@ -63,8 +74,36 @@ public class StatisticsRecorder {
                 result.aiDurationMs(),
                 result.crawlDurationMs(),
                 durationMs,
-                null
+                null,
+                claim
         );
+    }
+
+    public StatisticsEventDeduplicator.Claim claimPreviewCreated(
+            PreviewService.ResolvedPreview resolvedPreview,
+            StatisticsClientType clientType,
+            int httpStatus,
+            String requestedStyle
+    ) {
+        if (resolvedPreview == null || !StatisticsClientType.CRAWLER.equals(clientType)) {
+            return null;
+        }
+        return eventDeduplicator.tryClaimPreviewCreated(
+                new StatisticsEventDeduplicator.EventKey(
+                        resolvedPreview.previewKey().value(),
+                        resolvedPreview.provider().getId(),
+                        StatisticsEventType.PREVIEW_CREATED,
+                        clientType,
+                        httpStatus,
+                        resolvedPreview.sourceUrl().toString(),
+                        normalizeRequestedStyle(requestedStyle)
+                ),
+                Instant.now(clock).toEpochMilli()
+        );
+    }
+
+    public void releasePreviewCreatedClaim(StatisticsEventDeduplicator.Claim claim) {
+        eventDeduplicator.release(claim);
     }
 
     public void recordPreviewOpened(
@@ -92,6 +131,7 @@ public class StatisticsRecorder {
                 0,
                 0,
                 durationMs,
+                null,
                 null
         );
     }
@@ -122,6 +162,7 @@ public class StatisticsRecorder {
                 result.aiDurationMs(),
                 result.crawlDurationMs(),
                 durationMs,
+                null,
                 null
         );
     }
@@ -174,7 +215,8 @@ public class StatisticsRecorder {
                 0,
                 0,
                 durationMs,
-                errorCode
+                errorCode,
+                null
         );
     }
 
@@ -203,6 +245,7 @@ public class StatisticsRecorder {
                 0,
                 0,
                 durationMs,
+                null,
                 null
         );
     }
@@ -226,7 +269,8 @@ public class StatisticsRecorder {
             long aiDurationMs,
             long crawlDurationMs,
             long durationMs,
-            StatisticsErrorCode errorCode
+            StatisticsErrorCode errorCode,
+            StatisticsEventDeduplicator.Claim claim
     ) {
         long occurredAt = Instant.now(clock).toEpochMilli();
         try {
@@ -259,8 +303,7 @@ public class StatisticsRecorder {
                     durationMs,
                     errorCode
             );
-            StatisticsEventDeduplicator.EventKey dedupeKey = dedupeKey(eventRecord);
-            if (dedupeKey != null && !eventDeduplicator.shouldRecord(dedupeKey, occurredAt)) {
+            if (claim != null && !claim.acquired()) {
                 log.debug(
                         "statistics_duplicate_event_skipped eventType={} previewKey={} provider={} clientType={}",
                         eventType,
@@ -273,12 +316,11 @@ public class StatisticsRecorder {
             try {
                 statsEventMapper.insertEvent(eventRecord);
             } catch (RuntimeException exception) {
-                if (dedupeKey != null) {
-                    eventDeduplicator.forget(dedupeKey);
-                }
+                eventDeduplicator.release(claim);
                 throw exception;
             }
         } catch (RuntimeException exception) {
+            eventDeduplicator.release(claim);
             log.warn(
                     "statistics_record_failed eventType={} previewKey={} provider={}",
                     eventType,
@@ -289,27 +331,11 @@ public class StatisticsRecorder {
         }
     }
 
-    private StatisticsEventDeduplicator.EventKey dedupeKey(StatisticsEventRecord eventRecord) {
-        if (!shouldDedupe(eventRecord)) {
+    private String normalizeRequestedStyle(String requestedStyle) {
+        if (requestedStyle == null || requestedStyle.isBlank()) {
             return null;
         }
-        return new StatisticsEventDeduplicator.EventKey(
-                eventRecord.getPreviewKey(),
-                eventRecord.getProviderId(),
-                StatisticsEventType.valueOf(eventRecord.getEventType()),
-                StatisticsClientType.valueOf(eventRecord.getClientType()),
-                eventRecord.getHttpStatus(),
-                eventRecord.getSourceUrl(),
-                eventRecord.getRequestedStyle(),
-                eventRecord.getActualStyle()
-        );
-    }
-
-    private boolean shouldDedupe(StatisticsEventRecord eventRecord) {
-        return StatisticsEventType.PREVIEW_CREATED.name().equals(eventRecord.getEventType())
-                && StatisticsClientType.CRAWLER.name().equals(eventRecord.getClientType())
-                && eventRecord.getPreviewKey() != null
-                && !eventRecord.getPreviewKey().isBlank();
+        return requestedStyle.strip().toUpperCase(Locale.ROOT);
     }
 
     private StatisticsLinkRecord linkRecord(
