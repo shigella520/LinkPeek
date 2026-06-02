@@ -1121,7 +1121,7 @@
         body.innerHTML = state.notificationChannels.map((channel) => `
             <tr>
                 <td><strong>${escapeHtml(channel.name)}</strong><div class="keyline">${escapeHtml(channel.type || "WEBHOOK")}</div></td>
-                <td class="url-cell">${escapeHtml(channel.url || "-")}</td>
+                <td><span class="url-cell" title="${escapeAttribute(channel.url || "-")}">${escapeHtml(channel.url || "-")}</span></td>
                 <td class="nowrap">${escapeHtml(channel.timeoutSeconds || 10)}s</td>
                 <td>${channel.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
                 <td>
