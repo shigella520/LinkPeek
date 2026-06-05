@@ -1,6 +1,15 @@
 (function () {
     const FREESTYLE_STYLE = "FREESTYLE";
     const CONFIRM_TIMEOUT_MS = 5000;
+    const NOTIFICATION_FILTER_PERIOD_TYPES = [
+        {value: "DAILY", label: "每日"},
+        {value: "WEEKLY", label: "每周"},
+        {value: "MONTHLY", label: "每月"}
+    ];
+    const NOTIFICATION_FILTER_TRIGGER_TYPES = [
+        {value: "SCHEDULED", label: "定时"},
+        {value: "MANUAL", label: "手动"}
+    ];
 
     const state = {
         prompts: [],
@@ -14,6 +23,26 @@
             total: 0,
             totalPages: 0
         },
+        shareSummaryTasks: [],
+        shareSummaryRuns: {
+            items: [],
+            page: 1,
+            size: 20,
+            total: 0,
+            totalPages: 0
+        },
+        shareSummaryImageConfig: {},
+        notificationEvents: [],
+        notificationChannels: [],
+        notificationTasks: [],
+        notificationDeliveries: {
+            items: [],
+            page: 1,
+            size: 20,
+            total: 0,
+            totalPages: 0
+        },
+        activeShareSummaryRunId: null,
         aiProviderDowngradeSaveTimer: null,
         aiProviderDowngradeSaveVersion: 0,
         logRefreshTimer: null,
@@ -21,6 +50,7 @@
     };
 
     function init() {
+        bindAdminNavigation();
         bindLogout();
         bindPurge();
         bindPromptForm();
@@ -29,9 +59,167 @@
         bindAiProviderDowngradeConfig();
         bindAiForm();
         bindPreviewEvents();
+        bindShareSummary();
+        bindNotifications();
         bindLogs();
         bindModalClose();
         checkSession();
+    }
+
+    function bindAdminNavigation() {
+        const menuButton = document.getElementById("admin-menu-button");
+        const closeButton = document.getElementById("admin-drawer-close-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        const pinButton = document.getElementById("admin-pin-sidebar-button");
+
+        menuButton.addEventListener("click", openAdminNavigation);
+        closeButton.addEventListener("click", closeAdminNavigation);
+        backdrop.addEventListener("click", closeAdminNavigation);
+        pinButton.addEventListener("click", () => {
+            setAdminSidebarPinned(!isAdminSidebarPinned(), true);
+        });
+        document.querySelectorAll("[data-admin-nav-target]").forEach((button) => {
+            button.addEventListener("click", () => {
+                activateAdminPanel(button.dataset.adminNavTarget, true);
+                if (!isAdminSidebarPinnedActive()) {
+                    closeAdminNavigation();
+                }
+            });
+        });
+        window.addEventListener("hashchange", () => {
+            activateAdminPanel(panelIdFromLocation(), false);
+        });
+        window.addEventListener("resize", syncAdminNavigationMode);
+        document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape" && document.body.classList.contains("admin-nav-open")) {
+                closeAdminNavigation();
+            }
+        });
+        setAdminSidebarPinned(localStorage.getItem(pinnedSidebarStorageKey()) === "true", false);
+        activateAdminPanel(panelIdFromLocation(), false);
+    }
+
+    function openAdminNavigation() {
+        const drawer = document.getElementById("admin-nav-drawer");
+        const menuButton = document.getElementById("admin-menu-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        document.body.classList.add("admin-nav-open");
+        drawer.setAttribute("aria-hidden", "false");
+        drawer.removeAttribute("inert");
+        menuButton.setAttribute("aria-expanded", "true");
+        backdrop.hidden = isAdminSidebarPinnedActive();
+    }
+
+    function closeAdminNavigation() {
+        const drawer = document.getElementById("admin-nav-drawer");
+        const menuButton = document.getElementById("admin-menu-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        document.body.classList.remove("admin-nav-open");
+        if (isAdminSidebarPinnedActive()) {
+            drawer.setAttribute("aria-hidden", "false");
+            drawer.removeAttribute("inert");
+        } else {
+            drawer.setAttribute("aria-hidden", "true");
+            drawer.setAttribute("inert", "");
+        }
+        menuButton.setAttribute("aria-expanded", "false");
+        backdrop.hidden = true;
+    }
+
+    function setAdminSidebarPinned(pinned, persist) {
+        const drawer = document.getElementById("admin-nav-drawer");
+        const menuButton = document.getElementById("admin-menu-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        const pinButton = document.getElementById("admin-pin-sidebar-button");
+        document.body.classList.toggle("admin-sidebar-pinned", pinned);
+        pinButton.setAttribute("aria-pressed", pinned ? "true" : "false");
+        pinButton.setAttribute("aria-label", pinned ? "取消固定边栏" : "固定边栏");
+        pinButton.title = pinned ? "取消固定边栏" : "固定边栏";
+        if (persist) {
+            localStorage.setItem(pinnedSidebarStorageKey(), pinned ? "true" : "false");
+        }
+        syncAdminNavigationMode();
+    }
+
+    function isAdminSidebarPinned() {
+        return document.body.classList.contains("admin-sidebar-pinned");
+    }
+
+    function isAdminSidebarPinnedActive() {
+        return isAdminSidebarPinned() && window.matchMedia("(min-width: 720px)").matches;
+    }
+
+    function syncAdminNavigationMode() {
+        const drawer = document.getElementById("admin-nav-drawer");
+        const menuButton = document.getElementById("admin-menu-button");
+        const backdrop = document.getElementById("admin-drawer-backdrop");
+        const pinnedActive = isAdminSidebarPinnedActive();
+        if (pinnedActive) {
+            document.body.classList.remove("admin-nav-open");
+            drawer.setAttribute("aria-hidden", "false");
+            drawer.removeAttribute("inert");
+            menuButton.setAttribute("aria-expanded", "false");
+            backdrop.hidden = true;
+            return;
+        }
+
+        const drawerOpen = document.body.classList.contains("admin-nav-open");
+        drawer.setAttribute("aria-hidden", drawerOpen ? "false" : "true");
+        drawer.toggleAttribute("inert", !drawerOpen);
+        menuButton.setAttribute("aria-expanded", drawerOpen ? "true" : "false");
+        backdrop.hidden = !drawerOpen;
+    }
+
+    function activateAdminPanel(panelId, updateHash) {
+        const panel = panelById(panelId) || panelById(defaultPanelId());
+        if (!panel) {
+            return;
+        }
+
+        document.querySelectorAll("#admin-shell .workspace > .panel").forEach((candidate) => {
+            candidate.hidden = candidate !== panel;
+        });
+        document.querySelectorAll("[data-admin-nav-target]").forEach((button) => {
+            const active = button.dataset.adminNavTarget === panel.id;
+            button.classList.toggle("is-active", active);
+            button.setAttribute("aria-current", active ? "page" : "false");
+        });
+        localStorage.setItem(activePanelStorageKey(), panel.id);
+
+        if (updateHash && window.location.hash !== `#${panel.id}`) {
+            history.pushState(null, "", `#${panel.id}`);
+        }
+    }
+
+    function panelById(panelId) {
+        if (!panelId) {
+            return null;
+        }
+        return document.getElementById(panelId);
+    }
+
+    function panelIdFromLocation() {
+        const hashPanelId = window.location.hash.replace(/^#/, "");
+        if (panelById(hashPanelId)) {
+            return hashPanelId;
+        }
+        const storedPanelId = localStorage.getItem(activePanelStorageKey());
+        if (panelById(storedPanelId)) {
+            return storedPanelId;
+        }
+        return defaultPanelId();
+    }
+
+    function defaultPanelId() {
+        return "preview-events";
+    }
+
+    function activePanelStorageKey() {
+        return "linkpeek.admin.activePanel";
+    }
+
+    function pinnedSidebarStorageKey() {
+        return "linkpeek.admin.sidebarPinned";
     }
 
     async function checkSession() {
@@ -243,6 +431,69 @@
         });
     }
 
+    function bindShareSummary() {
+        document.getElementById("share-summary-new-button").addEventListener("click", openShareSummaryTaskModalForCreate);
+        document.getElementById("share-summary-image-config-button").addEventListener("click", openShareSummaryImageConfigModal);
+        document.getElementById("share-summary-image-config-cancel-button").addEventListener("click", closeShareSummaryImageConfigModal);
+        document.getElementById("share-summary-image-config-form").addEventListener("submit", saveShareSummaryImageConfig);
+        document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
+        document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
+        document.getElementById("share-summary-task-period").addEventListener("change", updateShareSummaryPeriodFields);
+        document.getElementById("share-summary-task-form").addEventListener("submit", saveShareSummaryTask);
+        document.getElementById("share-summary-refresh-runs").addEventListener("click", async () => {
+            await loadShareSummaryRuns();
+        });
+        document.getElementById("share-summary-run-filter-form").addEventListener("change", async () => {
+            state.shareSummaryRuns.page = 1;
+            await loadShareSummaryRuns();
+        });
+        document.getElementById("share-summary-run-prev").addEventListener("click", async () => {
+            if (state.shareSummaryRuns.page <= 1) {
+                return;
+            }
+            state.shareSummaryRuns.page -= 1;
+            await loadShareSummaryRuns();
+        });
+        document.getElementById("share-summary-run-next").addEventListener("click", async () => {
+            if (state.shareSummaryRuns.totalPages > 0 && state.shareSummaryRuns.page >= state.shareSummaryRuns.totalPages) {
+                return;
+            }
+            state.shareSummaryRuns.page += 1;
+            await loadShareSummaryRuns();
+        });
+    }
+
+    function bindNotifications() {
+        document.getElementById("notification-channel-new-button").addEventListener("click", openNotificationChannelModalForCreate);
+        document.getElementById("notification-task-new-button").addEventListener("click", openNotificationTaskModalForCreate);
+        document.getElementById("notification-channel-cancel-button").addEventListener("click", closeNotificationChannelModal);
+        document.getElementById("notification-task-cancel-button").addEventListener("click", closeNotificationTaskModal);
+        document.getElementById("notification-channel-add-header").addEventListener("click", () => addNotificationHeaderRow());
+        document.getElementById("notification-channel-form").addEventListener("submit", saveNotificationChannel);
+        document.getElementById("notification-task-form").addEventListener("submit", saveNotificationTask);
+        document.getElementById("notification-task-event-type").addEventListener("change", renderNotificationPlaceholders);
+        document.getElementById("notification-template-validate-button").addEventListener("click", validateNotificationTemplate);
+        document.getElementById("notification-refresh-deliveries").addEventListener("click", loadNotificationDeliveries);
+        document.getElementById("notification-delivery-filter-form").addEventListener("change", async () => {
+            state.notificationDeliveries.page = 1;
+            await loadNotificationDeliveries();
+        });
+        document.getElementById("notification-delivery-prev").addEventListener("click", async () => {
+            if (state.notificationDeliveries.page <= 1) {
+                return;
+            }
+            state.notificationDeliveries.page -= 1;
+            await loadNotificationDeliveries();
+        });
+        document.getElementById("notification-delivery-next").addEventListener("click", async () => {
+            if (state.notificationDeliveries.totalPages > 0 && state.notificationDeliveries.page >= state.notificationDeliveries.totalPages) {
+                return;
+            }
+            state.notificationDeliveries.page += 1;
+            await loadNotificationDeliveries();
+        });
+    }
+
     function bindModalClose() {
         document.querySelectorAll("[data-close-modal]").forEach((node) => {
             node.addEventListener("click", () => {
@@ -252,6 +503,26 @@
                 }
                 if (node.dataset.closeModal === "ai") {
                     closeAiModal();
+                    return;
+                }
+                if (node.dataset.closeModal === "share-summary-task") {
+                    closeShareSummaryTaskModal();
+                    return;
+                }
+                if (node.dataset.closeModal === "share-summary-image-config") {
+                    closeShareSummaryImageConfigModal();
+                    return;
+                }
+                if (node.dataset.closeModal === "share-summary-run") {
+                    closeShareSummaryRunModal();
+                    return;
+                }
+                if (node.dataset.closeModal === "notification-channel") {
+                    closeNotificationChannelModal();
+                    return;
+                }
+                if (node.dataset.closeModal === "notification-task") {
+                    closeNotificationTaskModal();
                 }
             });
         });
@@ -265,6 +536,26 @@
             }
             if (!document.getElementById("ai-modal").hidden) {
                 closeAiModal();
+                return;
+            }
+            if (!document.getElementById("share-summary-task-modal").hidden) {
+                closeShareSummaryTaskModal();
+                return;
+            }
+            if (!document.getElementById("share-summary-image-config-modal").hidden) {
+                closeShareSummaryImageConfigModal();
+                return;
+            }
+            if (!document.getElementById("share-summary-run-modal").hidden) {
+                closeShareSummaryRunModal();
+                return;
+            }
+            if (!document.getElementById("notification-channel-modal").hidden) {
+                closeNotificationChannelModal();
+                return;
+            }
+            if (!document.getElementById("notification-task-modal").hidden) {
+                closeNotificationTaskModal();
             }
         });
     }
@@ -277,6 +568,8 @@
             loadAiProviderDowngradeConfig(),
             loadAiProviders(),
             loadPreviewEvents(),
+            loadShareSummary(),
+            loadNotifications(),
             loadLogs()
         ]);
     }
@@ -326,6 +619,95 @@
             setFeedback("preview-event-feedback", `已加载 ${state.previewEvents.items.length} 条，共 ${state.previewEvents.total} 条。`, "is-success");
         } catch (error) {
             setFeedback("preview-event-feedback", error.message, "is-error");
+        }
+    }
+
+    async function loadShareSummary() {
+        await loadShareSummaryImageConfig();
+        await loadShareSummaryTasks();
+        await loadShareSummaryRuns();
+    }
+
+    async function loadShareSummaryImageConfig() {
+        state.shareSummaryImageConfig = await fetchJson("/api/admin/share-summary/image-config");
+    }
+
+    async function loadShareSummaryTasks() {
+        state.shareSummaryTasks = await fetchJson("/api/admin/share-summary/tasks");
+        renderShareSummaryTasks();
+        renderShareSummaryTaskFilterOptions();
+    }
+
+    async function loadShareSummaryRuns() {
+        const params = new URLSearchParams();
+        params.set("page", String(state.shareSummaryRuns.page || 1));
+        params.set("size", document.getElementById("share-summary-run-size").value || "20");
+        const taskId = document.getElementById("share-summary-run-filter-task").value;
+        const status = document.getElementById("share-summary-run-filter-status").value;
+        if (taskId) {
+            params.set("taskId", taskId);
+        }
+        if (status) {
+            params.set("status", status);
+        }
+
+        setFeedback("share-summary-history-feedback", "正在读取分享总结记录...", "");
+        try {
+            state.shareSummaryRuns = await fetchJson(`/api/admin/share-summary/runs?${params.toString()}`);
+            renderShareSummaryRuns();
+            setFeedback("share-summary-history-feedback", `已加载 ${state.shareSummaryRuns.items.length} 条，共 ${state.shareSummaryRuns.total} 条。`, "is-success");
+        } catch (error) {
+            setFeedback("share-summary-history-feedback", error.message, "is-error");
+        }
+    }
+
+    async function loadNotifications() {
+        await loadNotificationEvents();
+        await loadNotificationChannels();
+        await loadNotificationTasks();
+        await loadNotificationDeliveries();
+    }
+
+    async function loadNotificationEvents() {
+        state.notificationEvents = await fetchJson("/api/admin/notifications/events");
+        renderNotificationEventOptions();
+    }
+
+    async function loadNotificationChannels() {
+        state.notificationChannels = await fetchJson("/api/admin/notifications/channels");
+        renderNotificationChannels();
+        renderNotificationChannelOptions();
+    }
+
+    async function loadNotificationTasks() {
+        state.notificationTasks = await fetchJson("/api/admin/notifications/tasks");
+        renderNotificationTasks();
+        renderNotificationTaskOptions();
+    }
+
+    async function loadNotificationDeliveries() {
+        const params = new URLSearchParams();
+        params.set("page", String(state.notificationDeliveries.page || 1));
+        params.set("size", document.getElementById("notification-delivery-size").value || "20");
+        const taskId = document.getElementById("notification-delivery-filter-task").value;
+        const channelId = document.getElementById("notification-delivery-filter-channel").value;
+        const status = document.getElementById("notification-delivery-filter-status").value;
+        if (taskId) {
+            params.set("taskId", taskId);
+        }
+        if (channelId) {
+            params.set("channelId", channelId);
+        }
+        if (status) {
+            params.set("status", status);
+        }
+        setFeedback("notification-delivery-feedback", "正在读取发送记录...", "");
+        try {
+            state.notificationDeliveries = await fetchJson(`/api/admin/notifications/deliveries?${params.toString()}`);
+            renderNotificationDeliveries();
+            setFeedback("notification-delivery-feedback", `已加载 ${state.notificationDeliveries.items.length} 条，共 ${state.notificationDeliveries.total} 条。`, "is-success");
+        } catch (error) {
+            setFeedback("notification-delivery-feedback", error.message, "is-error");
         }
     }
 
@@ -471,7 +853,7 @@
                     </label>
                 </td>
                 <td>
-                    <div class="row-actions">
+                    <div class="row-actions ai-provider-actions">
                         <button type="button" data-test-ai="${provider.id}" class="secondary test-button">测试</button>
                         <button type="button" data-edit-ai="${provider.id}" class="secondary">编辑</button>
                         <button type="button" data-delete-ai="${provider.id}" class="danger">删除</button>
@@ -577,6 +959,901 @@
                 : "暂无记录";
         document.getElementById("preview-event-prev").disabled = page <= 1;
         document.getElementById("preview-event-next").disabled = totalPages === 0 || page >= totalPages;
+    }
+
+    function renderShareSummaryTasks() {
+        const body = document.getElementById("share-summary-task-table");
+        if (!state.shareSummaryTasks.length) {
+            body.innerHTML = `<tr><td colspan="6" class="muted">暂无分享总结任务</td></tr>`;
+            return;
+        }
+        body.innerHTML = state.shareSummaryTasks.map((task) => `
+            <tr>
+                <td>
+                    <strong>${escapeHtml(task.name)}</strong>
+                    <div class="prompt-preview">${escapeHtml(promptPreview(task.prompt))}</div>
+                </td>
+                    <td class="nowrap">${escapeHtml(periodLabel(task.periodType))}</td>
+                    <td class="nowrap">${escapeHtml(scheduleLabel(task))}</td>
+                    <td class="nowrap">${escapeHtml(task.minLinks || 1)} / ${escapeHtml(task.maxLinks || 100)}</td>
+                <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
+                <td>
+                    <div class="row-actions share-summary-task-actions">
+                        <button type="button" class="secondary" data-run-share-task="${task.id}">执行</button>
+                        <button type="button" class="secondary" data-edit-share-task="${task.id}">编辑</button>
+                        <button type="button" class="danger" data-delete-share-task="${task.id}">删除</button>
+                    </div>
+                </td>
+            </tr>
+        `).join("");
+        body.querySelectorAll("[data-run-share-task]").forEach((button) => {
+            button.addEventListener("click", async () => {
+                await runShareSummaryTask(button.dataset.runShareTask);
+            });
+        });
+        body.querySelectorAll("[data-edit-share-task]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const task = state.shareSummaryTasks.find((item) => String(item.id) === button.dataset.editShareTask);
+                if (task) {
+                    openShareSummaryTaskModalForEdit(task);
+                }
+            });
+        });
+        body.querySelectorAll("[data-delete-share-task]").forEach((button) => {
+            button.addEventListener("click", async () => {
+                if (!confirmDangerAction(button, "确认删除")) {
+                    return;
+                }
+                button.disabled = true;
+                setFeedback("share-summary-feedback", "正在删除分享总结任务...", "");
+                try {
+                    await fetchJson(`/api/admin/share-summary/tasks/${encodeURIComponent(button.dataset.deleteShareTask)}`, {method: "DELETE"});
+                    await loadShareSummary();
+                    setFeedback("share-summary-feedback", "分享总结任务已删除。", "is-success");
+                } catch (error) {
+                    resetDangerAction(button);
+                    button.disabled = false;
+                    setFeedback("share-summary-feedback", error.message, "is-error");
+                }
+            });
+        });
+    }
+
+    function renderShareSummaryTaskFilterOptions() {
+        const filterOptions = [`<option value="">全部任务</option>`]
+                .concat(state.shareSummaryTasks.map((task) => `<option value="${escapeAttribute(task.id)}">${escapeHtml(task.name)}</option>`))
+                .join("");
+        document.getElementById("share-summary-run-filter-task").innerHTML = filterOptions;
+        renderNotificationFilterOptions();
+    }
+
+    function renderNotificationFilterOptions() {
+        renderNotificationShareTaskFilterOptions();
+        renderNotificationEnumFilterOptions("notification-filter-period-options", NOTIFICATION_FILTER_PERIOD_TYPES, "notification-filter-period");
+        renderNotificationEnumFilterOptions("notification-filter-trigger-options", NOTIFICATION_FILTER_TRIGGER_TYPES, "notification-filter-trigger");
+    }
+
+    function renderNotificationShareTaskFilterOptions() {
+        const container = document.getElementById("notification-filter-share-task-options");
+        if (!container) {
+            return;
+        }
+        container.innerHTML = state.shareSummaryTasks.map((task) => `
+            <label class="checkbox-row">
+                <input type="checkbox" value="${escapeAttribute(task.id)}" data-notification-filter-share-task>
+                <span>${escapeHtml(task.name)}${task.enabled ? "" : "（停用）"}<span class="keyline">${escapeHtml(periodLabel(task.periodType))} · ${escapeHtml(scheduleLabel(task))}</span></span>
+            </label>
+        `).join("") || `<p class="muted">暂无分享总结任务</p>`;
+        container.querySelectorAll("[data-notification-filter-share-task]").forEach((input) => {
+            input.addEventListener("change", updateNotificationFilterSummaries);
+        });
+        updateNotificationFilterSummaries();
+    }
+
+    function renderNotificationEnumFilterOptions(containerId, options, dataAttribute) {
+        const container = document.getElementById(containerId);
+        if (!container) {
+            return;
+        }
+        container.innerHTML = options.map((option) => `
+            <label class="checkbox-row">
+                <input type="checkbox" value="${escapeAttribute(option.value)}" data-${dataAttribute}>
+                <span>${escapeHtml(option.label)}<span class="keyline">${escapeHtml(option.value)}</span></span>
+            </label>
+        `).join("");
+        container.querySelectorAll(`input[data-${dataAttribute}]`).forEach((input) => {
+            input.addEventListener("change", updateNotificationFilterSummaries);
+        });
+        updateNotificationFilterSummaries();
+    }
+
+    function updateNotificationFilterSummaries() {
+        setNotificationFilterSummary(
+                "notification-filter-share-task-summary",
+                checkedOptionLabels("[data-notification-filter-share-task]:checked"),
+                "全部任务"
+        );
+        setNotificationFilterSummary(
+                "notification-filter-period-summary",
+                checkedOptionLabels("[data-notification-filter-period]:checked"),
+                "全部周期"
+        );
+        setNotificationFilterSummary(
+                "notification-filter-trigger-summary",
+                checkedOptionLabels("[data-notification-filter-trigger]:checked"),
+                "全部方式"
+        );
+    }
+
+    function checkedOptionLabels(selector) {
+        return Array.from(document.querySelectorAll(selector))
+                .map((input) => {
+                    const label = input.closest("label");
+                    return label?.querySelector("span")?.childNodes?.[0]?.textContent?.trim() || input.value;
+                })
+                .filter(Boolean);
+    }
+
+    function setNotificationFilterSummary(elementId, labels, fallback) {
+        const element = document.getElementById(elementId);
+        if (!element) {
+            return;
+        }
+        if (!labels.length) {
+            element.textContent = fallback;
+            return;
+        }
+        element.textContent = labels.length > 2 ? `${labels.slice(0, 2).join("、")} 等 ${labels.length} 项` : labels.join("、");
+    }
+
+    function renderNotificationEventOptions() {
+        const options = state.notificationEvents.map((event) => `<option value="${escapeAttribute(event.eventType)}">${escapeHtml(event.label || event.eventType)}</option>`).join("");
+        document.getElementById("notification-task-event-type").innerHTML = options;
+        renderNotificationPlaceholders();
+    }
+
+    function renderNotificationChannels() {
+        const body = document.getElementById("notification-channel-table");
+        if (!state.notificationChannels.length) {
+            body.innerHTML = `<tr><td colspan="5" class="muted">暂无通知渠道</td></tr>`;
+            return;
+        }
+        body.innerHTML = state.notificationChannels.map((channel) => `
+            <tr>
+                <td><strong>${escapeHtml(channel.name)}</strong><div class="keyline">${escapeHtml(channel.type || "WEBHOOK")}</div></td>
+                <td><span class="url-cell" title="${escapeAttribute(channel.url || "-")}">${escapeHtml(channel.url || "-")}</span></td>
+                <td class="nowrap">${escapeHtml(channel.timeoutSeconds || 10)}s</td>
+                <td>${channel.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
+                <td>
+                    <div class="row-actions">
+                        <button type="button" class="secondary" data-test-notification-channel="${escapeAttribute(channel.id)}">测试</button>
+                        <button type="button" class="secondary" data-edit-notification-channel="${escapeAttribute(channel.id)}">编辑</button>
+                        <button type="button" class="danger" data-delete-notification-channel="${escapeAttribute(channel.id)}">删除</button>
+                    </div>
+                </td>
+            </tr>
+        `).join("");
+        body.querySelectorAll("[data-test-notification-channel]").forEach((button) => {
+            button.addEventListener("click", () => testNotificationChannel(button.dataset.testNotificationChannel));
+        });
+        body.querySelectorAll("[data-edit-notification-channel]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const channel = state.notificationChannels.find((item) => String(item.id) === button.dataset.editNotificationChannel);
+                if (channel) {
+                    openNotificationChannelModalForEdit(channel);
+                }
+            });
+        });
+        body.querySelectorAll("[data-delete-notification-channel]").forEach((button) => {
+            button.addEventListener("click", async () => {
+                if (!confirmDangerAction(button, "确认删除")) {
+                    return;
+                }
+                button.disabled = true;
+                setFeedback("notification-feedback", "正在删除通知渠道...", "");
+                try {
+                    await fetchJson(`/api/admin/notifications/channels/${encodeURIComponent(button.dataset.deleteNotificationChannel)}`, {method: "DELETE"});
+                    await loadNotifications();
+                    setFeedback("notification-feedback", "通知渠道已删除。", "is-success");
+                } catch (error) {
+                    resetDangerAction(button);
+                    button.disabled = false;
+                    setFeedback("notification-feedback", error.message, "is-error");
+                }
+            });
+        });
+    }
+
+    function addNotificationHeaderRow(name = "", value = "") {
+        const container = document.getElementById("notification-channel-headers");
+        const row = document.createElement("div");
+        row.className = "header-pair-row";
+        row.innerHTML = `
+            <label>
+                <span>Key</span>
+                <input type="text" autocomplete="off" data-notification-header-key>
+            </label>
+            <label>
+                <span>Value</span>
+                <input type="text" autocomplete="off" data-notification-header-value>
+            </label>
+            <button type="button" class="secondary" data-remove-notification-header>删除</button>
+        `;
+        row.querySelector("[data-notification-header-key]").value = name || "";
+        row.querySelector("[data-notification-header-value]").value = value == null ? "" : String(value);
+        row.querySelector("[data-remove-notification-header]").addEventListener("click", () => {
+            row.remove();
+            if (!container.querySelector(".header-pair-row")) {
+                addNotificationHeaderRow();
+            }
+        });
+        container.appendChild(row);
+    }
+
+    function setNotificationHeaderRows(headers) {
+        const container = document.getElementById("notification-channel-headers");
+        container.innerHTML = "";
+        const entries = headers && typeof headers === "object" && !Array.isArray(headers) ? Object.entries(headers) : [];
+        if (!entries.length) {
+            addNotificationHeaderRow();
+            return;
+        }
+        entries.forEach(([name, value]) => addNotificationHeaderRow(name, value));
+    }
+
+    function notificationHeadersPayload() {
+        const headers = {};
+        for (const row of document.querySelectorAll("#notification-channel-headers .header-pair-row")) {
+            const key = row.querySelector("[data-notification-header-key]").value.trim();
+            const value = row.querySelector("[data-notification-header-value]").value.trim();
+            if (!key && !value) {
+                continue;
+            }
+            if (!key) {
+                setFeedback("notification-channel-modal-feedback", "Header Key 不能为空。", "is-error");
+                return undefined;
+            }
+            headers[key] = value;
+        }
+        return Object.keys(headers).length ? headers : null;
+    }
+
+    function renderNotificationTasks() {
+        const body = document.getElementById("notification-task-table");
+        if (!state.notificationTasks.length) {
+            body.innerHTML = `<tr><td colspan="5" class="muted">暂无通知任务</td></tr>`;
+            return;
+        }
+        body.innerHTML = state.notificationTasks.map((task) => `
+            <tr>
+                <td><strong>${escapeHtml(task.name)}</strong><div class="keyline">${escapeHtml(notificationFilterPreview(task.filters))}</div></td>
+                <td>${escapeHtml(task.eventType)}</td>
+                <td>${escapeHtml(notificationChannelNames(task.channelIds).join(" / ") || "-")}</td>
+                <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
+                <td>
+                    <div class="row-actions">
+                        <button type="button" class="secondary" data-edit-notification-task="${escapeAttribute(task.id)}">编辑</button>
+                        <button type="button" class="danger" data-delete-notification-task="${escapeAttribute(task.id)}">删除</button>
+                    </div>
+                </td>
+            </tr>
+        `).join("");
+        body.querySelectorAll("[data-edit-notification-task]").forEach((button) => {
+            button.addEventListener("click", () => {
+                const task = state.notificationTasks.find((item) => String(item.id) === button.dataset.editNotificationTask);
+                if (task) {
+                    openNotificationTaskModalForEdit(task);
+                }
+            });
+        });
+        body.querySelectorAll("[data-delete-notification-task]").forEach((button) => {
+            button.addEventListener("click", async () => {
+                if (!confirmDangerAction(button, "确认删除")) {
+                    return;
+                }
+                button.disabled = true;
+                setFeedback("notification-feedback", "正在删除通知任务...", "");
+                try {
+                    await fetchJson(`/api/admin/notifications/tasks/${encodeURIComponent(button.dataset.deleteNotificationTask)}`, {method: "DELETE"});
+                    await loadNotificationTasks();
+                    await loadNotificationDeliveries();
+                    setFeedback("notification-feedback", "通知任务已删除。", "is-success");
+                } catch (error) {
+                    resetDangerAction(button);
+                    button.disabled = false;
+                    setFeedback("notification-feedback", error.message, "is-error");
+                }
+            });
+        });
+    }
+
+    function renderNotificationChannelOptions() {
+        const deliveryOptions = [`<option value="">全部渠道</option>`]
+                .concat(state.notificationChannels.map((channel) => `<option value="${escapeAttribute(channel.id)}">${escapeHtml(channel.name)}</option>`))
+                .join("");
+        document.getElementById("notification-delivery-filter-channel").innerHTML = deliveryOptions;
+
+        const taskOptions = state.notificationChannels.map((channel) => `
+            <label class="checkbox-row">
+                <input type="checkbox" value="${escapeAttribute(channel.id)}" data-notification-task-channel>
+                <span>${escapeHtml(channel.name)}${channel.enabled ? "" : "（停用）"}</span>
+            </label>
+        `).join("");
+        document.getElementById("notification-task-channel-options").innerHTML = taskOptions || `<p class="muted">暂无通知渠道</p>`;
+    }
+
+    function renderNotificationTaskOptions() {
+        const options = [`<option value="">全部任务</option>`]
+                .concat(state.notificationTasks.map((task) => `<option value="${escapeAttribute(task.id)}">${escapeHtml(task.name)}</option>`))
+                .join("");
+        document.getElementById("notification-delivery-filter-task").innerHTML = options;
+    }
+
+    function renderNotificationDeliveries() {
+        const payload = state.notificationDeliveries || {};
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const body = document.getElementById("notification-delivery-table");
+        if (!items.length) {
+            body.innerHTML = `<tr><td colspan="7" class="muted">暂无发送记录</td></tr>`;
+        } else {
+            body.innerHTML = items.map((delivery) => `
+                <tr>
+                    <td class="nowrap">${escapeHtml(formatTimestamp(delivery.createdAt))}</td>
+                    <td>${escapeHtml(delivery.notificationTaskName || "-")}<div class="keyline">${escapeHtml(delivery.channelName || "-")}</div></td>
+                    <td>${renderNotificationDeliveryEvent(delivery)}</td>
+                    <td>${renderNotificationStatus(delivery.status)}${delivery.errorMessage ? `<div class="keyline summary-error-hint" title="${escapeAttribute(delivery.errorMessage)}">${escapeHtml(delivery.errorMessage)}</div>` : ""}</td>
+                    <td>${escapeHtml(delivery.responseStatus || "-")}<div class="keyline">${escapeHtml(delivery.attemptCount || 0)} 次</div></td>
+                    <td>${escapeHtml(formatDuration(delivery.durationMs))}</td>
+                    <td>
+                        <div class="row-actions notification-delivery-actions">
+                            ${delivery.status === "FAILED" ? `<button type="button" class="secondary" data-retry-notification-delivery="${escapeAttribute(delivery.id)}">重发</button>` : ""}
+                            <button type="button" class="danger" data-delete-notification-delivery="${escapeAttribute(delivery.id)}">删除</button>
+                        </div>
+                    </td>
+                </tr>
+            `).join("");
+        }
+        body.querySelectorAll("[data-retry-notification-delivery]").forEach((button) => {
+            button.addEventListener("click", async () => retryNotificationDelivery(button));
+        });
+        body.querySelectorAll("[data-delete-notification-delivery]").forEach((button) => {
+            button.addEventListener("click", async () => deleteNotificationDelivery(button));
+        });
+        renderNotificationDeliveryPagination(payload);
+    }
+
+    async function retryNotificationDelivery(button) {
+        button.disabled = true;
+        setFeedback("notification-delivery-feedback", "正在重新发送 Webhook...", "");
+        try {
+            await fetchJson(`/api/admin/notifications/deliveries/${encodeURIComponent(button.dataset.retryNotificationDelivery)}/retry`, {method: "POST"});
+            await loadNotificationDeliveries();
+            setFeedback("notification-delivery-feedback", "已提交重发，请稍后刷新查看结果。", "is-success");
+        } catch (error) {
+            button.disabled = false;
+            setFeedback("notification-delivery-feedback", error.message, "is-error");
+        }
+    }
+
+    async function deleteNotificationDelivery(button) {
+        if (!confirmDangerAction(button, "确认删除")) {
+            return;
+        }
+        button.disabled = true;
+        setFeedback("notification-delivery-feedback", "正在删除发送记录...", "");
+        try {
+            await fetchJson(`/api/admin/notifications/deliveries/${encodeURIComponent(button.dataset.deleteNotificationDelivery)}`, {method: "DELETE"});
+            await reloadNotificationDeliveriesAfterDelete();
+            setFeedback("notification-delivery-feedback", "发送记录已删除。", "is-success");
+        } catch (error) {
+            resetDangerAction(button);
+            button.disabled = false;
+            setFeedback("notification-delivery-feedback", error.message, "is-error");
+        }
+    }
+
+    async function reloadNotificationDeliveriesAfterDelete() {
+        const remainingItems = Math.max(0, (state.notificationDeliveries.items || []).length - 1);
+        if (remainingItems === 0 && state.notificationDeliveries.page > 1) {
+            state.notificationDeliveries.page -= 1;
+        }
+        await loadNotificationDeliveries();
+    }
+
+    function renderNotificationDeliveryEvent(delivery) {
+        const eventType = delivery.eventType || "";
+        const eventKey = delivery.eventKey || "";
+        const eventLabel = notificationEventLabel(eventType);
+        const targetLabel = notificationEventTargetLabel(eventType, eventKey);
+        const title = eventKey ? `事件标识：${eventKey}` : eventType;
+        return `
+            <span title="${escapeAttribute(eventType)}">${escapeHtml(eventLabel || "-")}</span>
+            <div class="keyline" title="${escapeAttribute(title)}">${escapeHtml(targetLabel || "关联对象未知")}</div>
+        `;
+    }
+
+    function notificationEventLabel(eventType) {
+        const schema = state.notificationEvents.find((event) => event.eventType === eventType);
+        return schema?.label || notificationEventTypeFallbackLabel(eventType);
+    }
+
+    function notificationEventTypeFallbackLabel(eventType) {
+        return {
+            SHARE_SUMMARY_IMAGE_SUCCESS: "分享总结图片生成成功"
+        }[eventType] || eventType;
+    }
+
+    function notificationEventTargetLabel(eventType, eventKey) {
+        const targetId = eventKeyTargetId(eventType, eventKey);
+        if (eventType === "SHARE_SUMMARY_IMAGE_SUCCESS" && targetId) {
+            return `分享图记录 #${targetId}`;
+        }
+        return eventKey || "";
+    }
+
+    function eventKeyTargetId(eventType, eventKey) {
+        const prefix = `${eventType}:`;
+        if (!eventType || !eventKey || !eventKey.startsWith(prefix)) {
+            return "";
+        }
+        return eventKey.slice(prefix.length);
+    }
+
+    function renderNotificationDeliveryPagination(payload) {
+        const page = Number(payload.page || 1);
+        const totalPages = Number(payload.totalPages || 0);
+        const total = Number(payload.total || 0);
+        document.getElementById("notification-delivery-page-info").textContent = totalPages > 0
+                ? `第 ${page} / ${totalPages} 页 · ${total} 条`
+                : "暂无记录";
+        document.getElementById("notification-delivery-prev").disabled = page <= 1;
+        document.getElementById("notification-delivery-next").disabled = totalPages === 0 || page >= totalPages;
+    }
+
+    function renderShareSummaryRuns() {
+        const payload = state.shareSummaryRuns || {};
+        const items = Array.isArray(payload.items) ? payload.items : [];
+        const body = document.getElementById("share-summary-run-table");
+        if (!items.length) {
+            body.innerHTML = `<tr><td colspan="8" class="muted">暂无分享总结记录</td></tr>`;
+        } else {
+            body.innerHTML = items.map((run) => `
+                <tr>
+                    <td class="nowrap">${escapeHtml(formatTimestamp(run.startedAt))}</td>
+                    <td>${escapeHtml(run.taskName || "-")}<div class="keyline">${escapeHtml(run.triggerType || "-")}</div></td>
+                    <td class="summary-window-cell">${renderSummaryWindow(run.windowStart, run.windowEnd)}</td>
+                    <td>${renderRunStatus(run.status)}${renderRunErrorHint(run.errorMessage)}</td>
+                    <td>${escapeHtml(run.inputLinkCount || 0)}</td>
+                    <td>${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
+                    <td>${renderShareSummaryImageCell(run)}</td>
+                    <td>${renderShareSummaryRunActions(run)}</td>
+                </tr>
+            `).join("");
+        }
+        body.querySelectorAll("[data-view-share-run]").forEach((button) => {
+            button.addEventListener("click", () => openShareSummaryRunDetail(button.dataset.viewShareRun));
+        });
+        body.querySelectorAll("[data-delete-share-run]").forEach((button) => {
+            button.addEventListener("click", async () => deleteShareSummaryRun(button));
+        });
+        bindShareSummaryImageButtons(body);
+        renderShareSummaryRunPagination(payload);
+    }
+
+    async function deleteShareSummaryRun(button) {
+        if (!confirmDangerAction(button, "确认删除")) {
+            return;
+        }
+        const runId = button.dataset.deleteShareRun;
+        button.disabled = true;
+        setFeedback("share-summary-history-feedback", "正在删除分享总结记录...", "");
+        try {
+            await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}`, {method: "DELETE"});
+            if (state.activeShareSummaryRunId && String(state.activeShareSummaryRunId) === String(runId)) {
+                closeShareSummaryRunModal(false);
+            }
+            await reloadShareSummaryRunsAfterDelete();
+            setFeedback("share-summary-history-feedback", "分享总结记录已删除。", "is-success");
+        } catch (error) {
+            resetDangerAction(button);
+            button.disabled = false;
+            setFeedback("share-summary-history-feedback", error.message, "is-error");
+        }
+    }
+
+    async function reloadShareSummaryRunsAfterDelete() {
+        const remainingItems = Math.max(0, (state.shareSummaryRuns.items || []).length - 1);
+        if (remainingItems === 0 && state.shareSummaryRuns.page > 1) {
+            state.shareSummaryRuns.page -= 1;
+        }
+        await loadShareSummaryRuns();
+    }
+
+    function renderShareSummaryImageCell(run) {
+        const status = run.imageStatus || "NOT_GENERATED";
+        const image = run.latestImageUrl
+                ? `<img class="share-summary-thumb" src="${escapeAttribute(run.latestImageUrl)}" alt="">`
+                : `<div class="share-summary-thumb share-summary-thumb-placeholder">-</div>`;
+        const title = run.ogTitle || "暂无分享图";
+        return `
+            <div class="share-summary-image-cell">
+                <div class="share-summary-image-thumb-slot">${image}</div>
+                <div class="share-summary-image-meta">
+                    ${renderImageStatusCompact(status)}
+                </div>
+                <div class="share-summary-image-title" title="${escapeAttribute(title)}">${escapeHtml(title)}</div>
+            </div>
+        `;
+    }
+
+    function renderShareSummaryRunActions(run) {
+        const canGenerate = run.status === "SUCCESS";
+        const hasImage = Boolean(run.ogImageUrl);
+        return `
+            <div class="row-actions share-summary-run-actions">
+                <button type="button" class="secondary" data-view-share-run="${escapeAttribute(run.id)}">详情</button>
+                ${renderShareSummaryImageActionButton(run, canGenerate, hasImage)}
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG</button>
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图</button>
+                <button type="button" class="danger" data-delete-share-run="${escapeAttribute(run.id)}">删除</button>
+            </div>
+        `;
+    }
+
+    function renderShareSummaryImageActionButton(run, canGenerate = run.status === "SUCCESS", hasImage = Boolean(run.ogImageUrl)) {
+        const imageActionAttribute = hasImage ? "data-regenerate-share-image" : "data-generate-share-image";
+        const imageActionLabel = hasImage ? "重生成" : "生成图";
+        return `<button type="button" class="secondary" ${imageActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate ? "" : "disabled"}>${imageActionLabel}</button>`;
+    }
+
+    function renderShareSummaryRunPagination(payload) {
+        const page = Number(payload.page || 1);
+        const totalPages = Number(payload.totalPages || 0);
+        const total = Number(payload.total || 0);
+        document.getElementById("share-summary-run-page-info").textContent = totalPages > 0
+                ? `第 ${page} / ${totalPages} 页 · ${total} 条`
+                : "暂无记录";
+        document.getElementById("share-summary-run-prev").disabled = page <= 1;
+        document.getElementById("share-summary-run-next").disabled = totalPages === 0 || page >= totalPages;
+    }
+
+    function renderRunStatus(status) {
+        const normalized = status || "-";
+        const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" ? "is-warning" : "";
+        return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+    }
+
+    function renderSummaryWindow(start, end) {
+        return `
+            <div class="window-range">
+                <span>${escapeHtml(formatShortTimestamp(start))}</span>
+                <span>${escapeHtml(formatShortTimestamp(end))}</span>
+            </div>
+        `;
+    }
+
+    function renderImageStatus(status) {
+        const normalized = status || "NOT_GENERATED";
+        const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" || normalized === "TIMEOUT" ? "is-warning" : "";
+        return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+    }
+
+    function renderImageStatusCompact(status) {
+        const normalized = status || "NOT_GENERATED";
+        const labels = {
+            NOT_GENERATED: "未生成",
+            PENDING: "排队",
+            GENERATING: "生成中",
+            SUCCESS: "SUCCESS",
+            FAILED: "失败",
+            TIMEOUT: "超时"
+        };
+        const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" || normalized === "TIMEOUT" ? "is-warning" : "";
+        return `<span class="status-pill status-pill-compact ${className}" title="${escapeAttribute(normalized)}">${escapeHtml(labels[normalized] || normalized)}</span>`;
+    }
+
+    function renderNotificationStatus(status) {
+        const normalized = status || "-";
+        const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" ? "is-warning" : "";
+        return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+    }
+
+    function renderNotificationPlaceholders() {
+        const eventType = document.getElementById("notification-task-event-type").value;
+        const eventSchema = state.notificationEvents.find((event) => event.eventType === eventType);
+        const container = document.getElementById("notification-placeholder-list");
+        if (!eventSchema) {
+            container.innerHTML = `<p class="muted">请先选择事件类型。</p>`;
+            return;
+        }
+        const groups = groupBy(eventSchema.placeholders || [], (placeholder) => placeholder.group || "other");
+        container.innerHTML = Object.entries(groups).map(([group, placeholders]) => `
+            <div class="placeholder-group">
+                <h5>${escapeHtml(placeholderGroupLabel(group))}</h5>
+                <div class="placeholder-buttons">
+                    ${placeholders.map((placeholder) => `
+                        <button type="button" class="secondary placeholder-token" data-placeholder="${escapeAttribute(placeholder.name)}" title="${escapeAttribute(placeholder.description || "")}">
+                            ${escapeHtml(placeholder.name)}
+                        </button>
+                    `).join("")}
+                </div>
+            </div>
+        `).join("");
+        container.querySelectorAll("[data-placeholder]").forEach((button) => {
+            button.addEventListener("click", () => insertNotificationPlaceholder(button.dataset.placeholder));
+        });
+    }
+
+    function insertNotificationPlaceholder(name) {
+        const textarea = document.getElementById("notification-task-template");
+        insertTextAtCursor(textarea, `{{${name}}}`);
+    }
+
+    function renderNotificationChannelPlaceholders() {
+        const container = document.getElementById("notification-channel-placeholder-list");
+        if (!container) {
+            return;
+        }
+        const placeholders = [
+            {group: "message", name: "message.body", description: "通知任务渲染后的消息正文，作为字符串插入。"},
+            {group: "message", name: "message.bodyJson", description: "通知任务渲染后的消息正文，原样插入 JSON。"}
+        ];
+        const groups = groupBy(placeholders, (placeholder) => placeholder.group || "other");
+        container.innerHTML = Object.entries(groups).map(([group, groupPlaceholders]) => `
+            <div class="placeholder-group">
+                <h5>${escapeHtml(placeholderGroupLabel(group))}</h5>
+                <div class="placeholder-buttons">
+                    ${groupPlaceholders.map((placeholder) => `
+                        <button type="button" class="secondary placeholder-token" data-channel-placeholder="${escapeAttribute(placeholder.name)}" title="${escapeAttribute(placeholder.description || "")}">
+                            ${escapeHtml(placeholder.name)}
+                        </button>
+                    `).join("")}
+                </div>
+            </div>
+        `).join("");
+        container.querySelectorAll("[data-channel-placeholder]").forEach((button) => {
+            button.addEventListener("click", () => {
+                insertTextAtCursor(document.getElementById("notification-channel-body-template"), `{{${button.dataset.channelPlaceholder}}}`);
+            });
+        });
+    }
+
+    function insertTextAtCursor(textarea, token) {
+        const start = textarea.selectionStart ?? textarea.value.length;
+        const end = textarea.selectionEnd ?? textarea.value.length;
+        textarea.value = `${textarea.value.slice(0, start)}${token}${textarea.value.slice(end)}`;
+        textarea.focus();
+        textarea.selectionStart = textarea.selectionEnd = start + token.length;
+    }
+
+    function groupBy(items, keyFn) {
+        return items.reduce((groups, item) => {
+            const key = keyFn(item);
+            groups[key] ||= [];
+            groups[key].push(item);
+            return groups;
+        }, {});
+    }
+
+    function placeholderGroupLabel(group) {
+        return {
+            event: "事件信息",
+            run: "分享总结",
+            image: "分享图",
+            message: "消息正文",
+            system: "系统信息"
+        }[group] || group;
+    }
+
+    function bindShareSummaryImageButtons(root) {
+        root.querySelectorAll("[data-generate-share-image]").forEach((button) => {
+            button.addEventListener("click", () => generateShareSummaryImage(button.dataset.generateShareImage, false));
+        });
+        root.querySelectorAll("[data-regenerate-share-image]").forEach((button) => {
+            button.addEventListener("click", () => generateShareSummaryImage(button.dataset.regenerateShareImage, true));
+        });
+        root.querySelectorAll("[data-copy-url]").forEach((button) => {
+            button.addEventListener("click", () => copyShareSummaryUrl(button.dataset.copyUrl));
+        });
+    }
+
+    async function generateShareSummaryImage(runId, regenerate) {
+        if (!runId) {
+            return;
+        }
+        setFeedback("share-summary-history-feedback", regenerate ? "正在重新生成分享图..." : "正在生成分享图...", "");
+        try {
+            const path = regenerate ? "image/regenerate" : "image";
+            await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/${path}`, {method: "POST"});
+            await loadShareSummaryRuns();
+            if (state.activeShareSummaryRunId && String(state.activeShareSummaryRunId) === String(runId)) {
+                await openShareSummaryRunDetail(runId);
+            }
+            setFeedback("share-summary-history-feedback", "分享图任务已提交。", "is-success");
+        } catch (error) {
+            setFeedback("share-summary-history-feedback", error.message, "is-error");
+            setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    async function testNotificationChannel(channelId) {
+        if (!channelId) {
+            return;
+        }
+        setFeedback("notification-feedback", "正在测试通知渠道...", "");
+        try {
+            const result = await fetchJson(`/api/admin/notifications/channels/${encodeURIComponent(channelId)}/test`, {method: "POST"});
+            setFeedback(
+                    "notification-feedback",
+                    result.success ? `测试成功，HTTP ${result.responseStatus || "-"}` : `测试失败：${result.errorMessage || result.message || "unknown"}`,
+                    result.success ? "is-success" : "is-error"
+            );
+        } catch (error) {
+            setFeedback("notification-feedback", error.message, "is-error");
+        }
+    }
+
+    async function saveNotificationChannel(event) {
+        event.preventDefault();
+        const id = document.getElementById("notification-channel-id").value;
+        const timeoutSeconds = Number(document.getElementById("notification-channel-timeout").value || 0);
+        const headersJson = notificationHeadersPayload();
+        if (headersJson === undefined) {
+            return;
+        }
+        const payload = {
+            name: document.getElementById("notification-channel-name").value.trim(),
+            enabled: document.getElementById("notification-channel-enabled").checked,
+            url: document.getElementById("notification-channel-url").value.trim(),
+            timeoutSeconds,
+            headersJson,
+            bodyTemplate: document.getElementById("notification-channel-body-template").value.trim(),
+            secret: document.getElementById("notification-channel-secret").value.trim()
+        };
+        if (!Number.isInteger(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 60) {
+            setFeedback("notification-channel-modal-feedback", "超时秒数必须是 1-60 之间的整数。", "is-error");
+            return;
+        }
+        const url = id ? `/api/admin/notifications/channels/${encodeURIComponent(id)}` : "/api/admin/notifications/channels";
+        const method = id ? "PUT" : "POST";
+        setFeedback("notification-channel-modal-feedback", "正在保存通知渠道...", "");
+        try {
+            await fetchJson(url, {
+                method,
+                body: JSON.stringify(payload)
+            });
+            closeNotificationChannelModal(false);
+            await loadNotificationChannels();
+            setFeedback("notification-feedback", "通知渠道已保存。", "is-success");
+        } catch (error) {
+            setFeedback("notification-channel-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    async function saveNotificationTask(event) {
+        event.preventDefault();
+        const id = document.getElementById("notification-task-id").value;
+        const payload = notificationTaskPayload();
+        if (!payload) {
+            return;
+        }
+        const url = id ? `/api/admin/notifications/tasks/${encodeURIComponent(id)}` : "/api/admin/notifications/tasks";
+        const method = id ? "PUT" : "POST";
+        setFeedback("notification-task-modal-feedback", "正在保存通知任务...", "");
+        try {
+            await fetchJson(url, {
+                method,
+                body: JSON.stringify(payload)
+            });
+            closeNotificationTaskModal(false);
+            await loadNotificationTasks();
+            await loadNotificationDeliveries();
+            setFeedback("notification-feedback", "通知任务已保存。", "is-success");
+        } catch (error) {
+            setFeedback("notification-task-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    async function validateNotificationTemplate() {
+        const payload = notificationTaskPayload(false);
+        if (!payload) {
+            return;
+        }
+        setFeedback("notification-task-modal-feedback", "正在校验模板...", "");
+        try {
+            const result = await fetchJson("/api/admin/notifications/tasks/validate-template", {
+                method: "POST",
+                body: JSON.stringify({
+                    eventType: payload.eventType,
+                    templateJson: payload.templateJson
+                })
+            });
+            setFeedback(
+                    "notification-task-modal-feedback",
+                    result.valid ? "模板校验通过。" : `模板包含非法占位符：${(result.invalidPlaceholders || []).join(", ")}`,
+                    result.valid ? "is-success" : "is-error"
+            );
+        } catch (error) {
+            setFeedback("notification-task-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    function notificationTaskPayload(requireChannels = true) {
+        const channelIds = Array.from(document.querySelectorAll("[data-notification-task-channel]:checked"))
+                .map((input) => Number(input.value))
+                .filter((value) => Number.isInteger(value) && value > 0);
+        if (requireChannels && channelIds.length === 0) {
+            setFeedback("notification-task-modal-feedback", "通知任务至少需要关联一个渠道。", "is-error");
+            return null;
+        }
+        return {
+            name: document.getElementById("notification-task-name").value.trim(),
+            enabled: document.getElementById("notification-task-enabled").checked,
+            eventType: document.getElementById("notification-task-event-type").value,
+            filters: {
+                shareSummaryTaskIds: checkedNumberValues("[data-notification-filter-share-task]:checked"),
+                periodTypes: checkedValues("[data-notification-filter-period]:checked"),
+                triggerTypes: checkedValues("[data-notification-filter-trigger]:checked")
+            },
+            templateJson: document.getElementById("notification-task-template").value.trim(),
+            channelIds
+        };
+    }
+
+    function checkedValues(selector) {
+        return Array.from(document.querySelectorAll(selector))
+                .map((input) => String(input.value || "").trim())
+                .filter(Boolean);
+    }
+
+    function checkedNumberValues(selector) {
+        return checkedValues(selector)
+                .map((value) => Number(value))
+                .filter((value) => Number.isInteger(value) && value > 0);
+    }
+
+    function setCheckedValues(selector, values) {
+        const valueSet = new Set((values || []).map((value) => String(value).toUpperCase()));
+        document.querySelectorAll(selector).forEach((input) => {
+            input.checked = valueSet.has(String(input.value).toUpperCase());
+        });
+    }
+
+    async function copyShareSummaryUrl(url) {
+        if (!url) {
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(url);
+            setFeedback("share-summary-history-feedback", "链接已复制。", "is-success");
+            setFeedback("share-summary-run-modal-feedback", "链接已复制。", "is-success");
+        } catch (error) {
+            window.prompt("复制链接", url);
+        }
+    }
+
+    function periodLabel(value) {
+        if (value === "WEEKLY") {
+            return "每周";
+        }
+        if (value === "MONTHLY") {
+            return "每月";
+        }
+        return "每日";
+    }
+
+    function scheduleLabel(task) {
+        if (task.periodType === "WEEKLY") {
+            return `${weekdayLabel(task.dayOfWeek)} ${task.runTime || ""}`;
+        }
+        if (task.periodType === "MONTHLY") {
+            return `月末 ${task.runTime || ""}`;
+        }
+        return task.runTime || "";
+    }
+
+    function weekdayLabel(value) {
+        return ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"][Number(value || 1)] || "周一";
     }
 
     function setAiProviderDowngradeEnabled(enabled) {
@@ -818,6 +2095,346 @@
         document.getElementById("ai-api-kind").value = "CHAT_COMPLETIONS";
     }
 
+    async function saveShareSummaryTask(event) {
+        event.preventDefault();
+        const id = document.getElementById("share-summary-task-id").value;
+        const periodType = document.getElementById("share-summary-task-period").value;
+        const payload = {
+            name: document.getElementById("share-summary-task-name").value.trim(),
+            enabled: document.getElementById("share-summary-task-enabled").checked,
+            periodType,
+            runTime: document.getElementById("share-summary-task-run-time").value,
+            dayOfWeek: periodType === "WEEKLY" ? Number(document.getElementById("share-summary-task-day-of-week").value) : null,
+            prompt: document.getElementById("share-summary-task-prompt").value.trim(),
+            maxLinks: Number(document.getElementById("share-summary-task-max-links").value || 100),
+            minLinks: Number(document.getElementById("share-summary-task-min-links").value || 1)
+        };
+        const maxLinksError = validateShareSummaryMaxLinks(payload.maxLinks);
+        if (maxLinksError) {
+            setFeedback("share-summary-task-modal-feedback", maxLinksError, "is-error");
+            return;
+        }
+        const minLinksError = validateShareSummaryMinLinks(payload.minLinks);
+        if (minLinksError) {
+            setFeedback("share-summary-task-modal-feedback", minLinksError, "is-error");
+            return;
+        }
+        const url = id ? `/api/admin/share-summary/tasks/${encodeURIComponent(id)}` : "/api/admin/share-summary/tasks";
+        const method = id ? "PUT" : "POST";
+        setFeedback("share-summary-task-modal-feedback", "正在保存分享总结任务...", "");
+        try {
+            await fetchJson(url, {
+                method,
+                body: JSON.stringify(payload)
+            });
+            closeShareSummaryTaskModal(false);
+            await loadShareSummary();
+            setFeedback("share-summary-feedback", "分享总结任务已保存。", "is-success");
+        } catch (error) {
+            setFeedback("share-summary-task-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    async function runShareSummaryTask(taskId) {
+        if (!taskId) {
+            setFeedback("share-summary-feedback", "请选择分享总结任务。", "is-error");
+            return;
+        }
+        setFeedback("share-summary-feedback", "正在执行分享总结...", "");
+        try {
+            const run = await fetchJson(`/api/admin/share-summary/tasks/${encodeURIComponent(taskId)}/run`, {
+                method: "POST"
+            });
+            await loadShareSummaryRuns();
+            setFeedback("share-summary-feedback", `执行完成：${run.status || "-"}`, run.status === "FAILED" ? "is-error" : "is-success");
+            if (run && run.id) {
+                await openShareSummaryRunDetail(run.id);
+            }
+        } catch (error) {
+            setFeedback("share-summary-feedback", error.message, "is-error");
+        }
+    }
+
+    async function openShareSummaryImageConfigModal() {
+        openModal("share-summary-image-config-modal");
+        setFeedback("share-summary-image-config-modal-feedback", "正在读取 AI 生图配置...", "");
+        try {
+            await loadShareSummaryImageConfig();
+            fillShareSummaryImageConfigForm(state.shareSummaryImageConfig || {});
+            setFeedback("share-summary-image-config-modal-feedback", "", "");
+        } catch (error) {
+            setFeedback("share-summary-image-config-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    function closeShareSummaryImageConfigModal(clearFeedback = true) {
+        closeModal("share-summary-image-config-modal");
+        document.getElementById("share-summary-image-config-form").reset();
+        if (clearFeedback) {
+            setFeedback("share-summary-image-config-modal-feedback", "", "");
+        }
+    }
+
+    function fillShareSummaryImageConfigForm(config) {
+        document.getElementById("share-summary-image-enabled").checked = Boolean(config.enabled);
+        document.getElementById("share-summary-image-auto-generate").checked = Boolean(config.autoGenerate);
+        document.getElementById("share-summary-image-provider-type").value = config.providerType || "OPENAI_COMPATIBLE";
+        document.getElementById("share-summary-image-base-url").value = config.baseUrl || "";
+        document.getElementById("share-summary-image-endpoint-path").value = config.endpointPath || "/v1/images/generations";
+        document.getElementById("share-summary-image-api-key").value = "";
+        document.getElementById("share-summary-image-api-key").placeholder = config.apiKeyConfigured ? "已配置，留空表示不修改" : "请输入 API Key";
+        document.getElementById("share-summary-image-model").value = config.model || "";
+        document.getElementById("share-summary-image-size").value = config.imageSize || "auto";
+        document.getElementById("share-summary-image-quality").value = config.quality || "auto";
+        document.getElementById("share-summary-image-timeout").value = config.requestTimeoutSeconds || 300;
+        document.getElementById("share-summary-image-style-prompt").value = config.stylePrompt || "";
+    }
+
+    async function saveShareSummaryImageConfig(event) {
+        event.preventDefault();
+        const payload = {
+            enabled: document.getElementById("share-summary-image-enabled").checked,
+            autoGenerate: document.getElementById("share-summary-image-auto-generate").checked,
+            providerType: document.getElementById("share-summary-image-provider-type").value,
+            baseUrl: document.getElementById("share-summary-image-base-url").value.trim(),
+            endpointPath: document.getElementById("share-summary-image-endpoint-path").value.trim(),
+            apiKey: document.getElementById("share-summary-image-api-key").value.trim(),
+            model: document.getElementById("share-summary-image-model").value.trim(),
+            imageSize: document.getElementById("share-summary-image-size").value.trim(),
+            quality: document.getElementById("share-summary-image-quality").value.trim(),
+            outputFormat: "png",
+            stylePrompt: document.getElementById("share-summary-image-style-prompt").value.trim(),
+            requestTimeoutSeconds: Number(document.getElementById("share-summary-image-timeout").value || 300)
+        };
+        const error = validateShareSummaryImageConfig(payload);
+        if (error) {
+            setFeedback("share-summary-image-config-modal-feedback", error, "is-error");
+            return;
+        }
+        setFeedback("share-summary-image-config-modal-feedback", "正在保存 AI 生图配置...", "");
+        try {
+            state.shareSummaryImageConfig = await fetchJson("/api/admin/share-summary/image-config", {
+                method: "PUT",
+                body: JSON.stringify(payload)
+            });
+            fillShareSummaryImageConfigForm(state.shareSummaryImageConfig);
+            setFeedback("share-summary-image-config-modal-feedback", "AI 生图配置已保存。", "is-success");
+        } catch (saveError) {
+            setFeedback("share-summary-image-config-modal-feedback", saveError.message, "is-error");
+        }
+    }
+
+    function validateShareSummaryImageConfig(payload) {
+        if (payload.enabled || payload.autoGenerate) {
+            if (!payload.baseUrl) {
+                return "Base URL 不能为空。";
+            }
+            try {
+                const url = new URL(payload.baseUrl);
+                if (url.protocol !== "http:" && url.protocol !== "https:") {
+                    return "Base URL 必须使用 http 或 https。";
+                }
+            } catch (error) {
+                return "Base URL 必须是合法 URL。";
+            }
+            if (!payload.model) {
+                return "Model 不能为空。";
+            }
+        }
+        if (!payload.endpointPath) {
+            return "Endpoint Path 不能为空。";
+        }
+        if (!["auto", "1024x1024", "1536x1024", "1024x1536"].includes((payload.imageSize || "").toLowerCase())) {
+            return "Size 必须是 auto、1024x1024、1536x1024 或 1024x1536。";
+        }
+        if (!Number.isInteger(payload.requestTimeoutSeconds) || payload.requestTimeoutSeconds < 1 || payload.requestTimeoutSeconds > 600) {
+            return "Timeout 必须是 1-600 秒之间的整数。";
+        }
+        return "";
+    }
+
+    function openShareSummaryTaskModalForCreate() {
+        resetShareSummaryTaskForm();
+        document.getElementById("share-summary-task-modal-title").textContent = "新建分享总结任务";
+        openModal("share-summary-task-modal");
+        updateShareSummaryPeriodFields();
+        setFeedback("share-summary-task-modal-feedback", "", "");
+        document.getElementById("share-summary-task-name").focus();
+    }
+
+    function openShareSummaryTaskModalForEdit(task) {
+        resetShareSummaryTaskForm();
+        document.getElementById("share-summary-task-modal-title").textContent = `编辑分享总结任务：${task.name || task.id}`;
+        document.getElementById("share-summary-task-id").value = task.id || "";
+        document.getElementById("share-summary-task-name").value = task.name || "";
+        document.getElementById("share-summary-task-period").value = task.periodType || "DAILY";
+        document.getElementById("share-summary-task-run-time").value = task.runTime || "09:00";
+        document.getElementById("share-summary-task-day-of-week").value = task.dayOfWeek || 1;
+        document.getElementById("share-summary-task-max-links").value = task.maxLinks || 100;
+        document.getElementById("share-summary-task-min-links").value = task.minLinks || 1;
+        document.getElementById("share-summary-task-enabled").checked = Boolean(task.enabled);
+        document.getElementById("share-summary-task-prompt").value = task.prompt || "";
+        openModal("share-summary-task-modal");
+        updateShareSummaryPeriodFields();
+        setFeedback("share-summary-task-modal-feedback", "", "");
+        document.getElementById("share-summary-task-name").focus();
+    }
+
+    function closeShareSummaryTaskModal(clearFeedback = true) {
+        resetShareSummaryTaskForm();
+        closeModal("share-summary-task-modal");
+        if (clearFeedback) {
+            setFeedback("share-summary-task-modal-feedback", "", "");
+        }
+    }
+
+    function resetShareSummaryTaskForm() {
+        document.getElementById("share-summary-task-form").reset();
+        document.getElementById("share-summary-task-id").value = "";
+        document.getElementById("share-summary-task-period").value = "DAILY";
+        document.getElementById("share-summary-task-run-time").value = "09:00";
+        document.getElementById("share-summary-task-day-of-week").value = "1";
+        document.getElementById("share-summary-task-max-links").value = "100";
+        document.getElementById("share-summary-task-min-links").value = "1";
+        updateShareSummaryPeriodFields();
+    }
+
+    function updateShareSummaryPeriodFields() {
+        const periodType = document.getElementById("share-summary-task-period").value;
+        document.getElementById("share-summary-task-weekday-field").hidden = periodType !== "WEEKLY";
+        document.getElementById("share-summary-task-monthly-field").hidden = periodType !== "MONTHLY";
+    }
+
+    function openNotificationChannelModalForCreate() {
+        resetNotificationChannelForm();
+        document.getElementById("notification-channel-modal-title").textContent = "新建通知渠道";
+        renderNotificationChannelPlaceholders();
+        openModal("notification-channel-modal");
+        setFeedback("notification-channel-modal-feedback", "", "");
+        document.getElementById("notification-channel-name").focus();
+    }
+
+    function openNotificationChannelModalForEdit(channel) {
+        resetNotificationChannelForm();
+        document.getElementById("notification-channel-modal-title").textContent = `编辑通知渠道：${channel.name || channel.id}`;
+        document.getElementById("notification-channel-id").value = channel.id || "";
+        document.getElementById("notification-channel-name").value = channel.name || "";
+        document.getElementById("notification-channel-url").value = channel.url || "";
+        document.getElementById("notification-channel-timeout").value = channel.timeoutSeconds || 10;
+        document.getElementById("notification-channel-enabled").checked = Boolean(channel.enabled);
+        setNotificationHeaderRows(channel.headersJson);
+        document.getElementById("notification-channel-body-template").value = channel.bodyTemplate || defaultNotificationChannelBodyTemplate();
+        document.getElementById("notification-channel-secret").value = "";
+        document.getElementById("notification-channel-secret").placeholder = channel.secretConfigured ? "已配置，留空表示不修改" : "可选";
+        renderNotificationChannelPlaceholders();
+        openModal("notification-channel-modal");
+        setFeedback("notification-channel-modal-feedback", "", "");
+        document.getElementById("notification-channel-name").focus();
+    }
+
+    function closeNotificationChannelModal(clearFeedback = true) {
+        resetNotificationChannelForm();
+        closeModal("notification-channel-modal");
+        if (clearFeedback) {
+            setFeedback("notification-channel-modal-feedback", "", "");
+        }
+    }
+
+    function resetNotificationChannelForm() {
+        document.getElementById("notification-channel-form").reset();
+        document.getElementById("notification-channel-id").value = "";
+        document.getElementById("notification-channel-timeout").value = "10";
+        document.getElementById("notification-channel-enabled").checked = true;
+        setNotificationHeaderRows(null);
+        document.getElementById("notification-channel-body-template").value = defaultNotificationChannelBodyTemplate();
+        document.getElementById("notification-channel-secret").placeholder = "可选";
+    }
+
+    function openNotificationTaskModalForCreate() {
+        resetNotificationTaskForm();
+        document.getElementById("notification-task-modal-title").textContent = "新建通知任务";
+        document.getElementById("notification-task-template").value = defaultNotificationTemplate();
+        openModal("notification-task-modal");
+        renderNotificationChannelOptions();
+        renderNotificationFilterOptions();
+        renderNotificationEventOptions();
+        setFeedback("notification-task-modal-feedback", "", "");
+        document.getElementById("notification-task-name").focus();
+    }
+
+    function openNotificationTaskModalForEdit(task) {
+        resetNotificationTaskForm();
+        renderNotificationChannelOptions();
+        renderNotificationFilterOptions();
+        renderNotificationEventOptions();
+        document.getElementById("notification-task-modal-title").textContent = `编辑通知任务：${task.name || task.id}`;
+        document.getElementById("notification-task-id").value = task.id || "";
+        document.getElementById("notification-task-name").value = task.name || "";
+        document.getElementById("notification-task-event-type").value = task.eventType || "SHARE_SUMMARY_IMAGE_SUCCESS";
+        document.getElementById("notification-task-enabled").checked = Boolean(task.enabled);
+        document.getElementById("notification-task-template").value = task.templateJson || defaultNotificationTemplate();
+        setCheckedValues("[data-notification-filter-share-task]", task.filters?.shareSummaryTaskIds || []);
+        setCheckedValues("[data-notification-filter-period]", task.filters?.periodTypes || []);
+        setCheckedValues("[data-notification-filter-trigger]", task.filters?.triggerTypes || []);
+        (task.channelIds || []).forEach((channelId) => {
+            const input = document.querySelector(`[data-notification-task-channel][value="${CSS.escape(String(channelId))}"]`);
+            if (input) {
+                input.checked = true;
+            }
+        });
+        renderNotificationPlaceholders();
+        updateNotificationFilterSummaries();
+        openModal("notification-task-modal");
+        setFeedback("notification-task-modal-feedback", "", "");
+        document.getElementById("notification-task-name").focus();
+    }
+
+    function closeNotificationTaskModal(clearFeedback = true) {
+        resetNotificationTaskForm();
+        closeModal("notification-task-modal");
+        if (clearFeedback) {
+            setFeedback("notification-task-modal-feedback", "", "");
+        }
+    }
+
+    function resetNotificationTaskForm() {
+        document.getElementById("notification-task-form").reset();
+        document.getElementById("notification-task-id").value = "";
+        document.getElementById("notification-task-enabled").checked = true;
+        document.querySelectorAll("[data-notification-task-channel]").forEach((input) => {
+            input.checked = false;
+        });
+        document.querySelectorAll("[data-notification-filter-share-task], [data-notification-filter-period], [data-notification-filter-trigger]").forEach((input) => {
+            input.checked = false;
+        });
+        document.querySelectorAll("#notification-filter-fields details").forEach((details) => {
+            details.open = false;
+        });
+        updateNotificationFilterSummaries();
+    }
+
+    async function openShareSummaryRunDetail(runId) {
+        state.activeShareSummaryRunId = runId;
+        openModal("share-summary-run-modal");
+        document.getElementById("share-summary-run-detail").innerHTML = `<p class="muted">正在读取详情...</p>`;
+        setFeedback("share-summary-run-modal-feedback", "", "");
+        try {
+            const run = await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}`);
+            const images = await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/images`);
+            document.getElementById("share-summary-run-modal-title").textContent = `分享总结详情：${run.taskName || run.id}`;
+            document.getElementById("share-summary-run-detail").innerHTML = renderShareSummaryRunDetail(run, images);
+            bindShareSummaryImageButtons(document.getElementById("share-summary-run-detail"));
+        } catch (error) {
+            setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    function closeShareSummaryRunModal() {
+        closeModal("share-summary-run-modal");
+        state.activeShareSummaryRunId = null;
+        setFeedback("share-summary-run-modal-feedback", "", "");
+    }
+
     function openModal(id) {
         document.getElementById(id).hidden = false;
         document.body.classList.add("modal-open");
@@ -882,6 +2499,7 @@
 
     function showAdmin() {
         document.getElementById("admin-shell").hidden = false;
+        document.getElementById("admin-menu-button").hidden = false;
         document.getElementById("logout-button").hidden = false;
     }
 
@@ -988,6 +2606,16 @@
         return new Date(value).toLocaleString();
     }
 
+    function formatShortTimestamp(value) {
+        if (!value) {
+            return "n/a";
+        }
+        const date = new Date(value);
+        const datePart = date.toLocaleDateString();
+        const timePart = date.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+        return `${datePart} ${timePart}`;
+    }
+
     function formatBytes(value) {
         const bytes = Number(value || 0);
         if (bytes < 1024) {
@@ -1005,6 +2633,152 @@
             return "-";
         }
         return `${Math.round(duration)}ms`;
+    }
+
+    function formatWindow(start, end) {
+        return `${formatTimestamp(start)} ~ ${formatTimestamp(end)}`;
+    }
+
+    function validateShareSummaryMaxLinks(value) {
+        if (!Number.isInteger(value) || value < 1 || value > 2000) {
+            return "最大链接数必须是 1-2000 之间的整数。";
+        }
+        return "";
+    }
+
+    function validateShareSummaryMinLinks(value) {
+        if (!Number.isInteger(value) || value < 1 || value > 2000) {
+            return "最小链接数必须是 1-2000 之间的整数。";
+        }
+        return "";
+    }
+
+    function renderRunErrorHint(errorMessage) {
+        if (!errorMessage) {
+            return "";
+        }
+        return `<div class="keyline summary-error-hint" title="${escapeAttribute(errorMessage)}">${escapeHtml(errorMessage)}</div>`;
+    }
+
+    function renderShareSummaryRunDetail(run, images = []) {
+        return `
+            <div class="summary-detail-grid">
+                <div><b>状态</b><span>${renderRunStatus(run.status)}</span></div>
+                <div><b>触发方式</b><span>${escapeHtml(run.triggerType || "-")}</span></div>
+                <div><b>窗口</b><span>${escapeHtml(formatWindow(run.windowStart, run.windowEnd))}</span></div>
+                <div><b>链接</b><span>${escapeHtml(run.inputLinkCount || 0)}</span></div>
+                <div><b>AI Provider</b><span>${escapeHtml(run.aiProviderNames || "-")}</span></div>
+                <div><b>AI 耗时</b><span>${escapeHtml(formatDuration(run.aiDurationMs))}</span></div>
+            </div>
+            <section class="summary-detail-section">
+                <div class="section-title-row">
+                    <h4>分享图</h4>
+                    <div class="row-actions">
+                        ${renderShareSummaryImageActionButton(run)}
+                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制 OG 分享链接</button>
+                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图片直链</button>
+                    </div>
+                </div>
+                ${renderShareSummaryImageDetail(run, images)}
+            </section>
+            ${run.errorMessage ? `<section class="summary-detail-section"><h4>错误信息</h4><pre class="summary-report is-error">${escapeHtml(run.errorMessage)}</pre></section>` : ""}
+            <section class="summary-detail-section">
+                <h4>总结报告</h4>
+                <article class="summary-report summary-report-main">${escapeHtml(run.report || "")}</article>
+            </section>
+            <section class="summary-detail-section">
+                <h4>提示词快照</h4>
+                <pre class="summary-report summary-report-prompt">${escapeHtml(run.promptSnapshot || "")}</pre>
+            </section>
+        `;
+    }
+
+    function renderShareSummaryImageDetail(run, images) {
+        const attempts = Array.isArray(images) ? images : [];
+        const preview = run.latestImageUrl
+                ? `<img class="share-summary-preview" src="${escapeAttribute(run.latestImageUrl)}" alt="">`
+                : `<div class="share-summary-preview-placeholder">暂无分享图</div>`;
+        const meta = `
+            <div class="summary-detail-grid">
+                <div><b>图片状态</b><span>${renderImageStatus(run.imageStatus || "NOT_GENERATED")}</span></div>
+                <div><b>OG 标题</b><span>${escapeHtml(run.ogTitle || "-")}</span></div>
+                <div><b>OG 描述</b><span>${escapeHtml(run.ogDescription || "-")}</span></div>
+                <div><b>OG 分享链接</b><span class="url-cell">${escapeHtml(shareSummaryOgShareUrl(run) || "-")}</span></div>
+                <div><b>图片直链</b><span class="url-cell">${escapeHtml(run.ogImageUrl || "-")}</span></div>
+                <div><b>错误</b><span>${escapeHtml(run.imageErrorMessage || "-")}</span></div>
+            </div>
+        `;
+        const rows = attempts.length ? attempts.map((image) => `
+            <tr>
+                <td>${escapeHtml(image.attemptNo || "-")}</td>
+                <td>${renderImageStatus(image.status)}</td>
+                <td>${escapeHtml(image.model || "-")}<div class="keyline">${escapeHtml(image.imageSize || "-")} · ${escapeHtml(image.quality || "-")}</div></td>
+                <td>${escapeHtml(formatDuration(image.durationMs))}</td>
+                <td>${escapeHtml(formatTimestamp(image.createdAt))}</td>
+                <td>${escapeHtml(image.errorMessage || "-")}</td>
+            </tr>
+        `).join("") : `<tr><td colspan="6" class="muted">暂无生成记录</td></tr>`;
+        return `
+            <div class="share-summary-image-detail">
+                ${preview}
+                ${meta}
+            </div>
+            <div class="table-shell">
+                <table class="share-summary-image-attempt-table">
+                    <thead>
+                    <tr>
+                        <th>次数</th>
+                        <th>状态</th>
+                        <th>模型</th>
+                        <th>耗时</th>
+                        <th>创建时间</th>
+                        <th>错误</th>
+                    </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function shareSummaryOgShareUrl(run) {
+        return run.ogShareUrl || run.ogPageUrl || "";
+    }
+
+    function notificationChannelNames(channelIds) {
+        const ids = new Set((channelIds || []).map((id) => String(id)));
+        return state.notificationChannels
+                .filter((channel) => ids.has(String(channel.id)))
+                .map((channel) => channel.name);
+    }
+
+    function notificationFilterPreview(filters) {
+        const parts = [];
+        if (filters?.shareSummaryTaskIds?.length) {
+            parts.push(`任务 ${filters.shareSummaryTaskIds.join(",")}`);
+        }
+        if (filters?.periodTypes?.length) {
+            parts.push(filters.periodTypes.join("/"));
+        }
+        if (filters?.triggerTypes?.length) {
+            parts.push(filters.triggerTypes.join("/"));
+        }
+        return parts.join(" · ") || "匹配全部分享图成功事件";
+    }
+
+    function defaultNotificationTemplate() {
+        return `{{run.taskName}} 已生成分享图
+
+周期：{{run.periodType}}
+范围：{{run.windowStartLabel}} 至 {{run.windowEndLabel}}
+链接：{{run.inputLinkCount}} 条
+
+标题：{{image.ogTitle}}
+链接：{{image.ogShareUrl}}`;
+    }
+
+    function defaultNotificationChannelBodyTemplate() {
+        return "{{message.bodyJson}}";
     }
 
     function shortPreviewKey(value) {

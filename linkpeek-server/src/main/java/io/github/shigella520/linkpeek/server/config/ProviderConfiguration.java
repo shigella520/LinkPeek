@@ -10,19 +10,80 @@ import io.github.shigella520.linkpeek.provider.v2ex.V2exPreviewProvider;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 
 import java.net.URI;
 import java.net.http.HttpClient;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 @Configuration
 public class ProviderConfiguration {
     @Bean
+    @Primary
     public HttpClient httpClient(LinkPeekProperties properties) {
         return HttpClient.newBuilder()
                 .connectTimeout(properties.getDownloadTimeout())
                 .followRedirects(HttpClient.Redirect.NORMAL)
                 .version(HttpClient.Version.HTTP_1_1)
                 .build();
+    }
+
+    @Bean(name = "shareSummaryImageHttpClient")
+    public HttpClient shareSummaryImageHttpClient(LinkPeekProperties properties) {
+        return HttpClient.newBuilder()
+                .connectTimeout(properties.getDownloadTimeout())
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+    }
+
+    @Bean(name = "shareSummaryImageExecutor", destroyMethod = "shutdown")
+    public ExecutorService shareSummaryImageExecutor() {
+        AtomicInteger threadIndex = new AtomicInteger();
+        return new ThreadPoolExecutor(
+                1,
+                1,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(32),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "share-summary-image-" + threadIndex.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
+
+    @Bean(name = "notificationWebhookHttpClient")
+    public HttpClient notificationWebhookHttpClient(LinkPeekProperties properties) {
+        return HttpClient.newBuilder()
+                .connectTimeout(properties.getDownloadTimeout())
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+    }
+
+    @Bean(name = "notificationWebhookExecutor", destroyMethod = "shutdown")
+    public ExecutorService notificationWebhookExecutor() {
+        AtomicInteger threadIndex = new AtomicInteger();
+        return new ThreadPoolExecutor(
+                1,
+                2,
+                30L,
+                TimeUnit.SECONDS,
+                new LinkedBlockingQueue<>(128),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "notification-webhook-" + threadIndex.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
     }
 
     @Bean

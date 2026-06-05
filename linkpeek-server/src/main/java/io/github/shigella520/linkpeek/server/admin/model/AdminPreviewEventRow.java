@@ -6,6 +6,7 @@ public class AdminPreviewEventRow {
     private String previewKey;
     private String sourceUrl;
     private String canonicalUrl;
+    private String metadataTitle;
     private String providerId;
     private boolean aiRequested;
     private boolean aiSucceeded;
@@ -55,6 +56,14 @@ public class AdminPreviewEventRow {
 
     public void setCanonicalUrl(String canonicalUrl) {
         this.canonicalUrl = canonicalUrl;
+    }
+
+    public String getMetadataTitle() {
+        return metadataTitle;
+    }
+
+    public void setMetadataTitle(String metadataTitle) {
+        this.metadataTitle = metadataTitle;
     }
 
     public String getProviderId() {

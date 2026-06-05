@@ -50,6 +50,7 @@ class StatisticsConfigurationTest {
             assertTrue(hasColumn(jdbcTemplate, "stats_event", "ai_duration_ms"));
             assertTrue(hasColumn(jdbcTemplate, "stats_event", "crawl_duration_ms"));
             assertTrue(hasColumn(jdbcTemplate, "ai_provider", "request_timeout_seconds"));
+            assertTrue(hasColumn(jdbcTemplate, "share_summary_task", "min_links"));
             jdbcTemplate.update("""
                     INSERT INTO stats_event (
                         occurred_at,
@@ -95,6 +96,88 @@ class StatisticsConfigurationTest {
                             Integer.class
                     )
             );
+        } finally {
+            Files.walk(tempDir)
+                    .sorted(Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException exception) {
+                            throw new IllegalStateException(exception);
+                        }
+                    });
+        }
+    }
+
+    @Test
+    void schemaInitializerDropsOldShareSummaryDataWhenRemovingDayOfMonth() throws IOException {
+        Path tempDir = Files.createTempDirectory("linkpeek-share-summary-schema-test");
+        try {
+            SQLiteDataSource dataSource = new SQLiteDataSource();
+            dataSource.setUrl("jdbc:sqlite:" + tempDir.resolve("stats.db"));
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.execute("""
+                    CREATE TABLE share_summary_task (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        enabled INTEGER NOT NULL,
+                        period_type TEXT NOT NULL,
+                        run_time TEXT NOT NULL,
+                        day_of_week INTEGER,
+                        day_of_month INTEGER,
+                        prompt TEXT NOT NULL,
+                        max_links INTEGER NOT NULL,
+                        created_at INTEGER NOT NULL,
+                        updated_at INTEGER NOT NULL
+                    )
+                    """);
+            jdbcTemplate.execute("""
+                    CREATE TABLE share_summary_run (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        task_id INTEGER NOT NULL,
+                        task_name TEXT NOT NULL,
+                        trigger_type TEXT NOT NULL,
+                        period_type TEXT NOT NULL,
+                        window_start INTEGER NOT NULL,
+                        window_end INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        prompt_snapshot TEXT NOT NULL,
+                        started_at INTEGER NOT NULL
+                    )
+                    """);
+            jdbcTemplate.execute("""
+                    CREATE TABLE share_summary_image (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id INTEGER NOT NULL,
+                        status TEXT NOT NULL
+                    )
+                    """);
+            jdbcTemplate.update("""
+                    INSERT INTO share_summary_task (
+                        name,
+                        enabled,
+                        period_type,
+                        run_time,
+                        day_of_month,
+                        prompt,
+                        max_links,
+                        created_at,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, "旧月报", 1, "MONTHLY", "09:00", 15, "总结", 100, 1L, 1L);
+
+            initializeSchema(dataSource);
+            initializeSchema(dataSource);
+
+            org.junit.jupiter.api.Assertions.assertFalse(hasColumn(jdbcTemplate, "share_summary_task", "day_of_month"));
+            assertTrue(hasColumn(jdbcTemplate, "share_summary_task", "deleted"));
+            assertTrue(hasColumn(jdbcTemplate, "share_summary_task", "min_links"));
+            assertTrue(hasColumn(jdbcTemplate, "share_summary_run", "link_count"));
+            assertTrue(hasColumn(jdbcTemplate, "share_summary_image", "public_token"));
+            assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM share_summary_task", Integer.class));
+            assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM share_summary_run", Integer.class));
+            assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM share_summary_image", Integer.class));
         } finally {
             Files.walk(tempDir)
                     .sorted(Comparator.reverseOrder())

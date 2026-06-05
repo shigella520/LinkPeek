@@ -10,6 +10,7 @@
                 event.preview_key LIKE '%' || #{query} || '%'
                 OR event.source_url LIKE '%' || #{query} || '%'
                 OR link.canonical_url LIKE '%' || #{query} || '%'
+                OR link.title LIKE '%' || #{query} || '%'
                 OR event.provider_id LIKE '%' || #{query} || '%'
                 OR event.requested_style LIKE '%' || #{query} || '%'
                 OR event.actual_style LIKE '%' || #{query} || '%'
@@ -32,6 +33,7 @@
             event.preview_key,
             COALESCE(event.source_url, '') AS source_url,
             COALESCE(link.canonical_url, '') AS canonical_url,
+            COALESCE(link.title, '') AS metadata_title,
             event.provider_id,
             event.ai_requested,
             event.ai_succeeded,

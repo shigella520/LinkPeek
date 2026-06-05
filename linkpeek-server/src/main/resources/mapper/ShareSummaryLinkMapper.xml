@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryLinkMapper">
+    <select id="countCreatedEvents" resultType="int">
+        SELECT COUNT(*)
+        FROM stats_event
+        WHERE event_type = 'PREVIEW_CREATED'
+          AND occurred_at &gt;= #{windowStart}
+          AND occurred_at &lt; #{windowEnd}
+    </select>
+
+    <select id="selectSummaryLinks" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryLinkRow">
+        SELECT
+            event.preview_key,
+            COALESCE(MIN(NULLIF(event.source_url, '')), '') AS source_url,
+            link.canonical_url,
+            COALESCE(event.provider_id, link.provider_id) AS provider_id,
+            link.title,
+            COUNT(*) AS occurrence_count,
+            MIN(event.occurred_at) AS first_occurred_at,
+            MAX(event.ai_requested) AS ai_requested,
+            MAX(event.ai_succeeded) AS ai_succeeded
+        FROM stats_event event
+        JOIN stats_link link ON link.preview_key = event.preview_key
+        WHERE event.event_type = 'PREVIEW_CREATED'
+          AND event.occurred_at &gt;= #{windowStart}
+          AND event.occurred_at &lt; #{windowEnd}
+          AND link.title IS NOT NULL
+          AND TRIM(link.title) != ''
+        GROUP BY event.preview_key, link.canonical_url, link.title
+        ORDER BY occurrence_count DESC, first_occurred_at ASC
+    </select>
+</mapper>

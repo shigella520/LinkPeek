@@ -43,6 +43,20 @@ public class AiTitleClient {
     }
 
     public AiTitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException, InterruptedException {
+        AiTextPrompt textPrompt = new AiTextPrompt(
+                prompt.titleFormatPrompt(),
+                prompt.styleMessage(),
+                prompt.rawContentMessage()
+        );
+        AiTextResult result = generateTextResult(provider, textPrompt, "ai_title");
+        return new AiTitleResult(result.text(), result.durationMs());
+    }
+
+    public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
+        return generateTextResult(provider, prompt, "ai_text");
+    }
+
+    private AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt, String operation) throws IOException, InterruptedException {
         AiApiKind apiKind = AiApiKind.fromValue(provider.getApiKind());
         URI endpointUri = apiKind.endpointUri(provider.getBaseUrl());
         byte[] body = switch (apiKind) {
@@ -51,7 +65,8 @@ public class AiTitleClient {
         };
         Duration requestTimeout = requestTimeout(provider);
         log.info(
-                "ai_title_request_start providerId={} apiKind={} model={} baseUrl={} timeoutMs={} requestBytes={} requestBody={}",
+                "{}_request_start providerId={} apiKind={} model={} baseUrl={} timeoutMs={} requestBytes={} requestBody={}",
+                operation,
                 provider.getId(),
                 apiKind,
                 provider.getModel(),
@@ -76,7 +91,8 @@ public class AiTitleClient {
         if (response.statusCode() >= 400) {
             String responseBody = bodySnippet(response.body());
             log.warn(
-                    "ai_title_http_error providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBody={}",
+                    "{}_http_error providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBody={}",
+                    operation,
                     provider.getId(),
                     apiKind,
                     provider.getModel(),
@@ -91,7 +107,8 @@ public class AiTitleClient {
 
         String responseBody = bodySnippet(response.body());
         log.info(
-                "ai_title_request_success providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBytes={} responseBody={}",
+                "{}_request_success providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBytes={} responseBody={}",
+                operation,
                 provider.getId(),
                 apiKind,
                 provider.getModel(),
@@ -107,34 +124,38 @@ public class AiTitleClient {
             case RESPONSES -> extractResponsesText(payload);
             case CHAT_COMPLETIONS -> extractChatText(payload);
         };
-        return new AiTitleResult(title, durationMs);
+        return new AiTextResult(title, durationMs);
     }
 
-    private byte[] responsesBody(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException {
+    private byte[] responsesBody(AiProviderRecord provider, AiTextPrompt prompt) throws IOException {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", provider.getModel());
-        if (prompt.hasTitleFormatPrompt()) {
-            body.put("instructions", prompt.titleFormatPrompt());
+        if (prompt.hasInstructions()) {
+            body.put("instructions", prompt.instructions());
         }
-        body.put("input", List.of(
-                message("user", prompt.styleMessage()),
-                message("user", prompt.rawContentMessage())
-        ));
+        List<Map<String, String>> input = new ArrayList<>();
+        input.add(message("user", prompt.prompt()));
+        if (prompt.hasContent()) {
+            input.add(message("user", prompt.content()));
+        }
+        body.put("input", input);
         if (StringUtils.hasText(provider.getEffort())) {
             body.put("reasoning", Map.of("effort", provider.getEffort().strip()));
         }
         return objectMapper.writeValueAsBytes(body);
     }
 
-    private byte[] chatCompletionsBody(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException {
+    private byte[] chatCompletionsBody(AiProviderRecord provider, AiTextPrompt prompt) throws IOException {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", provider.getModel());
         List<Map<String, String>> messages = new ArrayList<>();
-        if (prompt.hasTitleFormatPrompt()) {
-            messages.add(message("system", prompt.titleFormatPrompt()));
+        if (prompt.hasInstructions()) {
+            messages.add(message("system", prompt.instructions()));
         }
-        messages.add(message("user", prompt.styleMessage()));
-        messages.add(message("user", prompt.rawContentMessage()));
+        messages.add(message("user", prompt.prompt()));
+        if (prompt.hasContent()) {
+            messages.add(message("user", prompt.content()));
+        }
         body.put("messages", messages);
         if (StringUtils.hasText(provider.getEffort())) {
             body.put("reasoning_effort", provider.getEffort().strip());
@@ -216,5 +237,8 @@ public class AiTitleClient {
     }
 
     public record AiTitleResult(Optional<String> title, long durationMs) {
+    }
+
+    public record AiTextResult(Optional<String> text, long durationMs) {
     }
 }

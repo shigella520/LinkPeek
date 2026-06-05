@@ -1,0 +1,341 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.shigella520.linkpeek.server.admin.persistence.NotificationMapper">
+    <sql id="channelColumns">
+        id,
+        name,
+        enabled,
+        type,
+        url,
+        method,
+        headers_json,
+        body_template,
+        secret,
+        timeout_seconds,
+        created_at,
+        updated_at
+    </sql>
+
+    <sql id="taskColumns">
+        id,
+        name,
+        enabled,
+        event_type,
+        filters_json,
+        template_json,
+        created_at,
+        updated_at
+    </sql>
+
+    <sql id="deliveryColumns">
+        id,
+        event_type,
+        event_key,
+        notification_task_id,
+        notification_task_name,
+        channel_id,
+        channel_name,
+        status,
+        attempt_count,
+        request_url,
+        request_body,
+        request_body_snapshot,
+        response_status,
+        response_body_snapshot,
+        error_message,
+        duration_ms,
+        created_at,
+        finished_at
+    </sql>
+
+    <select id="selectChannels" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationChannelRecord">
+        SELECT <include refid="channelColumns"/>
+        FROM notification_channel
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectEnabledChannelsForTask" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationChannelRecord">
+        SELECT
+            c.id,
+            c.name,
+            c.enabled,
+            c.type,
+            c.url,
+            c.method,
+            c.headers_json,
+            c.body_template,
+            c.secret,
+            c.timeout_seconds,
+            c.created_at,
+            c.updated_at
+        FROM notification_channel c
+        JOIN notification_task_channel tc ON tc.channel_id = c.id
+        WHERE tc.task_id = #{taskId}
+          AND c.enabled = 1
+        ORDER BY c.id ASC
+    </select>
+
+    <select id="selectChannel" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationChannelRecord">
+        SELECT <include refid="channelColumns"/>
+        FROM notification_channel
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insertChannel"
+            parameterType="io.github.shigella520.linkpeek.server.admin.model.NotificationChannelRecord"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO notification_channel (
+            name,
+            enabled,
+            type,
+            url,
+            method,
+            headers_json,
+            body_template,
+            secret,
+            timeout_seconds,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            #{name},
+            #{enabled},
+            #{type},
+            #{url},
+            #{method},
+            #{headersJson},
+            #{bodyTemplate},
+            #{secret},
+            #{timeoutSeconds},
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateChannel" parameterType="io.github.shigella520.linkpeek.server.admin.model.NotificationChannelRecord">
+        UPDATE notification_channel
+        SET
+            name = #{name},
+            enabled = #{enabled},
+            type = #{type},
+            url = #{url},
+            method = #{method},
+            headers_json = #{headersJson},
+            body_template = #{bodyTemplate},
+            secret = #{secret},
+            timeout_seconds = #{timeoutSeconds},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteChannel">
+        DELETE FROM notification_channel
+        WHERE id = #{id}
+    </delete>
+
+    <select id="countTaskChannelsForChannel" resultType="int">
+        SELECT COUNT(*)
+        FROM notification_task_channel
+        WHERE channel_id = #{channelId}
+    </select>
+
+    <select id="selectTasks" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationTaskRecord">
+        SELECT <include refid="taskColumns"/>
+        FROM notification_task
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectEnabledTasksByEventType" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationTaskRecord">
+        SELECT <include refid="taskColumns"/>
+        FROM notification_task
+        WHERE event_type = #{eventType}
+          AND enabled = 1
+        ORDER BY id ASC
+    </select>
+
+    <select id="selectTask" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationTaskRecord">
+        SELECT <include refid="taskColumns"/>
+        FROM notification_task
+        WHERE id = #{id}
+    </select>
+
+    <insert id="insertTask"
+            parameterType="io.github.shigella520.linkpeek.server.admin.model.NotificationTaskRecord"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO notification_task (
+            name,
+            enabled,
+            event_type,
+            filters_json,
+            template_json,
+            created_at,
+            updated_at
+        )
+        VALUES (
+            #{name},
+            #{enabled},
+            #{eventType},
+            #{filtersJson},
+            #{templateJson},
+            #{createdAt},
+            #{updatedAt}
+        )
+    </insert>
+
+    <update id="updateTask" parameterType="io.github.shigella520.linkpeek.server.admin.model.NotificationTaskRecord">
+        UPDATE notification_task
+        SET
+            name = #{name},
+            enabled = #{enabled},
+            event_type = #{eventType},
+            filters_json = #{filtersJson},
+            template_json = #{templateJson},
+            updated_at = #{updatedAt}
+        WHERE id = #{id}
+    </update>
+
+    <delete id="deleteTask">
+        DELETE FROM notification_task
+        WHERE id = #{id}
+    </delete>
+
+    <select id="selectChannelIdsForTask" resultType="long">
+        SELECT channel_id
+        FROM notification_task_channel
+        WHERE task_id = #{taskId}
+        ORDER BY channel_id ASC
+    </select>
+
+    <delete id="deleteTaskChannels">
+        DELETE FROM notification_task_channel
+        WHERE task_id = #{taskId}
+    </delete>
+
+    <insert id="insertTaskChannel">
+        INSERT INTO notification_task_channel (task_id, channel_id)
+        VALUES (#{taskId}, #{channelId})
+    </insert>
+
+    <insert id="insertDelivery"
+            parameterType="io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO notification_delivery (
+            event_type,
+            event_key,
+            notification_task_id,
+            notification_task_name,
+            channel_id,
+            channel_name,
+            status,
+            attempt_count,
+            request_url,
+            request_body,
+            request_body_snapshot,
+            response_status,
+            response_body_snapshot,
+            error_message,
+            duration_ms,
+            created_at,
+            finished_at
+        )
+        VALUES (
+            #{eventType},
+            #{eventKey},
+            #{notificationTaskId},
+            #{notificationTaskName},
+            #{channelId},
+            #{channelName},
+            #{status},
+            #{attemptCount},
+            #{requestUrl},
+            #{requestBody},
+            #{requestBodySnapshot},
+            #{responseStatus},
+            #{responseBodySnapshot},
+            #{errorMessage},
+            #{durationMs},
+            #{createdAt},
+            #{finishedAt}
+        )
+    </insert>
+
+    <update id="updateDelivery" parameterType="io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord">
+        UPDATE notification_delivery
+        SET
+            status = #{status},
+            attempt_count = #{attemptCount},
+            request_url = #{requestUrl},
+            request_body = #{requestBody},
+            request_body_snapshot = #{requestBodySnapshot},
+            response_status = #{responseStatus},
+            response_body_snapshot = #{responseBodySnapshot},
+            error_message = #{errorMessage},
+            duration_ms = #{durationMs},
+            finished_at = #{finishedAt}
+        WHERE id = #{id}
+    </update>
+
+    <update id="resetDeliveryForRetry" parameterType="io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord">
+        UPDATE notification_delivery
+        SET
+            status = #{status},
+            attempt_count = #{attemptCount},
+            request_url = #{requestUrl},
+            request_body = #{requestBody},
+            request_body_snapshot = #{requestBodySnapshot},
+            response_status = #{responseStatus},
+            response_body_snapshot = #{responseBodySnapshot},
+            error_message = #{errorMessage},
+            duration_ms = #{durationMs},
+            finished_at = #{finishedAt}
+        WHERE id = #{id}
+          AND status = 'FAILED'
+    </update>
+
+    <sql id="deliveryFilter">
+        1 = 1
+        <if test="eventType != null and eventType != ''">
+            AND event_type = #{eventType}
+        </if>
+        <if test="taskId != null">
+            AND notification_task_id = #{taskId}
+        </if>
+        <if test="channelId != null">
+            AND channel_id = #{channelId}
+        </if>
+        <if test="status != null and status != ''">
+            AND status = #{status}
+        </if>
+    </sql>
+
+    <select id="countDeliveries" resultType="long">
+        SELECT COUNT(*)
+        FROM notification_delivery
+        WHERE <include refid="deliveryFilter"/>
+    </select>
+
+    <select id="selectDeliveries" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord">
+        SELECT <include refid="deliveryColumns"/>
+        FROM notification_delivery
+        WHERE <include refid="deliveryFilter"/>
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{limit}
+        OFFSET #{offset}
+    </select>
+
+    <select id="selectDelivery" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord">
+        SELECT <include refid="deliveryColumns"/>
+        FROM notification_delivery
+        WHERE id = #{id}
+    </select>
+
+    <delete id="deleteDelivery">
+        DELETE FROM notification_delivery
+        WHERE id = #{id}
+    </delete>
+</mapper>
