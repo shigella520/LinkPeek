@@ -87,16 +87,26 @@ public class ShareSummaryPublicController {
                         body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #172033; }
                         main { max-width: 860px; margin: 0 auto; padding: 32px 20px 48px; }
                         img { width: 100%%; height: auto; border-radius: 8px; background: #e8ebf0; }
-                        .reader { margin: 18px 0; padding: 16px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; }
+                        .reader { margin: 18px 0; padding: 16px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; box-shadow: 0 12px 32px rgba(23, 32, 51, 0.06); }
                         .reader[hidden] { display: none !important; }
-                        .reader-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-                        .reader-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-                        .reader button { min-height: 36px; padding: 0 14px; border: 1px solid #ccd3df; border-radius: 6px; background: #f8fafc; color: #172033; font: inherit; cursor: pointer; }
-                        .reader button:hover:not(:disabled) { background: #eef2f7; }
-                        .reader button:disabled { cursor: not-allowed; opacity: 0.45; }
-                        .reader-rate { display: flex; gap: 8px; align-items: center; color: #5d6678; font-size: 14px; }
-                        .reader-rate input { width: 120px; accent-color: #2563eb; }
-                        .reader-status { margin: 10px 0 0; color: #5d6678; font-size: 14px; }
+                        .reader-main { display: grid; grid-template-columns: 44px minmax(0, 1fr) 36px; gap: 12px; align-items: center; }
+                        .reader button { border: 0; font: inherit; cursor: pointer; }
+                        .reader button:disabled { cursor: not-allowed; opacity: 0.42; }
+                        .reader-play { width: 44px; height: 44px; border-radius: 50%%; background: #172033; color: #fff; font-size: 18px; line-height: 1; display: grid; place-items: center; }
+                        .reader-play:hover:not(:disabled) { background: #263044; }
+                        .reader-stop { width: 36px; height: 36px; border-radius: 50%%; background: #eef2f7; color: #5d6678; font-size: 18px; line-height: 1; display: grid; place-items: center; }
+                        .reader-stop:hover:not(:disabled) { background: #e2e8f0; color: #172033; }
+                        .reader-status { min-width: 0; }
+                        .reader-status strong { display: block; font-size: 15px; line-height: 1.35; color: #172033; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .reader-status span { display: block; margin-top: 2px; font-size: 13px; line-height: 1.35; color: #5d6678; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .reader-progress { height: 4px; margin-top: 10px; border-radius: 999px; background: #e8edf4; overflow: hidden; }
+                        .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: #2563eb; transition: width 180ms ease; }
+                        .reader-controls { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.3fr); gap: 12px; margin-top: 14px; }
+                        .reader-control { display: grid; gap: 7px; min-width: 0; color: #5d6678; font-size: 13px; }
+                        .reader-control-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+                        .reader input, .reader select { width: 100%%; min-height: 36px; border: 1px solid #d7dde7; border-radius: 6px; background: #f8fafc; color: #172033; font: inherit; }
+                        .reader input { accent-color: #2563eb; }
+                        .reader select { padding: 0 10px; }
                         article { line-height: 1.72; background: #fff; border: 1px solid #dfe3ea; border-radius: 8px; padding: 24px; }
                         article h2 { margin: 28px 0 12px; font-size: 22px; line-height: 1.35; }
                         article h3 { margin: 22px 0 10px; font-size: 18px; line-height: 1.4; }
@@ -112,10 +122,7 @@ public class ShareSummaryPublicController {
                             main { padding: 20px 14px 36px; }
                             article { padding: 18px; }
                             .reader { padding: 14px; }
-                            .reader-row { align-items: stretch; }
-                            .reader-actions, .reader-rate { width: 100%%; }
-                            .reader-actions button { flex: 1 1 calc(50%% - 4px); }
-                            .reader-rate input { flex: 1; width: auto; }
+                            .reader-controls { grid-template-columns: 1fr; }
                         }
                     </style>
                 </head>
@@ -125,20 +132,35 @@ public class ShareSummaryPublicController {
                         <h1 data-reader-title>%s</h1>
                         <p data-reader-description>%s</p>
                         <section class="reader" data-reader hidden aria-label="报告朗读">
-                            <div class="reader-row">
-                                <div class="reader-actions">
-                                    <button type="button" data-reader-action="play">播放</button>
-                                    <button type="button" data-reader-action="pause" disabled>暂停</button>
-                                    <button type="button" data-reader-action="resume" disabled>继续</button>
-                                    <button type="button" data-reader-action="stop" disabled>停止</button>
+                            <div class="reader-main">
+                                <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放">▶</button>
+                                <div class="reader-status">
+                                    <strong data-reader-state>准备朗读</strong>
+                                    <span data-reader-status>点击播放朗读报告正文。</span>
+                                    <div class="reader-progress" aria-hidden="true">
+                                        <span class="reader-progress-bar" data-reader-progress></span>
+                                    </div>
                                 </div>
-                                <label class="reader-rate">
-                                    语速
+                                <button class="reader-stop" type="button" data-reader-action="stop" disabled aria-label="停止">■</button>
+                            </div>
+                            <div class="reader-controls">
+                                <label class="reader-control">
+                                    <span class="reader-control-label">
+                                        <span>语速</span>
+                                        <span data-reader-rate-label>1.0x</span>
+                                    </span>
                                     <input type="range" min="0.8" max="1.4" step="0.1" value="1" data-reader-rate>
-                                    <span data-reader-rate-label>1.0x</span>
+                                </label>
+                                <label class="reader-control">
+                                    <span class="reader-control-label">
+                                        <span>音色</span>
+                                        <span data-reader-voice-hint>系统默认</span>
+                                    </span>
+                                    <select data-reader-voice>
+                                        <option value="">系统默认</option>
+                                    </select>
                                 </label>
                             </div>
-                            <p class="reader-status" data-reader-status>点击播放朗读报告正文。</p>
                         </section>
                         <article data-reader-content>%s</article>
                     </main>
@@ -152,14 +174,18 @@ public class ShareSummaryPublicController {
 
                             const synth = window.speechSynthesis;
                             const actions = {
-                                play: root.querySelector('[data-reader-action="play"]'),
-                                pause: root.querySelector('[data-reader-action="pause"]'),
-                                resume: root.querySelector('[data-reader-action="resume"]'),
+                                toggle: root.querySelector('[data-reader-action="toggle"]'),
                                 stop: root.querySelector('[data-reader-action="stop"]')
                             };
+                            const stateLabel = root.querySelector("[data-reader-state]");
                             const status = root.querySelector("[data-reader-status]");
+                            const progress = root.querySelector("[data-reader-progress]");
                             const rateInput = root.querySelector("[data-reader-rate]");
                             const rateLabel = root.querySelector("[data-reader-rate-label]");
+                            const voiceSelect = root.querySelector("[data-reader-voice]");
+                            const voiceHint = root.querySelector("[data-reader-voice-hint]");
+                            const storageKey = "linkpeek.shareSummary.readerVoice";
+                            let availableVoices = [];
                             let chunks = [];
                             let chunkIndex = 0;
                             let stopRequested = false;
@@ -214,22 +240,79 @@ public class ShareSummaryPublicController {
                                 return result;
                             }
 
-                            function chineseVoice() {
+                            function isChineseVoice(voice) {
+                                return /^zh/i.test(voice.lang) || /Chinese|Mandarin|中文|普通话/i.test(voice.name);
+                            }
+
+                            function voiceId(voice) {
+                                return `${voice.name}||${voice.lang}`;
+                            }
+
+                            function rememberedVoice() {
+                                try {
+                                    return localStorage.getItem(storageKey) || "";
+                                } catch (error) {
+                                    return "";
+                                }
+                            }
+
+                            function saveVoice(value) {
+                                try {
+                                    localStorage.setItem(storageKey, value);
+                                } catch (error) {
+                                    // Storage can be unavailable in private or embedded browser contexts.
+                                }
+                            }
+
+                            function selectedVoice() {
+                                const selectedId = voiceSelect.value;
+                                if (selectedId) {
+                                    return availableVoices.find((voice) => voiceId(voice) === selectedId) || null;
+                                }
+                                return availableVoices.find(isChineseVoice) || null;
+                            }
+
+                            function populateVoices() {
                                 const voices = synth.getVoices();
-                                return voices.find((voice) => /^zh/i.test(voice.lang))
-                                    || voices.find((voice) => /Chinese|Mandarin|中文|普通话/i.test(voice.name))
-                                    || null;
+                                if (!voices.length) {
+                                    voiceHint.textContent = "系统默认";
+                                    return;
+                                }
+                                const displayVoices = voices.filter(isChineseVoice);
+                                availableVoices = displayVoices.length ? displayVoices : voices;
+                                const previousValue = voiceSelect.value;
+                                const targetValue = previousValue || rememberedVoice();
+                                voiceSelect.innerHTML = '<option value="">系统默认</option>';
+                                availableVoices.forEach((voice) => {
+                                    const option = document.createElement("option");
+                                    option.value = voiceId(voice);
+                                    option.textContent = `${voice.name} (${voice.lang || "默认"})`;
+                                    voiceSelect.appendChild(option);
+                                });
+                                if (targetValue && availableVoices.some((voice) => voiceId(voice) === targetValue)) {
+                                    voiceSelect.value = targetValue;
+                                }
+                                voiceHint.textContent = displayVoices.length ? "中文音色" : "本机音色";
+                            }
+
+                            function progressText() {
+                                if (!chunks.length) {
+                                    return "";
+                                }
+                                return `${Math.min(chunkIndex + 1, chunks.length)}/${chunks.length}`;
                             }
 
                             function setStatus(message, state) {
-                                status.textContent = message;
                                 const playing = state === "playing";
                                 const paused = state === "paused";
                                 const active = playing || paused;
-                                actions.play.disabled = playing;
-                                actions.pause.disabled = !playing;
-                                actions.resume.disabled = !paused;
+                                const percent = chunks.length ? Math.min(100, Math.round((chunkIndex / chunks.length) * 100)) : 0;
+                                stateLabel.textContent = state === "idle" ? "准备朗读" : (playing ? "正在朗读" : "已暂停");
+                                status.textContent = message;
+                                actions.toggle.textContent = playing ? "⏸" : "▶";
+                                actions.toggle.setAttribute("aria-label", playing ? "暂停" : (paused ? "继续" : "播放"));
                                 actions.stop.disabled = !active;
+                                progress.style.width = `${percent}%%`;
                             }
 
                             function speakCurrentChunk() {
@@ -238,14 +321,16 @@ public class ShareSummaryPublicController {
                                 }
                                 if (chunkIndex >= chunks.length) {
                                     setStatus("朗读完成。", "idle");
+                                    progress.style.width = "100%%";
                                     return;
                                 }
                                 const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
                                 utterance.lang = "zh-CN";
                                 utterance.rate = Number(rateInput.value) || 1;
-                                const voice = chineseVoice();
+                                const voice = selectedVoice();
                                 if (voice) {
                                     utterance.voice = voice;
+                                    utterance.lang = voice.lang || "zh-CN";
                                 }
                                 utterance.onend = () => {
                                     if (stopRequested) {
@@ -259,7 +344,7 @@ public class ShareSummaryPublicController {
                                         setStatus("朗读被浏览器中断，请重试。", "idle");
                                     }
                                 };
-                                setStatus(`正在朗读 ${chunkIndex + 1}/${chunks.length}`, "playing");
+                                setStatus(`正在朗读 ${progressText()}`, "playing");
                                 synth.speak(utterance);
                             }
 
@@ -287,7 +372,7 @@ public class ShareSummaryPublicController {
                             function resume() {
                                 if (synth.paused) {
                                     synth.resume();
-                                    setStatus(`正在朗读 ${chunkIndex + 1}/${chunks.length}`, "playing");
+                                    setStatus(`正在朗读 ${progressText()}`, "playing");
                                 }
                             }
 
@@ -295,19 +380,38 @@ public class ShareSummaryPublicController {
                                 stopRequested = true;
                                 synth.cancel();
                                 setStatus("已停止。", "idle");
+                                progress.style.width = "0%%";
                             }
 
-                            actions.play.addEventListener("click", play);
-                            actions.pause.addEventListener("click", pause);
-                            actions.resume.addEventListener("click", resume);
+                            function toggle() {
+                                if (synth.speaking && !synth.paused) {
+                                    pause();
+                                    return;
+                                }
+                                if (synth.paused) {
+                                    resume();
+                                    return;
+                                }
+                                play();
+                            }
+
+                            actions.toggle.addEventListener("click", toggle);
                             actions.stop.addEventListener("click", stop);
                             rateInput.addEventListener("input", () => {
                                 rateLabel.textContent = `${Number(rateInput.value).toFixed(1)}x`;
                             });
+                            voiceSelect.addEventListener("change", () => {
+                                saveVoice(voiceSelect.value);
+                                if (synth.speaking || synth.paused) {
+                                    stop();
+                                    setStatus("音色已切换，点击播放重新开始。", "idle");
+                                }
+                            });
                             window.addEventListener("pagehide", () => synth.cancel());
                             if ("onvoiceschanged" in synth) {
-                                synth.onvoiceschanged = chineseVoice;
+                                synth.onvoiceschanged = populateVoices;
                             }
+                            populateVoices();
                             setStatus("点击播放朗读报告正文。", "idle");
                         })();
                     </script>
