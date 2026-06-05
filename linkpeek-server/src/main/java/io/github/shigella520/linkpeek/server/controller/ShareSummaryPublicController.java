@@ -87,24 +87,24 @@ public class ShareSummaryPublicController {
                         body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #172033; }
                         main { max-width: 860px; margin: 0 auto; padding: 32px 20px 48px; }
                         img { width: 100%%; height: auto; border-radius: 8px; background: #e8ebf0; }
-                        .reader { margin: 18px 0; padding: 16px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; box-shadow: 0 12px 32px rgba(23, 32, 51, 0.06); }
+                        .reader { margin: 18px 0; padding: 14px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; box-shadow: 0 10px 24px rgba(23, 32, 51, 0.05); }
                         .reader[hidden] { display: none !important; }
-                        .reader-main { display: grid; grid-template-columns: 44px minmax(0, 1fr) 36px; gap: 12px; align-items: center; }
-                        .reader button { border: 0; font: inherit; cursor: pointer; }
+                        .reader-main { display: grid; grid-template-columns: 40px 32px minmax(120px, 1fr) minmax(180px, 1.2fr); gap: 10px; align-items: center; }
+                        .reader button { border: 0; font: inherit; cursor: pointer; position: relative; }
                         .reader button:disabled { cursor: not-allowed; opacity: 0.42; }
-                        .reader-play { width: 44px; height: 44px; border-radius: 50%%; background: #172033; color: #fff; font-size: 18px; line-height: 1; display: grid; place-items: center; }
+                        .reader-play { width: 40px; height: 40px; border-radius: 50%%; background: #172033; color: #fff; display: grid; place-items: center; }
                         .reader-play:hover:not(:disabled) { background: #263044; }
-                        .reader-stop { width: 36px; height: 36px; border-radius: 50%%; background: #eef2f7; color: #5d6678; font-size: 18px; line-height: 1; display: grid; place-items: center; }
+                        .reader-play::before { content: ""; display: block; width: 0; height: 0; margin-left: 3px; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 12px solid currentColor; }
+                        .reader-play.is-playing::before { width: 13px; height: 15px; margin-left: 0; border: 0; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+                        .reader-stop { width: 32px; height: 32px; border-radius: 50%%; background: #eef2f7; color: #5d6678; display: grid; place-items: center; }
                         .reader-stop:hover:not(:disabled) { background: #e2e8f0; color: #172033; }
-                        .reader-status { min-width: 0; }
-                        .reader-status strong { display: block; font-size: 15px; line-height: 1.35; color: #172033; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                        .reader-status span { display: block; margin-top: 2px; font-size: 13px; line-height: 1.35; color: #5d6678; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .reader-stop::before { content: ""; display: block; width: 10px; height: 10px; border-radius: 1px; background: currentColor; }
+                        .reader-status { min-width: 0; margin-top: 10px; color: #5d6678; font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                         .reader-progress { height: 4px; margin-top: 10px; border-radius: 999px; background: #e8edf4; overflow: hidden; }
                         .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: #2563eb; transition: width 180ms ease; }
-                        .reader-controls { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.3fr); gap: 12px; margin-top: 14px; }
-                        .reader-control { display: grid; gap: 7px; min-width: 0; color: #5d6678; font-size: 13px; }
+                        .reader-control { display: grid; gap: 5px; min-width: 0; color: #5d6678; font-size: 12px; }
                         .reader-control-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-                        .reader input, .reader select { width: 100%%; min-height: 36px; border: 1px solid #d7dde7; border-radius: 6px; background: #f8fafc; color: #172033; font: inherit; }
+                        .reader input, .reader select { width: 100%%; min-height: 32px; border: 1px solid #d7dde7; border-radius: 6px; background: #f8fafc; color: #172033; font: inherit; }
                         .reader input { accent-color: #2563eb; }
                         .reader select { padding: 0 10px; }
                         article { line-height: 1.72; background: #fff; border: 1px solid #dfe3ea; border-radius: 8px; padding: 24px; }
@@ -122,7 +122,8 @@ public class ShareSummaryPublicController {
                             main { padding: 20px 14px 36px; }
                             article { padding: 18px; }
                             .reader { padding: 14px; }
-                            .reader-controls { grid-template-columns: 1fr; }
+                            .reader-main { grid-template-columns: 40px 32px minmax(0, 1fr); }
+                            .reader-voice { grid-column: 1 / -1; }
                         }
                     </style>
                 </head>
@@ -133,25 +134,16 @@ public class ShareSummaryPublicController {
                         <p data-reader-description>%s</p>
                         <section class="reader" data-reader hidden aria-label="报告朗读">
                             <div class="reader-main">
-                                <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放">▶</button>
-                                <div class="reader-status">
-                                    <strong data-reader-state>准备朗读</strong>
-                                    <span data-reader-status>点击播放朗读报告正文。</span>
-                                    <div class="reader-progress" aria-hidden="true">
-                                        <span class="reader-progress-bar" data-reader-progress></span>
-                                    </div>
-                                </div>
-                                <button class="reader-stop" type="button" data-reader-action="stop" disabled aria-label="停止">■</button>
-                            </div>
-                            <div class="reader-controls">
+                                <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放"></button>
+                                <button class="reader-stop" type="button" data-reader-action="stop" disabled aria-label="停止"></button>
                                 <label class="reader-control">
                                     <span class="reader-control-label">
                                         <span>语速</span>
-                                        <span data-reader-rate-label>1.0x</span>
+                                        <span data-reader-rate-label>1.2x</span>
                                     </span>
-                                    <input type="range" min="0.8" max="1.4" step="0.1" value="1" data-reader-rate>
+                                    <input type="range" min="0.8" max="1.6" step="0.1" value="1.2" data-reader-rate>
                                 </label>
-                                <label class="reader-control">
+                                <label class="reader-control reader-voice">
                                     <span class="reader-control-label">
                                         <span>音色</span>
                                         <span data-reader-voice-hint>系统默认</span>
@@ -160,6 +152,10 @@ public class ShareSummaryPublicController {
                                         <option value="">系统默认</option>
                                     </select>
                                 </label>
+                            </div>
+                            <div class="reader-status" data-reader-status>准备播放</div>
+                            <div class="reader-progress" aria-hidden="true">
+                                <span class="reader-progress-bar" data-reader-progress></span>
                             </div>
                         </section>
                         <article data-reader-content>%s</article>
@@ -177,7 +173,6 @@ public class ShareSummaryPublicController {
                                 toggle: root.querySelector('[data-reader-action="toggle"]'),
                                 stop: root.querySelector('[data-reader-action="stop"]')
                             };
-                            const stateLabel = root.querySelector("[data-reader-state]");
                             const status = root.querySelector("[data-reader-status]");
                             const progress = root.querySelector("[data-reader-progress]");
                             const rateInput = root.querySelector("[data-reader-rate]");
@@ -307,9 +302,8 @@ public class ShareSummaryPublicController {
                                 const paused = state === "paused";
                                 const active = playing || paused;
                                 const percent = chunks.length ? Math.min(100, Math.round((chunkIndex / chunks.length) * 100)) : 0;
-                                stateLabel.textContent = state === "idle" ? "准备朗读" : (playing ? "正在朗读" : "已暂停");
                                 status.textContent = message;
-                                actions.toggle.textContent = playing ? "⏸" : "▶";
+                                actions.toggle.classList.toggle("is-playing", playing);
                                 actions.toggle.setAttribute("aria-label", playing ? "暂停" : (paused ? "继续" : "播放"));
                                 actions.stop.disabled = !active;
                                 progress.style.width = `${percent}%%`;
@@ -326,7 +320,7 @@ public class ShareSummaryPublicController {
                                 }
                                 const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
                                 utterance.lang = "zh-CN";
-                                utterance.rate = Number(rateInput.value) || 1;
+                                utterance.rate = Number(rateInput.value) || 1.2;
                                 const voice = selectedVoice();
                                 if (voice) {
                                     utterance.voice = voice;
@@ -344,14 +338,14 @@ public class ShareSummaryPublicController {
                                         setStatus("朗读被浏览器中断，请重试。", "idle");
                                     }
                                 };
-                                setStatus(`正在朗读 ${progressText()}`, "playing");
+                                setStatus(`播放中 ${progressText()}`, "playing");
                                 synth.speak(utterance);
                             }
 
                             function play() {
                                 const nextChunks = splitText(reportText());
                                 if (nextChunks.length === 0) {
-                                    setStatus("没有可朗读的正文。", "idle");
+                                    setStatus("没有可朗读正文", "idle");
                                     return;
                                 }
                                 stopRequested = true;
@@ -365,21 +359,21 @@ public class ShareSummaryPublicController {
                             function pause() {
                                 if (synth.speaking && !synth.paused) {
                                     synth.pause();
-                                    setStatus("已暂停。", "paused");
+                                    setStatus("已暂停", "paused");
                                 }
                             }
 
                             function resume() {
                                 if (synth.paused) {
                                     synth.resume();
-                                    setStatus(`正在朗读 ${progressText()}`, "playing");
+                                    setStatus(`播放中 ${progressText()}`, "playing");
                                 }
                             }
 
                             function stop() {
                                 stopRequested = true;
                                 synth.cancel();
-                                setStatus("已停止。", "idle");
+                                setStatus("已停止", "idle");
                                 progress.style.width = "0%%";
                             }
 
@@ -404,7 +398,7 @@ public class ShareSummaryPublicController {
                                 saveVoice(voiceSelect.value);
                                 if (synth.speaking || synth.paused) {
                                     stop();
-                                    setStatus("音色已切换，点击播放重新开始。", "idle");
+                                    setStatus("音色已切换，请重新播放", "idle");
                                 }
                             });
                             window.addEventListener("pagehide", () => synth.cancel());
@@ -412,7 +406,7 @@ public class ShareSummaryPublicController {
                                 synth.onvoiceschanged = populateVoices;
                             }
                             populateVoices();
-                            setStatus("点击播放朗读报告正文。", "idle");
+                            setStatus("准备播放", "idle");
                         })();
                     </script>
                 </body>
