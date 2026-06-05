@@ -1423,7 +1423,7 @@
                     <td>${escapeHtml(run.taskName || "-")}<div class="keyline">${escapeHtml(run.triggerType || "-")}</div></td>
                     <td class="summary-window-cell">${renderSummaryWindow(run.windowStart, run.windowEnd)}</td>
                     <td>${renderRunStatus(run.status)}${renderRunErrorHint(run.errorMessage)}</td>
-                    <td>${escapeHtml(run.linkCount || 0)} / ${escapeHtml(run.uniqueLinkCount || 0)} / ${escapeHtml(run.inputLinkCount || 0)}</td>
+                    <td>${escapeHtml(run.inputLinkCount || 0)}</td>
                     <td>${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
                     <td>${renderShareSummaryImageCell(run)}</td>
                     <td>${renderShareSummaryRunActions(run)}</td>
@@ -2666,7 +2666,7 @@
                 <div><b>状态</b><span>${renderRunStatus(run.status)}</span></div>
                 <div><b>触发方式</b><span>${escapeHtml(run.triggerType || "-")}</span></div>
                 <div><b>窗口</b><span>${escapeHtml(formatWindow(run.windowStart, run.windowEnd))}</span></div>
-                <div><b>链接</b><span>${escapeHtml(run.linkCount || 0)} / ${escapeHtml(run.uniqueLinkCount || 0)} / ${escapeHtml(run.inputLinkCount || 0)}</span></div>
+                <div><b>链接</b><span>${escapeHtml(run.inputLinkCount || 0)}</span></div>
                 <div><b>AI Provider</b><span>${escapeHtml(run.aiProviderNames || "-")}</span></div>
                 <div><b>AI 耗时</b><span>${escapeHtml(formatDuration(run.aiDurationMs))}</span></div>
             </div>
@@ -2771,7 +2771,7 @@
 
 周期：{{run.periodType}}
 范围：{{run.windowStartLabel}} 至 {{run.windowEndLabel}}
-链接：{{run.linkCount}} 条，去重 {{run.uniqueLinkCount}} 条
+链接：{{run.inputLinkCount}} 条
 
 标题：{{image.ogTitle}}
 链接：{{image.ogShareUrl}}`;
