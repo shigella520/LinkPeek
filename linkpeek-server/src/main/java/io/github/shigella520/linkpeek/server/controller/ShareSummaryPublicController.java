@@ -87,6 +87,16 @@ public class ShareSummaryPublicController {
                         body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #172033; }
                         main { max-width: 860px; margin: 0 auto; padding: 32px 20px 48px; }
                         img { width: 100%%; height: auto; border-radius: 8px; background: #e8ebf0; }
+                        .reader { margin: 18px 0; padding: 16px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; }
+                        .reader[hidden] { display: none !important; }
+                        .reader-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+                        .reader-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+                        .reader button { min-height: 36px; padding: 0 14px; border: 1px solid #ccd3df; border-radius: 6px; background: #f8fafc; color: #172033; font: inherit; cursor: pointer; }
+                        .reader button:hover:not(:disabled) { background: #eef2f7; }
+                        .reader button:disabled { cursor: not-allowed; opacity: 0.45; }
+                        .reader-rate { display: flex; gap: 8px; align-items: center; color: #5d6678; font-size: 14px; }
+                        .reader-rate input { width: 120px; accent-color: #2563eb; }
+                        .reader-status { margin: 10px 0 0; color: #5d6678; font-size: 14px; }
                         article { line-height: 1.72; background: #fff; border: 1px solid #dfe3ea; border-radius: 8px; padding: 24px; }
                         article h2 { margin: 28px 0 12px; font-size: 22px; line-height: 1.35; }
                         article h3 { margin: 22px 0 10px; font-size: 18px; line-height: 1.4; }
@@ -98,15 +108,209 @@ public class ShareSummaryPublicController {
                         article pre code { padding: 0; background: transparent; }
                         h1 { font-size: 28px; line-height: 1.25; margin: 24px 0 12px; }
                         main > p { color: #5d6678; }
+                        @media (max-width: 520px) {
+                            main { padding: 20px 14px 36px; }
+                            article { padding: 18px; }
+                            .reader { padding: 14px; }
+                            .reader-row { align-items: stretch; }
+                            .reader-actions, .reader-rate { width: 100%%; }
+                            .reader-actions button { flex: 1 1 calc(50%% - 4px); }
+                            .reader-rate input { flex: 1; width: auto; }
+                        }
                     </style>
                 </head>
                 <body>
                     <main>
                         <img src="%s" alt="%s">
-                        <h1>%s</h1>
-                        <p>%s</p>
-                        <article>%s</article>
+                        <h1 data-reader-title>%s</h1>
+                        <p data-reader-description>%s</p>
+                        <section class="reader" data-reader hidden aria-label="报告朗读">
+                            <div class="reader-row">
+                                <div class="reader-actions">
+                                    <button type="button" data-reader-action="play">播放</button>
+                                    <button type="button" data-reader-action="pause" disabled>暂停</button>
+                                    <button type="button" data-reader-action="resume" disabled>继续</button>
+                                    <button type="button" data-reader-action="stop" disabled>停止</button>
+                                </div>
+                                <label class="reader-rate">
+                                    语速
+                                    <input type="range" min="0.8" max="1.4" step="0.1" value="1" data-reader-rate>
+                                    <span data-reader-rate-label>1.0x</span>
+                                </label>
+                            </div>
+                            <p class="reader-status" data-reader-status>点击播放朗读报告正文。</p>
+                        </section>
+                        <article data-reader-content>%s</article>
                     </main>
+                    <script>
+                        (() => {
+                            const root = document.querySelector("[data-reader]");
+                            const content = document.querySelector("[data-reader-content]");
+                            if (!root || !content || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
+                                return;
+                            }
+
+                            const synth = window.speechSynthesis;
+                            const actions = {
+                                play: root.querySelector('[data-reader-action="play"]'),
+                                pause: root.querySelector('[data-reader-action="pause"]'),
+                                resume: root.querySelector('[data-reader-action="resume"]'),
+                                stop: root.querySelector('[data-reader-action="stop"]')
+                            };
+                            const status = root.querySelector("[data-reader-status]");
+                            const rateInput = root.querySelector("[data-reader-rate]");
+                            const rateLabel = root.querySelector("[data-reader-rate-label]");
+                            let chunks = [];
+                            let chunkIndex = 0;
+                            let stopRequested = false;
+
+                            root.hidden = false;
+
+                            function reportText() {
+                                return [
+                                    document.querySelector("[data-reader-title]"),
+                                    document.querySelector("[data-reader-description]"),
+                                    content
+                                ]
+                                    .map((node) => node ? node.innerText.trim() : "")
+                                    .filter(Boolean)
+                                    .join("\\n");
+                            }
+
+                            function splitText(value) {
+                                const normalized = value.replace(/\\s+/g, " ").trim();
+                                if (!normalized) {
+                                    return [];
+                                }
+                                const sentences = normalized.match(/[^。！？!?；;]+[。！？!?；;]?/g) || [normalized];
+                                const result = [];
+                                let current = "";
+                                sentences.forEach((sentence) => {
+                                    const text = sentence.trim();
+                                    if (!text) {
+                                        return;
+                                    }
+                                    if (text.length > 140) {
+                                        if (current) {
+                                            result.push(current);
+                                            current = "";
+                                        }
+                                        for (let i = 0; i < text.length; i += 120) {
+                                            result.push(text.slice(i, i + 120));
+                                        }
+                                        return;
+                                    }
+                                    const next = current ? current + " " + text : text;
+                                    if (next.length > 160) {
+                                        result.push(current);
+                                        current = text;
+                                    } else {
+                                        current = next;
+                                    }
+                                });
+                                if (current) {
+                                    result.push(current);
+                                }
+                                return result;
+                            }
+
+                            function chineseVoice() {
+                                const voices = synth.getVoices();
+                                return voices.find((voice) => /^zh/i.test(voice.lang))
+                                    || voices.find((voice) => /Chinese|Mandarin|中文|普通话/i.test(voice.name))
+                                    || null;
+                            }
+
+                            function setStatus(message, state) {
+                                status.textContent = message;
+                                const playing = state === "playing";
+                                const paused = state === "paused";
+                                const active = playing || paused;
+                                actions.play.disabled = playing;
+                                actions.pause.disabled = !playing;
+                                actions.resume.disabled = !paused;
+                                actions.stop.disabled = !active;
+                            }
+
+                            function speakCurrentChunk() {
+                                if (stopRequested) {
+                                    return;
+                                }
+                                if (chunkIndex >= chunks.length) {
+                                    setStatus("朗读完成。", "idle");
+                                    return;
+                                }
+                                const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
+                                utterance.lang = "zh-CN";
+                                utterance.rate = Number(rateInput.value) || 1;
+                                const voice = chineseVoice();
+                                if (voice) {
+                                    utterance.voice = voice;
+                                }
+                                utterance.onend = () => {
+                                    if (stopRequested) {
+                                        return;
+                                    }
+                                    chunkIndex += 1;
+                                    speakCurrentChunk();
+                                };
+                                utterance.onerror = () => {
+                                    if (!stopRequested) {
+                                        setStatus("朗读被浏览器中断，请重试。", "idle");
+                                    }
+                                };
+                                setStatus(`正在朗读 ${chunkIndex + 1}/${chunks.length}`, "playing");
+                                synth.speak(utterance);
+                            }
+
+                            function play() {
+                                const nextChunks = splitText(reportText());
+                                if (nextChunks.length === 0) {
+                                    setStatus("没有可朗读的正文。", "idle");
+                                    return;
+                                }
+                                stopRequested = true;
+                                synth.cancel();
+                                chunks = nextChunks;
+                                chunkIndex = 0;
+                                stopRequested = false;
+                                speakCurrentChunk();
+                            }
+
+                            function pause() {
+                                if (synth.speaking && !synth.paused) {
+                                    synth.pause();
+                                    setStatus("已暂停。", "paused");
+                                }
+                            }
+
+                            function resume() {
+                                if (synth.paused) {
+                                    synth.resume();
+                                    setStatus(`正在朗读 ${chunkIndex + 1}/${chunks.length}`, "playing");
+                                }
+                            }
+
+                            function stop() {
+                                stopRequested = true;
+                                synth.cancel();
+                                setStatus("已停止。", "idle");
+                            }
+
+                            actions.play.addEventListener("click", play);
+                            actions.pause.addEventListener("click", pause);
+                            actions.resume.addEventListener("click", resume);
+                            actions.stop.addEventListener("click", stop);
+                            rateInput.addEventListener("input", () => {
+                                rateLabel.textContent = `${Number(rateInput.value).toFixed(1)}x`;
+                            });
+                            window.addEventListener("pagehide", () => synth.cancel());
+                            if ("onvoiceschanged" in synth) {
+                                synth.onvoiceschanged = chineseVoice;
+                            }
+                            setStatus("点击播放朗读报告正文。", "idle");
+                        })();
+                    </script>
                 </body>
                 </html>
                 """.formatted(

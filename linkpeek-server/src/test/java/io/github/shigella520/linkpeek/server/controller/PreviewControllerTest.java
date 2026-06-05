@@ -1308,6 +1308,9 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("og:title")))
                 .andExpect(content().string(containsString("og:image")))
+                .andExpect(content().string(containsString("data-reader")))
+                .andExpect(content().string(containsString("speechSynthesis")))
+                .andExpect(content().string(containsString("点击播放朗读报告正文。")))
                 .andExpect(content().string(containsString("<h2>分享总结报告正文</h2>")))
                 .andExpect(content().string(containsString("<li>链接分享增长</li>")))
                 .andExpect(content().string(containsString("<strong>内容洞察</strong>")));
