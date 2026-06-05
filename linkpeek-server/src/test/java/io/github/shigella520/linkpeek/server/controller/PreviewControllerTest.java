@@ -1313,8 +1313,10 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("data-reader-voice")))
                 .andExpect(content().string(containsString("synth.getVoices()")))
                 .andExpect(content().string(containsString("linkpeek.shareSummary.readerVoice")))
-                .andExpect(content().string(containsString("value=\"1.2\"")))
+                .andExpect(content().string(containsString("<option value=\"1.2\" selected>1.2x</option>")))
+                .andExpect(content().string(containsString("createUtterance")))
                 .andExpect(content().string(containsString("准备播放")))
+                .andExpect(content().string(not(containsString("data-reader-action=\"stop\""))))
                 .andExpect(content().string(containsString("<h2>分享总结报告正文</h2>")))
                 .andExpect(content().string(containsString("<li>链接分享增长</li>")))
                 .andExpect(content().string(containsString("<strong>内容洞察</strong>")));

@@ -89,22 +89,22 @@ public class ShareSummaryPublicController {
                         img { width: 100%%; height: auto; border-radius: 8px; background: #e8ebf0; }
                         .reader { margin: 18px 0; padding: 14px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; box-shadow: 0 10px 24px rgba(23, 32, 51, 0.05); }
                         .reader[hidden] { display: none !important; }
-                        .reader-main { display: grid; grid-template-columns: 40px 32px minmax(120px, 1fr) minmax(180px, 1.2fr); gap: 10px; align-items: center; }
+                        .reader-main { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; align-items: center; }
                         .reader button { border: 0; font: inherit; cursor: pointer; position: relative; }
                         .reader button:disabled { cursor: not-allowed; opacity: 0.42; }
-                        .reader-play { width: 40px; height: 40px; border-radius: 50%%; background: #172033; color: #fff; display: grid; place-items: center; }
+                        .reader-play { width: 38px; height: 38px; border-radius: 8px; background: #172033; color: #fff; display: grid; place-items: center; box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.12); }
                         .reader-play:hover:not(:disabled) { background: #263044; }
-                        .reader-play::before { content: ""; display: block; width: 0; height: 0; margin-left: 3px; border-top: 8px solid transparent; border-bottom: 8px solid transparent; border-left: 12px solid currentColor; }
-                        .reader-play.is-playing::before { width: 13px; height: 15px; margin-left: 0; border: 0; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
-                        .reader-stop { width: 32px; height: 32px; border-radius: 50%%; background: #eef2f7; color: #5d6678; display: grid; place-items: center; }
-                        .reader-stop:hover:not(:disabled) { background: #e2e8f0; color: #172033; }
-                        .reader-stop::before { content: ""; display: block; width: 10px; height: 10px; border-radius: 1px; background: currentColor; }
-                        .reader-status { min-width: 0; margin-top: 10px; color: #5d6678; font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                        .reader-progress { height: 4px; margin-top: 10px; border-radius: 999px; background: #e8edf4; overflow: hidden; }
+                        .reader-play::before { content: ""; display: block; width: 0; height: 0; margin-left: 3px; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 11px solid currentColor; }
+                        .reader-play.is-playing::before { width: 12px; height: 14px; margin-left: 0; border: 0; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+                        .reader-status { min-width: 0; color: #5d6678; font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .reader-progress { height: 4px; margin-top: 8px; border-radius: 999px; background: #e8edf4; overflow: hidden; }
                         .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: #2563eb; transition: width 180ms ease; }
-                        .reader-control { display: grid; gap: 5px; min-width: 0; color: #5d6678; font-size: 12px; }
-                        .reader-control-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-                        .reader input, .reader select { width: 100%%; min-height: 32px; border: 1px solid #d7dde7; border-radius: 6px; background: #f8fafc; color: #172033; font: inherit; }
+                        .reader-settings { display: grid; grid-template-columns: minmax(128px, 0.7fr) minmax(220px, 1.3fr); gap: 14px; margin-top: 14px; align-items: end; }
+                        .reader-control { display: grid; grid-template-columns: minmax(44px, auto) minmax(0, 1fr); gap: 8px; min-width: 0; align-items: center; color: #5d6678; font-size: 13px; }
+                        .reader-control-label { display: block; line-height: 34px; white-space: nowrap; }
+                        .reader-control-value { min-width: 0; display: grid; gap: 4px; }
+                        .reader-control-meta { display: none; }
+                        .reader input, .reader select { width: 100%%; min-height: 34px; border: 1px solid #d7dde7; border-radius: 7px; background: #f8fafc; color: #172033; font: inherit; }
                         .reader input { accent-color: #2563eb; }
                         .reader select { padding: 0 10px; }
                         article { line-height: 1.72; background: #fff; border: 1px solid #dfe3ea; border-radius: 8px; padding: 24px; }
@@ -122,8 +122,8 @@ public class ShareSummaryPublicController {
                             main { padding: 20px 14px 36px; }
                             article { padding: 18px; }
                             .reader { padding: 14px; }
-                            .reader-main { grid-template-columns: 40px 32px minmax(0, 1fr); }
-                            .reader-voice { grid-column: 1 / -1; }
+                            .reader-settings { grid-template-columns: 1fr; }
+                            .reader-control { grid-template-columns: 44px minmax(0, 1fr); }
                         }
                     </style>
                 </head>
@@ -135,27 +135,38 @@ public class ShareSummaryPublicController {
                         <section class="reader" data-reader hidden aria-label="报告朗读">
                             <div class="reader-main">
                                 <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放"></button>
-                                <button class="reader-stop" type="button" data-reader-action="stop" disabled aria-label="停止"></button>
+                                <div>
+                                    <div class="reader-status" data-reader-status>准备播放</div>
+                                    <div class="reader-progress" aria-hidden="true">
+                                        <span class="reader-progress-bar" data-reader-progress></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="reader-settings">
                                 <label class="reader-control">
-                                    <span class="reader-control-label">
-                                        <span>语速</span>
-                                        <span data-reader-rate-label>1.2x</span>
+                                    <span class="reader-control-label">语速</span>
+                                    <span class="reader-control-value">
+                                        <select data-reader-rate>
+                                            <option value="1">1.0x</option>
+                                            <option value="1.1">1.1x</option>
+                                            <option value="1.2" selected>1.2x</option>
+                                            <option value="1.3">1.3x</option>
+                                            <option value="1.4">1.4x</option>
+                                            <option value="1.5">1.5x</option>
+                                            <option value="1.6">1.6x</option>
+                                        </select>
+                                        <span class="reader-control-meta" data-reader-rate-label>1.2x</span>
                                     </span>
-                                    <input type="range" min="0.8" max="1.6" step="0.1" value="1.2" data-reader-rate>
                                 </label>
                                 <label class="reader-control reader-voice">
-                                    <span class="reader-control-label">
-                                        <span>音色</span>
-                                        <span data-reader-voice-hint>系统默认</span>
+                                    <span class="reader-control-label">音色</span>
+                                    <span class="reader-control-value">
+                                        <select data-reader-voice>
+                                            <option value="">系统默认</option>
+                                        </select>
+                                        <span class="reader-control-meta" data-reader-voice-hint>系统默认</span>
                                     </span>
-                                    <select data-reader-voice>
-                                        <option value="">系统默认</option>
-                                    </select>
                                 </label>
-                            </div>
-                            <div class="reader-status" data-reader-status>准备播放</div>
-                            <div class="reader-progress" aria-hidden="true">
-                                <span class="reader-progress-bar" data-reader-progress></span>
                             </div>
                         </section>
                         <article data-reader-content>%s</article>
@@ -170,8 +181,7 @@ public class ShareSummaryPublicController {
 
                             const synth = window.speechSynthesis;
                             const actions = {
-                                toggle: root.querySelector('[data-reader-action="toggle"]'),
-                                stop: root.querySelector('[data-reader-action="stop"]')
+                                toggle: root.querySelector('[data-reader-action="toggle"]')
                             };
                             const status = root.querySelector("[data-reader-status]");
                             const progress = root.querySelector("[data-reader-progress]");
@@ -184,6 +194,7 @@ public class ShareSummaryPublicController {
                             let chunks = [];
                             let chunkIndex = 0;
                             let stopRequested = false;
+                            let pausedByUser = false;
 
                             root.hidden = false;
 
@@ -300,25 +311,15 @@ public class ShareSummaryPublicController {
                             function setStatus(message, state) {
                                 const playing = state === "playing";
                                 const paused = state === "paused";
-                                const active = playing || paused;
                                 const percent = chunks.length ? Math.min(100, Math.round((chunkIndex / chunks.length) * 100)) : 0;
                                 status.textContent = message;
                                 actions.toggle.classList.toggle("is-playing", playing);
                                 actions.toggle.setAttribute("aria-label", playing ? "暂停" : (paused ? "继续" : "播放"));
-                                actions.stop.disabled = !active;
                                 progress.style.width = `${percent}%%`;
                             }
 
-                            function speakCurrentChunk() {
-                                if (stopRequested) {
-                                    return;
-                                }
-                                if (chunkIndex >= chunks.length) {
-                                    setStatus("朗读完成。", "idle");
-                                    progress.style.width = "100%%";
-                                    return;
-                                }
-                                const utterance = new SpeechSynthesisUtterance(chunks[chunkIndex]);
+                            function createUtterance(text, index) {
+                                const utterance = new SpeechSynthesisUtterance(text);
                                 utterance.lang = "zh-CN";
                                 utterance.rate = Number(rateInput.value) || 1.2;
                                 const voice = selectedVoice();
@@ -326,20 +327,29 @@ public class ShareSummaryPublicController {
                                     utterance.voice = voice;
                                     utterance.lang = voice.lang || "zh-CN";
                                 }
+                                utterance.onstart = () => {
+                                    if (stopRequested) {
+                                        return;
+                                    }
+                                    chunkIndex = index;
+                                    setStatus(`播放中 ${progressText()}`, "playing");
+                                };
                                 utterance.onend = () => {
                                     if (stopRequested) {
                                         return;
                                     }
-                                    chunkIndex += 1;
-                                    speakCurrentChunk();
+                                    if (index >= chunks.length - 1) {
+                                        chunkIndex = chunks.length;
+                                        setStatus("播放完成", "idle");
+                                        progress.style.width = "100%%";
+                                    }
                                 };
                                 utterance.onerror = () => {
                                     if (!stopRequested) {
                                         setStatus("朗读被浏览器中断，请重试。", "idle");
                                     }
                                 };
-                                setStatus(`播放中 ${progressText()}`, "playing");
-                                synth.speak(utterance);
+                                return utterance;
                             }
 
                             function play() {
@@ -353,11 +363,16 @@ public class ShareSummaryPublicController {
                                 chunks = nextChunks;
                                 chunkIndex = 0;
                                 stopRequested = false;
-                                speakCurrentChunk();
+                                pausedByUser = false;
+                                chunks.forEach((chunk, index) => {
+                                    synth.speak(createUtterance(chunk, index));
+                                });
+                                setStatus(`播放中 ${progressText()}`, "playing");
                             }
 
                             function pause() {
                                 if (synth.speaking && !synth.paused) {
+                                    pausedByUser = true;
                                     synth.pause();
                                     setStatus("已暂停", "paused");
                                 }
@@ -365,6 +380,7 @@ public class ShareSummaryPublicController {
 
                             function resume() {
                                 if (synth.paused) {
+                                    pausedByUser = false;
                                     synth.resume();
                                     setStatus(`播放中 ${progressText()}`, "playing");
                                 }
@@ -373,6 +389,7 @@ public class ShareSummaryPublicController {
                             function stop() {
                                 stopRequested = true;
                                 synth.cancel();
+                                pausedByUser = false;
                                 setStatus("已停止", "idle");
                                 progress.style.width = "0%%";
                             }
@@ -390,9 +407,12 @@ public class ShareSummaryPublicController {
                             }
 
                             actions.toggle.addEventListener("click", toggle);
-                            actions.stop.addEventListener("click", stop);
-                            rateInput.addEventListener("input", () => {
+                            rateInput.addEventListener("change", () => {
                                 rateLabel.textContent = `${Number(rateInput.value).toFixed(1)}x`;
+                                if (synth.speaking || synth.paused) {
+                                    stop();
+                                    setStatus("语速已切换，请重新播放", "idle");
+                                }
                             });
                             voiceSelect.addEventListener("change", () => {
                                 saveVoice(voiceSelect.value);
@@ -401,7 +421,15 @@ public class ShareSummaryPublicController {
                                     setStatus("音色已切换，请重新播放", "idle");
                                 }
                             });
-                            window.addEventListener("pagehide", () => synth.cancel());
+                            document.addEventListener("visibilitychange", () => {
+                                if (!document.hidden && pausedByUser && synth.paused) {
+                                    setStatus("已暂停", "paused");
+                                }
+                            });
+                            window.addEventListener("beforeunload", () => {
+                                stopRequested = true;
+                                synth.cancel();
+                            });
                             if ("onvoiceschanged" in synth) {
                                 synth.onvoiceschanged = populateVoices;
                             }
