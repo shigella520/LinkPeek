@@ -3,6 +3,7 @@ package io.github.shigella520.linkpeek.server.admin.service;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryLinkRow;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryPeriodType;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryPeriodSelectionMode;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunStatus;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord;
@@ -192,28 +193,30 @@ public class ShareSummaryService {
 
     List<Window> dueWindows(ShareSummaryTaskRecord task) {
         ShareSummaryPeriodType periodType = ShareSummaryPeriodType.fromValue(task.getPeriodType());
+        ShareSummaryPeriodSelectionMode selectionMode = ShareSummaryPeriodSelectionMode.fromValue(task.getPeriodSelectionMode());
         ZoneId zone = clock.getZone();
         LocalDateTime nowDateTime = LocalDateTime.ofInstant(Instant.now(clock), zone);
         LocalTime runTime = parseRunTime(task.getRunTime());
-        LocalDateTime latestDueTrigger = latestDueTrigger(periodType, nowDateTime, runTime, task);
+        LocalDateTime latestDueTrigger = latestDueTrigger(periodType, selectionMode, nowDateTime, runTime, task);
 
         ShareSummaryRunRecord latest = shareSummaryMapper.selectLatestCompletedScheduledRun(task.getId());
         LocalDateTime nextTrigger = latest == null
                 ? latestDueTrigger
-                : nextTriggerAfter(periodType, millisToDateTime(latest.getWindowEnd(), zone), runTime, task);
+                : nextTriggerAfter(periodType, selectionMode, triggerFromWindowEnd(periodType, selectionMode, latest.getWindowEnd(), zone, runTime, task), runTime, task);
         List<Window> windows = new ArrayList<>();
         while (!nextTrigger.isAfter(latestDueTrigger)) {
-            windows.add(windowForTrigger(periodType, nextTrigger, zone));
+            windows.add(windowForTrigger(periodType, selectionMode, nextTrigger, zone));
             if (windows.size() >= CATCH_UP_LIMIT) {
                 break;
             }
-            nextTrigger = nextTriggerAfter(periodType, nextTrigger, runTime, task);
+            nextTrigger = nextTriggerAfter(periodType, selectionMode, nextTrigger, runTime, task);
         }
         return windows;
     }
 
     private LocalDateTime latestDueTrigger(
             ShareSummaryPeriodType periodType,
+            ShareSummaryPeriodSelectionMode selectionMode,
             LocalDateTime nowDateTime,
             LocalTime runTime,
             ShareSummaryTaskRecord task
@@ -221,7 +224,7 @@ public class ShareSummaryService {
         return switch (periodType) {
             case DAILY -> latestDailyTrigger(nowDateTime, runTime);
             case WEEKLY -> latestWeeklyTrigger(nowDateTime, runTime, task.getDayOfWeek());
-            case MONTHLY -> latestMonthlyTrigger(nowDateTime, runTime);
+            case MONTHLY -> latestMonthlyTrigger(selectionMode, nowDateTime, runTime);
         };
     }
 
@@ -237,17 +240,22 @@ public class ShareSummaryService {
         return trigger.isAfter(nowDateTime) ? trigger.minusWeeks(1) : trigger;
     }
 
-    private LocalDateTime latestMonthlyTrigger(LocalDateTime nowDateTime, LocalTime runTime) {
+    private LocalDateTime latestMonthlyTrigger(
+            ShareSummaryPeriodSelectionMode selectionMode,
+            LocalDateTime nowDateTime,
+            LocalTime runTime
+    ) {
         YearMonth currentMonth = YearMonth.from(nowDateTime);
-        LocalDateTime trigger = currentMonth.atEndOfMonth().atTime(runTime);
+        LocalDateTime trigger = monthlyTrigger(selectionMode, currentMonth, runTime);
         if (trigger.isAfter(nowDateTime)) {
-            trigger = currentMonth.minusMonths(1).atEndOfMonth().atTime(runTime);
+            trigger = monthlyTrigger(selectionMode, currentMonth.minusMonths(1), runTime);
         }
         return trigger;
     }
 
     private LocalDateTime nextTriggerAfter(
             ShareSummaryPeriodType periodType,
+            ShareSummaryPeriodSelectionMode selectionMode,
             LocalDateTime after,
             LocalTime runTime,
             ShareSummaryTaskRecord task
@@ -255,7 +263,28 @@ public class ShareSummaryService {
         return switch (periodType) {
             case DAILY -> nextDailyTriggerAfter(after, runTime);
             case WEEKLY -> nextWeeklyTriggerAfter(after, runTime, task.getDayOfWeek());
-            case MONTHLY -> nextMonthlyTriggerAfter(after, runTime);
+            case MONTHLY -> nextMonthlyTriggerAfter(selectionMode, after, runTime);
+        };
+    }
+
+    private LocalDateTime triggerFromWindowEnd(
+            ShareSummaryPeriodType periodType,
+            ShareSummaryPeriodSelectionMode selectionMode,
+            long windowEnd,
+            ZoneId zone,
+            LocalTime runTime,
+            ShareSummaryTaskRecord task
+    ) {
+        LocalDateTime windowEndDateTime = millisToDateTime(windowEnd, zone);
+        if (selectionMode == ShareSummaryPeriodSelectionMode.CURRENT) {
+            return windowEndDateTime;
+        }
+        return switch (periodType) {
+            case DAILY -> windowEndDateTime.toLocalDate().atTime(runTime);
+            case WEEKLY -> windowEndDateTime.toLocalDate()
+                    .with(TemporalAdjusters.nextOrSame(DayOfWeek.of(task.getDayOfWeek())))
+                    .atTime(runTime);
+            case MONTHLY -> YearMonth.from(windowEndDateTime).atDay(1).atTime(runTime);
         };
     }
 
@@ -271,25 +300,75 @@ public class ShareSummaryService {
         return trigger.isAfter(after) ? trigger : trigger.plusWeeks(1);
     }
 
-    private LocalDateTime nextMonthlyTriggerAfter(LocalDateTime after, LocalTime runTime) {
+    private LocalDateTime nextMonthlyTriggerAfter(
+            ShareSummaryPeriodSelectionMode selectionMode,
+            LocalDateTime after,
+            LocalTime runTime
+    ) {
         YearMonth month = YearMonth.from(after);
-        LocalDateTime trigger = month.atEndOfMonth().atTime(runTime);
+        LocalDateTime trigger = monthlyTrigger(selectionMode, month, runTime);
         if (!trigger.isAfter(after)) {
-            trigger = month.plusMonths(1).atEndOfMonth().atTime(runTime);
+            trigger = monthlyTrigger(selectionMode, month.plusMonths(1), runTime);
         }
         return trigger;
     }
 
-    private Window windowForTrigger(ShareSummaryPeriodType periodType, LocalDateTime trigger, ZoneId zone) {
-        LocalDate windowStart = switch (periodType) {
+    private LocalDateTime monthlyTrigger(
+            ShareSummaryPeriodSelectionMode selectionMode,
+            YearMonth month,
+            LocalTime runTime
+    ) {
+        return switch (selectionMode) {
+            case CURRENT -> month.atEndOfMonth().atTime(runTime);
+            case PREVIOUS -> month.atDay(1).atTime(runTime);
+        };
+    }
+
+    private Window windowForTrigger(
+            ShareSummaryPeriodType periodType,
+            ShareSummaryPeriodSelectionMode selectionMode,
+            LocalDateTime trigger,
+            ZoneId zone
+    ) {
+        LocalDate windowStart = switch (selectionMode) {
+            case CURRENT -> currentPeriodWindowStart(periodType, trigger);
+            case PREVIOUS -> previousPeriodWindowStart(periodType, trigger);
+        };
+        LocalDateTime windowEnd = switch (selectionMode) {
+            case CURRENT -> trigger;
+            case PREVIOUS -> previousPeriodWindowEnd(periodType, trigger);
+        };
+        return new Window(
+                windowStart.atStartOfDay(zone).toInstant().toEpochMilli(),
+                windowEnd.atZone(zone).toInstant().toEpochMilli()
+        );
+    }
+
+    private LocalDate currentPeriodWindowStart(ShareSummaryPeriodType periodType, LocalDateTime trigger) {
+        return switch (periodType) {
             case DAILY -> trigger.toLocalDate();
             case WEEKLY -> trigger.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
             case MONTHLY -> trigger.toLocalDate().withDayOfMonth(1);
         };
-        return new Window(
-                windowStart.atStartOfDay(zone).toInstant().toEpochMilli(),
-                trigger.atZone(zone).toInstant().toEpochMilli()
-        );
+    }
+
+    private LocalDate previousPeriodWindowStart(ShareSummaryPeriodType periodType, LocalDateTime trigger) {
+        return switch (periodType) {
+            case DAILY -> trigger.toLocalDate().minusDays(1);
+            case WEEKLY -> trigger.toLocalDate()
+                    .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                    .minusWeeks(1);
+            case MONTHLY -> YearMonth.from(trigger).minusMonths(1).atDay(1);
+        };
+    }
+
+    private LocalDateTime previousPeriodWindowEnd(ShareSummaryPeriodType periodType, LocalDateTime trigger) {
+        LocalDate endDate = switch (periodType) {
+            case DAILY -> trigger.toLocalDate();
+            case WEEKLY -> trigger.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            case MONTHLY -> YearMonth.from(trigger).atDay(1);
+        };
+        return endDate.atStartOfDay();
     }
 
     private LocalDateTime millisToDateTime(long millis, ZoneId zone) {
@@ -463,6 +542,7 @@ public class ShareSummaryService {
         task.setName(required(request.name(), "Task name"));
         task.setEnabled(request.enabled() == null ? existing == null || existing.isEnabled() : request.enabled());
         task.setPeriodType(periodType.name());
+        task.setPeriodSelectionMode(ShareSummaryPeriodSelectionMode.fromValue(request.periodSelectionMode()).name());
         task.setRunTime(normalizeRunTime(request.runTime()));
         task.setPrompt(required(request.prompt(), "Prompt"));
         task.setMaxLinks(normalizeMaxLinks(request.maxLinks()));
@@ -473,9 +553,10 @@ public class ShareSummaryService {
 
     private Window manualWindow(ShareSummaryTaskRecord task) {
         ShareSummaryPeriodType periodType = ShareSummaryPeriodType.fromValue(task.getPeriodType());
+        ShareSummaryPeriodSelectionMode selectionMode = ShareSummaryPeriodSelectionMode.fromValue(task.getPeriodSelectionMode());
         ZoneId zone = clock.getZone();
         LocalDateTime nowDateTime = LocalDateTime.ofInstant(Instant.now(clock), zone);
-        return windowForTrigger(periodType, nowDateTime, zone);
+        return windowForTrigger(periodType, selectionMode, nowDateTime, zone);
     }
 
     private ShareSummaryTaskRecord existingTask(long taskId) {
@@ -583,6 +664,7 @@ public class ShareSummaryService {
             String name,
             Boolean enabled,
             String periodType,
+            String periodSelectionMode,
             String runTime,
             Integer dayOfWeek,
             String prompt,

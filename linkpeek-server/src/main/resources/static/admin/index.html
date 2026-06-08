@@ -626,59 +626,83 @@
             <h3 id="share-summary-task-modal-title">新建分享总结任务</h3>
             <button type="button" class="secondary" id="share-summary-task-cancel-button">取消</button>
         </div>
-        <form id="share-summary-task-form" class="grid-form">
-            <input id="share-summary-task-id" type="hidden">
-            <label>
-                <span>任务名称</span>
-                <input id="share-summary-task-name" type="text" autocomplete="off" required>
-            </label>
-            <label>
-                <span>周期</span>
-                <select id="share-summary-task-period" required>
-                    <option value="DAILY">每日</option>
-                    <option value="WEEKLY">每周</option>
-                    <option value="MONTHLY">每月</option>
-                </select>
-            </label>
-            <label>
-                <span>执行时间</span>
-                <input id="share-summary-task-run-time" type="time" value="09:00" required>
-            </label>
-            <label id="share-summary-task-weekday-field">
-                <span>周几</span>
-                <select id="share-summary-task-day-of-week">
-                    <option value="1">周一</option>
-                    <option value="2">周二</option>
-                    <option value="3">周三</option>
-                    <option value="4">周四</option>
-                    <option value="5">周五</option>
-                    <option value="6">周六</option>
-                    <option value="7">周日</option>
-                </select>
-            </label>
-            <label id="share-summary-task-monthly-field">
-                <span>每月触发日</span>
-                <input type="text" value="月末" disabled>
-            </label>
-            <label>
-                <span>最大链接数</span>
-                <input id="share-summary-task-max-links" type="number" min="1" max="2000" value="100" required>
-            </label>
-            <label>
-                <span>最小链接数</span>
-                <input id="share-summary-task-min-links" type="number" min="1" max="2000" value="1" required>
-            </label>
-            <label class="checkbox-row">
-                <input id="share-summary-task-enabled" type="checkbox">
-                <span>启用定时执行</span>
-            </label>
-            <label class="wide">
-                <span>分享总结提示词</span>
-                <textarea id="share-summary-task-prompt" rows="7" required></textarea>
-            </label>
-            <div class="modal-actions wide">
-                <button type="submit">保存任务</button>
+        <form id="share-summary-task-form" class="share-summary-task-form">
+            <div class="grid-form share-summary-task-fields">
+                <input id="share-summary-task-id" type="hidden">
+                <label>
+                    <span>任务名称</span>
+                    <input id="share-summary-task-name" type="text" autocomplete="off" required>
+                </label>
+                <label>
+                    <span>周期</span>
+                    <select id="share-summary-task-period" required>
+                        <option value="DAILY">每日</option>
+                        <option value="WEEKLY">每周</option>
+                        <option value="MONTHLY">每月</option>
+                    </select>
+                </label>
+                <label>
+                    <span>周期选择模式</span>
+                    <select id="share-summary-task-period-selection-mode" required>
+                        <option value="CURRENT">本周期</option>
+                        <option value="PREVIOUS">上周期</option>
+                    </select>
+                </label>
+                <label>
+                    <span>执行时间</span>
+                    <input id="share-summary-task-run-time" type="time" value="09:00" required>
+                </label>
+                <label id="share-summary-task-weekday-field">
+                    <span>周几</span>
+                    <select id="share-summary-task-day-of-week">
+                        <option value="1">周一</option>
+                        <option value="2">周二</option>
+                        <option value="3">周三</option>
+                        <option value="4">周四</option>
+                        <option value="5">周五</option>
+                        <option value="6">周六</option>
+                        <option value="7">周日</option>
+                    </select>
+                </label>
+                <label id="share-summary-task-monthly-field">
+                    <span>每月触发日</span>
+                    <input id="share-summary-task-monthly-trigger-label" type="text" value="月末" disabled>
+                </label>
+                <label>
+                    <span>最大链接数</span>
+                    <input id="share-summary-task-max-links" type="number" min="1" max="2000" value="100" required>
+                </label>
+                <label>
+                    <span>最小链接数</span>
+                    <input id="share-summary-task-min-links" type="number" min="1" max="2000" value="1" required>
+                </label>
+                <label class="checkbox-row">
+                    <input id="share-summary-task-enabled" type="checkbox">
+                    <span>启用定时执行</span>
+                </label>
+                <label class="wide">
+                    <span>分享总结提示词</span>
+                    <textarea id="share-summary-task-prompt" rows="7" required></textarea>
+                </label>
+                <div class="modal-actions wide">
+                    <button type="submit">保存任务</button>
+                </div>
             </div>
+            <aside class="share-summary-window-help" aria-label="时间窗口说明">
+                <div>
+                    <p>时间窗口</p>
+                    <dl>
+                        <div>
+                            <dt>自动</dt>
+                            <dd id="share-summary-window-auto-description"></dd>
+                        </div>
+                        <div>
+                            <dt>手动</dt>
+                            <dd id="share-summary-window-manual-description"></dd>
+                        </div>
+                    </dl>
+                </div>
+            </aside>
         </form>
         <p id="share-summary-task-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
     </section>

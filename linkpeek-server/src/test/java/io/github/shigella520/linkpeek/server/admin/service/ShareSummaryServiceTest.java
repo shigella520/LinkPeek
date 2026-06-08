@@ -87,6 +87,39 @@ class ShareSummaryServiceTest {
     }
 
     @Test
+    void previousDailyDueWindowUsesCompletePreviousDay() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        ShareSummaryService service = service(mapper, "2026-05-30T02:00:00Z");
+
+        List<ShareSummaryService.Window> windows = service.dueWindows(previousTask("DAILY", "09:00", null));
+
+        assertEquals(1, windows.size());
+        assertWindow(windows.get(0), "2026-05-29T00:00", "2026-05-30T00:00");
+    }
+
+    @Test
+    void previousWeeklyDueWindowUsesCompletePreviousWeek() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        ShareSummaryService service = service(mapper, "2026-06-03T02:00:00Z");
+
+        List<ShareSummaryService.Window> windows = service.dueWindows(previousTask("WEEKLY", "09:00", 3));
+
+        assertEquals(1, windows.size());
+        assertWindow(windows.get(0), "2026-05-25T00:00", "2026-06-01T00:00");
+    }
+
+    @Test
+    void previousMonthlyDueWindowUsesCompletePreviousMonthAndMonthStartTrigger() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        ShareSummaryService service = service(mapper, "2026-06-01T02:00:00Z");
+
+        List<ShareSummaryService.Window> windows = service.dueWindows(previousTask("MONTHLY", "09:00", null));
+
+        assertEquals(1, windows.size());
+        assertWindow(windows.get(0), "2026-05-01T00:00", "2026-06-01T00:00");
+    }
+
+    @Test
     void dueWindowsCatchUpFromLatestCompletedScheduledRunAndStopsAtSevenWindows() {
         FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
         ShareSummaryRunRecord latest = new ShareSummaryRunRecord();
@@ -102,6 +135,21 @@ class ShareSummaryServiceTest {
     }
 
     @Test
+    void previousDailyCatchUpContinuesAfterCompletedPreviousPeriodWindow() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        ShareSummaryRunRecord latest = new ShareSummaryRunRecord();
+        latest.setWindowEnd(toMillis("2026-05-20T00:00"));
+        mapper.latestCompletedScheduledRun = latest;
+        ShareSummaryService service = service(mapper, "2026-05-22T02:00:00Z");
+
+        List<ShareSummaryService.Window> windows = service.dueWindows(previousTask("DAILY", "09:00", null));
+
+        assertEquals(2, windows.size());
+        assertWindow(windows.get(0), "2026-05-20T00:00", "2026-05-21T00:00");
+        assertWindow(windows.get(1), "2026-05-21T00:00", "2026-05-22T00:00");
+    }
+
+    @Test
     void monthlyTaskDoesNotRequireDayOfMonth() {
         FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
         ShareSummaryService service = service(mapper, "2026-05-30T02:00:00Z");
@@ -110,6 +158,7 @@ class ShareSummaryServiceTest {
                 "月总结",
                 true,
                 "MONTHLY",
+                "PREVIOUS",
                 "09:00",
                 null,
                 "总结",
@@ -118,6 +167,7 @@ class ShareSummaryServiceTest {
         ));
 
         assertEquals("MONTHLY", task.getPeriodType());
+        assertEquals("PREVIOUS", task.getPeriodSelectionMode());
         assertNull(task.getDayOfWeek());
     }
 
@@ -131,6 +181,18 @@ class ShareSummaryServiceTest {
 
         assertEquals(toMillis("2026-06-01T00:00"), run.getWindowStart());
         assertEquals(toMillis("2026-06-04T10:00"), run.getWindowEnd());
+    }
+
+    @Test
+    void previousManualWindowUsesCompletePreviousPeriod() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        mapper.task = previousTask("MONTHLY", "09:00", null);
+        ShareSummaryService service = service(mapper, "2026-06-04T02:00:00Z");
+
+        ShareSummaryRunRecord run = service.runTask(1L);
+
+        assertEquals(toMillis("2026-05-01T00:00"), run.getWindowStart());
+        assertEquals(toMillis("2026-06-01T00:00"), run.getWindowEnd());
     }
 
     @Test
@@ -260,11 +322,18 @@ class ShareSummaryServiceTest {
         task.setName("summary");
         task.setEnabled(true);
         task.setPeriodType(periodType);
+        task.setPeriodSelectionMode("CURRENT");
         task.setRunTime(runTime);
         task.setDayOfWeek(dayOfWeek);
         task.setPrompt("prompt");
         task.setMaxLinks(100);
         task.setMinLinks(1);
+        return task;
+    }
+
+    private ShareSummaryTaskRecord previousTask(String periodType, String runTime, Integer dayOfWeek) {
+        ShareSummaryTaskRecord task = task(periodType, runTime, dayOfWeek);
+        task.setPeriodSelectionMode("PREVIOUS");
         return task;
     }
 

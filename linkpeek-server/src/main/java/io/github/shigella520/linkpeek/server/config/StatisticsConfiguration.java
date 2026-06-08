@@ -85,6 +85,7 @@ public class StatisticsConfiguration {
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted_at", "INTEGER");
             ensureColumn(jdbcTemplate, "share_summary_task", "min_links", "INTEGER NOT NULL DEFAULT 1");
+            ensureColumn(jdbcTemplate, "share_summary_task", "period_selection_mode", "TEXT NOT NULL DEFAULT 'CURRENT'");
             ensureTable(jdbcTemplate, "share_summary_image_config", """
                     CREATE TABLE IF NOT EXISTS share_summary_image_config (
                         id INTEGER PRIMARY KEY,
@@ -229,6 +230,7 @@ public class StatisticsConfiguration {
                         name TEXT NOT NULL,
                         enabled INTEGER NOT NULL,
                         period_type TEXT NOT NULL,
+                        period_selection_mode TEXT NOT NULL DEFAULT 'CURRENT',
                         run_time TEXT NOT NULL,
                         day_of_week INTEGER,
                         prompt TEXT NOT NULL,

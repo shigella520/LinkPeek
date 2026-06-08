@@ -5,6 +5,7 @@ public class ShareSummaryTaskRecord {
     private String name;
     private boolean enabled;
     private String periodType;
+    private String periodSelectionMode;
     private String runTime;
     private Integer dayOfWeek;
     private String prompt;
@@ -45,6 +46,14 @@ public class ShareSummaryTaskRecord {
 
     public void setPeriodType(String periodType) {
         this.periodType = periodType;
+    }
+
+    public String getPeriodSelectionMode() {
+        return periodSelectionMode;
+    }
+
+    public void setPeriodSelectionMode(String periodSelectionMode) {
+        this.periodSelectionMode = periodSelectionMode;
     }
 
     public String getRunTime() {

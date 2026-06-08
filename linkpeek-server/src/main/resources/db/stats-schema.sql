@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS share_summary_task (
     name TEXT NOT NULL,
     enabled INTEGER NOT NULL,
     period_type TEXT NOT NULL,
+    period_selection_mode TEXT NOT NULL DEFAULT 'CURRENT',
     run_time TEXT NOT NULL,
     day_of_week INTEGER,
     prompt TEXT NOT NULL,

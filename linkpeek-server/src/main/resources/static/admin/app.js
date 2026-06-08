@@ -450,6 +450,9 @@
         document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
         document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
         document.getElementById("share-summary-task-period").addEventListener("change", updateShareSummaryPeriodFields);
+        document.getElementById("share-summary-task-period-selection-mode").addEventListener("change", updateShareSummaryPeriodFields);
+        document.getElementById("share-summary-task-run-time").addEventListener("input", updateShareSummaryPeriodFields);
+        document.getElementById("share-summary-task-day-of-week").addEventListener("change", updateShareSummaryPeriodFields);
         document.getElementById("share-summary-task-form").addEventListener("submit", saveShareSummaryTask);
         document.getElementById("share-summary-refresh-runs").addEventListener("click", async () => {
             await loadShareSummaryRuns();
@@ -1060,7 +1063,7 @@
                     <strong>${escapeHtml(task.name)}</strong>
                     <div class="prompt-preview">${escapeHtml(promptPreview(task.prompt))}</div>
                 </td>
-                    <td class="nowrap">${escapeHtml(periodLabel(task.periodType))}</td>
+                    <td class="nowrap">${escapeHtml(periodLabel(task.periodType))}<div class="keyline">${escapeHtml(periodSelectionModeLabel(task.periodSelectionMode))}</div></td>
                     <td class="nowrap">${escapeHtml(scheduleLabel(task))}</td>
                     <td class="nowrap">${escapeHtml(task.minLinks || 1)} / ${escapeHtml(task.maxLinks || 100)}</td>
                 <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
@@ -1128,7 +1131,7 @@
         container.innerHTML = state.shareSummaryTasks.map((task) => `
             <label class="checkbox-row">
                 <input type="checkbox" value="${escapeAttribute(task.id)}" data-notification-filter-share-task>
-                <span>${escapeHtml(task.name)}${task.enabled ? "" : "（停用）"}<span class="keyline">${escapeHtml(periodLabel(task.periodType))} · ${escapeHtml(scheduleLabel(task))}</span></span>
+                <span>${escapeHtml(task.name)}${task.enabled ? "" : "（停用）"}<span class="keyline">${escapeHtml(periodLabel(task.periodType))} · ${escapeHtml(periodSelectionModeLabel(task.periodSelectionMode))} · ${escapeHtml(scheduleLabel(task))}</span></span>
             </label>
         `).join("") || `<p class="muted">暂无分享总结任务</p>`;
         container.querySelectorAll("[data-notification-filter-share-task]").forEach((input) => {
@@ -1929,14 +1932,51 @@
         return "每日";
     }
 
+    function periodSelectionModeLabel(value) {
+        return value === "PREVIOUS" ? "上周期" : "本周期";
+    }
+
     function scheduleLabel(task) {
         if (task.periodType === "WEEKLY") {
             return `${weekdayLabel(task.dayOfWeek)} ${task.runTime || ""}`;
         }
         if (task.periodType === "MONTHLY") {
-            return `月末 ${task.runTime || ""}`;
+            return `${task.periodSelectionMode === "PREVIOUS" ? "月初" : "月末"} ${task.runTime || ""}`;
         }
         return task.runTime || "";
+    }
+
+    function autoWindowDescription(task) {
+        const runTime = task.runTime || "09:00";
+        if (task.periodSelectionMode === "PREVIOUS") {
+            if (task.periodType === "WEEKLY") {
+                return "上周一 00:00 到本周一 00:00";
+            }
+            if (task.periodType === "MONTHLY") {
+                return "上月 1 日 00:00 到本月 1 日 00:00";
+            }
+            return "昨天 00:00 到今天 00:00";
+        }
+        if (task.periodType === "WEEKLY") {
+            return `本周一 00:00 到${weekdayLabel(task.dayOfWeek)} ${runTime}`;
+        }
+        if (task.periodType === "MONTHLY") {
+            return `本月 1 日 00:00 到月末 ${runTime}`;
+        }
+        return `当天 00:00 到 ${runTime}`;
+    }
+
+    function manualWindowDescription(task) {
+        if (task.periodSelectionMode === "PREVIOUS") {
+            return autoWindowDescription(task);
+        }
+        if (task.periodType === "WEEKLY") {
+            return "本周一 00:00 到当前时间";
+        }
+        if (task.periodType === "MONTHLY") {
+            return "本月 1 日 00:00 到当前时间";
+        }
+        return "当天 00:00 到当前时间";
     }
 
     function weekdayLabel(value) {
@@ -2194,6 +2234,7 @@
             name: document.getElementById("share-summary-task-name").value.trim(),
             enabled: document.getElementById("share-summary-task-enabled").checked,
             periodType,
+            periodSelectionMode: document.getElementById("share-summary-task-period-selection-mode").value,
             runTime: document.getElementById("share-summary-task-run-time").value,
             dayOfWeek: periodType === "WEEKLY" ? Number(document.getElementById("share-summary-task-day-of-week").value) : null,
             prompt: document.getElementById("share-summary-task-prompt").value.trim(),
@@ -2359,6 +2400,7 @@
         document.getElementById("share-summary-task-id").value = task.id || "";
         document.getElementById("share-summary-task-name").value = task.name || "";
         document.getElementById("share-summary-task-period").value = task.periodType || "DAILY";
+        document.getElementById("share-summary-task-period-selection-mode").value = task.periodSelectionMode || "CURRENT";
         document.getElementById("share-summary-task-run-time").value = task.runTime || "09:00";
         document.getElementById("share-summary-task-day-of-week").value = task.dayOfWeek || 1;
         document.getElementById("share-summary-task-max-links").value = task.maxLinks || 100;
@@ -2383,6 +2425,7 @@
         document.getElementById("share-summary-task-form").reset();
         document.getElementById("share-summary-task-id").value = "";
         document.getElementById("share-summary-task-period").value = "DAILY";
+        document.getElementById("share-summary-task-period-selection-mode").value = "CURRENT";
         document.getElementById("share-summary-task-run-time").value = "09:00";
         document.getElementById("share-summary-task-day-of-week").value = "1";
         document.getElementById("share-summary-task-max-links").value = "100";
@@ -2392,8 +2435,22 @@
 
     function updateShareSummaryPeriodFields() {
         const periodType = document.getElementById("share-summary-task-period").value;
+        const periodSelectionMode = document.getElementById("share-summary-task-period-selection-mode").value;
         document.getElementById("share-summary-task-weekday-field").hidden = periodType !== "WEEKLY";
         document.getElementById("share-summary-task-monthly-field").hidden = periodType !== "MONTHLY";
+        document.getElementById("share-summary-task-monthly-trigger-label").value = periodSelectionMode === "PREVIOUS" ? "月初" : "月末";
+        renderShareSummaryWindowHelp();
+    }
+
+    function renderShareSummaryWindowHelp() {
+        const task = {
+            periodType: document.getElementById("share-summary-task-period").value,
+            periodSelectionMode: document.getElementById("share-summary-task-period-selection-mode").value,
+            runTime: document.getElementById("share-summary-task-run-time").value || "09:00",
+            dayOfWeek: Number(document.getElementById("share-summary-task-day-of-week").value || 1)
+        };
+        document.getElementById("share-summary-window-auto-description").textContent = autoWindowDescription(task);
+        document.getElementById("share-summary-window-manual-description").textContent = manualWindowDescription(task);
     }
 
     function openNotificationChannelModalForCreate() {

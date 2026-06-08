@@ -1020,13 +1020,14 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2000,"minLinks":2000}
+                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","periodSelectionMode":"CURRENT","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2000,"minLinks":2000}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.name").value("每日总结"))
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.periodType").value("DAILY"))
+                .andExpect(jsonPath("$.periodSelectionMode").value("CURRENT"))
                 .andExpect(jsonPath("$.runTime").value("09:00"))
                 .andExpect(jsonPath("$.dayOfWeek").doesNotExist())
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist())
@@ -1039,10 +1040,11 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"周总结","enabled":true,"periodType":"WEEKLY","runTime":"10:30","dayOfWeek":3,"prompt":"按主题聚合","maxLinks":2,"minLinks":1}
+                                {"name":"周总结","enabled":true,"periodType":"WEEKLY","periodSelectionMode":"PREVIOUS","runTime":"10:30","dayOfWeek":3,"prompt":"按主题聚合","maxLinks":2,"minLinks":1}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.periodType").value("WEEKLY"))
+                .andExpect(jsonPath("$.periodSelectionMode").value("PREVIOUS"))
                 .andExpect(jsonPath("$.dayOfWeek").value(3))
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist());
 
