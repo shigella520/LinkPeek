@@ -1132,6 +1132,10 @@ fieldset {
     border-radius: 8px;
 }
 
+.share-summary-task-shell {
+    overflow: visible;
+}
+
 table {
     width: 100%;
     border-collapse: collapse;
@@ -1594,6 +1598,118 @@ td .share-summary-task-actions {
     color: var(--muted);
     font-family: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", monospace;
     font-size: 12px;
+}
+
+.share-summary-period-cell {
+    position: relative;
+}
+
+.period-window-trigger {
+    position: relative;
+    display: inline-block;
+    min-width: 64px;
+    cursor: help;
+    outline: none;
+}
+
+.period-window-trigger:focus-visible {
+    border-radius: 6px;
+    box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.14);
+}
+
+.period-window-popover {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 10px);
+    z-index: 30;
+    width: min(360px, calc(100vw - 48px));
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(-4px);
+    transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.period-window-trigger:hover .period-window-popover,
+.period-window-trigger:focus-visible .period-window-popover,
+.period-window-trigger:focus .period-window-popover {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+}
+
+.period-window-card {
+    display: grid;
+    gap: 14px;
+    padding: 18px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #f8fafc;
+    box-shadow: 0 18px 50px rgba(17, 24, 39, 0.18);
+}
+
+.period-window-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.period-window-card-head p {
+    margin: 0;
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 750;
+}
+
+.period-window-card-head span,
+.period-window-card-summary span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 26px;
+    padding: 0 10px;
+    border: 1px solid rgba(10, 132, 255, 0.2);
+    border-radius: 999px;
+    background: rgba(10, 132, 255, 0.08);
+    color: #075fb8;
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.period-window-card dl {
+    display: grid;
+    gap: 12px;
+    margin: 0;
+}
+
+.period-window-card dl > div {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid rgba(223, 227, 232, 0.9);
+    border-radius: 8px;
+    background: var(--surface);
+}
+
+.period-window-card dt {
+    margin-bottom: 6px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.period-window-card dd {
+    margin: 0;
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 1.45;
+    white-space: normal;
+}
+
+.period-window-card-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .checkbox-list {
@@ -2069,6 +2185,14 @@ td button.danger {
     .share-summary-run-table td {
         border-bottom: 0;
         padding: 6px 0;
+    }
+
+    .period-window-trigger {
+        cursor: default;
+    }
+
+    .period-window-popover {
+        display: none;
     }
 
     .preview-event-table td:first-child,

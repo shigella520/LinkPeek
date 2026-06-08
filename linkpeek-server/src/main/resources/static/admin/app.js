@@ -1063,7 +1063,13 @@
                     <strong>${escapeHtml(task.name)}</strong>
                     <div class="prompt-preview">${escapeHtml(promptPreview(task.prompt))}</div>
                 </td>
-                    <td class="nowrap">${escapeHtml(periodLabel(task.periodType))}<div class="keyline">${escapeHtml(periodSelectionModeLabel(task.periodSelectionMode))}</div></td>
+                    <td class="nowrap share-summary-period-cell">
+                        <div class="period-window-trigger" tabindex="0" aria-label="查看时间窗口">
+                            <span>${escapeHtml(periodLabel(task.periodType))}</span>
+                            <div class="keyline">${escapeHtml(periodSelectionModeLabel(task.periodSelectionMode))}</div>
+                            ${renderShareSummaryWindowPopover(task)}
+                        </div>
+                    </td>
                     <td class="nowrap">${escapeHtml(scheduleLabel(task))}</td>
                     <td class="nowrap">${escapeHtml(task.minLinks || 1)} / ${escapeHtml(task.maxLinks || 100)}</td>
                 <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
@@ -1107,6 +1113,33 @@
                 }
             });
         });
+    }
+
+    function renderShareSummaryWindowPopover(task) {
+        return `
+            <div class="period-window-popover" role="tooltip">
+                <div class="period-window-card">
+                    <div class="period-window-card-head">
+                        <p>时间窗口</p>
+                        <span>${escapeHtml(periodSelectionModeLabel(task.periodSelectionMode))}</span>
+                    </div>
+                    <dl>
+                        <div>
+                            <dt>自动执行</dt>
+                            <dd>${escapeHtml(autoWindowDescription(task))}</dd>
+                        </div>
+                        <div>
+                            <dt>手动执行</dt>
+                            <dd>${escapeHtml(manualWindowDescription(task))}</dd>
+                        </div>
+                    </dl>
+                    <div class="period-window-card-summary">
+                        <span>${escapeHtml(periodLabel(task.periodType))}</span>
+                        <span>${escapeHtml(scheduleLabel(task))}</span>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
     function renderShareSummaryTaskFilterOptions() {
