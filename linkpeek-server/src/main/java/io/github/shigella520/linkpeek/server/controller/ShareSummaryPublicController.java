@@ -95,7 +95,7 @@ public class ShareSummaryPublicController {
                         .reader-play { width: 38px; height: 38px; border-radius: 8px; background: #172033; color: #fff; display: grid; place-items: center; box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.12); }
                         .reader-play:hover:not(:disabled) { background: #263044; }
                         .reader-play::before { content: ""; display: block; width: 0; height: 0; margin-left: 3px; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 11px solid currentColor; }
-                        .reader-play.is-playing::before { width: 12px; height: 14px; margin-left: 0; border: 0; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+                        .reader-play.is-playing::before { width: 4px; height: 14px; margin-left: 0; border: 0; border-radius: 2px; background: currentColor; box-shadow: 8px 0 0 currentColor; transform: translateX(-4px); }
                         .reader-status { min-width: 0; color: #5d6678; font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                         .reader-progress { height: 4px; margin-top: 8px; border-radius: 999px; background: #e8edf4; overflow: hidden; }
                         .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: #2563eb; transition: width 180ms ease; }
@@ -148,14 +148,10 @@ public class ShareSummaryPublicController {
                                     <span class="reader-control-value">
                                         <select data-reader-rate>
                                             <option value="1">1.0x</option>
-                                            <option value="1.1">1.1x</option>
-                                            <option value="1.2" selected>1.2x</option>
-                                            <option value="1.3">1.3x</option>
-                                            <option value="1.4">1.4x</option>
-                                            <option value="1.5">1.5x</option>
-                                            <option value="1.6">1.6x</option>
+                                            <option value="1.5" selected>1.5x</option>
+                                            <option value="2">2.0x</option>
                                         </select>
-                                        <span class="reader-control-meta" data-reader-rate-label>1.2x</span>
+                                        <span class="reader-control-meta" data-reader-rate-label>1.5x</span>
                                     </span>
                                 </label>
                                 <label class="reader-control reader-voice">
@@ -321,7 +317,7 @@ public class ShareSummaryPublicController {
                             function createUtterance(text, index) {
                                 const utterance = new SpeechSynthesisUtterance(text);
                                 utterance.lang = "zh-CN";
-                                utterance.rate = Number(rateInput.value) || 1.2;
+                                utterance.rate = Number(rateInput.value) || 1.5;
                                 const voice = selectedVoice();
                                 if (voice) {
                                     utterance.voice = voice;
