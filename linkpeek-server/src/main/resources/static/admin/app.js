@@ -46,7 +46,10 @@
         aiProviderDowngradeSaveTimer: null,
         aiProviderDowngradeSaveVersion: 0,
         logRefreshTimer: null,
-        activeDangerButton: null
+        activeDangerButton: null,
+        adminReady: false,
+        loadedPanels: new Set(),
+        loadingPanels: new Map()
     };
 
     function init() {
@@ -189,6 +192,11 @@
         if (updateHash && window.location.hash !== `#${panel.id}`) {
             history.pushState(null, "", `#${panel.id}`);
         }
+
+        syncLogAutoRefreshForActivePanel(panel.id);
+        if (state.adminReady) {
+            loadAdminPanel(panel.id);
+        }
     }
 
     function panelById(panelId) {
@@ -230,7 +238,10 @@
         }
         if (session.authenticated) {
             showAdmin();
-            await loadAll();
+            state.adminReady = true;
+            const activePanelId = panelIdFromLocation();
+            syncLogAutoRefreshForActivePanel(activePanelId);
+            await loadAdminPanel(activePanelId, {force: true});
             return;
         }
         redirectToLogin();
@@ -560,18 +571,94 @@
         });
     }
 
+    const adminPanelLoaders = {
+        "prompts": {
+            mode: "once",
+            load: () => Promise.all([
+                loadPrompts(),
+                loadAiTitleConfig()
+            ])
+        },
+        "ai-providers": {
+            mode: "once",
+            load: () => Promise.all([
+                loadAiProviderDowngradeConfig(),
+                loadAiProviders()
+            ])
+        },
+        "preview-events": {
+            mode: "always",
+            load: loadPreviewEvents
+        },
+        "share-summary": {
+            mode: "always",
+            load: loadShareSummary
+        },
+        "notifications": {
+            mode: "always",
+            load: loadNotifications
+        },
+        "provider-config": {
+            mode: "once",
+            load: loadProviderConfig
+        },
+        "service-logs": {
+            mode: "always",
+            load: loadLogs
+        },
+        "purge": {
+            mode: "none",
+            load: () => Promise.resolve()
+        }
+    };
+
+    async function loadAdminPanel(panelId, options = {}) {
+        const loader = adminPanelLoaders[panelId];
+        if (!loader) {
+            return;
+        }
+        const force = options.force === true || loader.mode === "always";
+        if (!force && state.loadedPanels.has(panelId)) {
+            return;
+        }
+        if (state.loadingPanels.has(panelId)) {
+            return state.loadingPanels.get(panelId);
+        }
+
+        const loadPromise = Promise.resolve()
+                .then(loader.load)
+                .then(() => {
+                    state.loadedPanels.add(panelId);
+                })
+                .catch((error) => {
+                    state.loadedPanels.delete(panelId);
+                    setAdminPanelLoadError(panelId, error);
+                })
+                .finally(() => {
+                    state.loadingPanels.delete(panelId);
+                });
+        state.loadingPanels.set(panelId, loadPromise);
+        return loadPromise;
+    }
+
+    function setAdminPanelLoadError(panelId, error) {
+        const feedbackByPanel = {
+            "prompts": "prompt-feedback",
+            "ai-providers": "ai-feedback",
+            "preview-events": "preview-event-feedback",
+            "share-summary": "share-summary-feedback",
+            "notifications": "notification-feedback",
+            "provider-config": "provider-feedback",
+            "service-logs": "log-feedback"
+        };
+        const feedbackId = feedbackByPanel[panelId];
+        if (feedbackId) {
+            setFeedback(feedbackId, error.message || "加载失败。", "is-error");
+        }
+    }
+
     async function loadAll() {
-        await Promise.all([
-            loadPrompts(),
-            loadAiTitleConfig(),
-            loadProviderConfig(),
-            loadAiProviderDowngradeConfig(),
-            loadAiProviders(),
-            loadPreviewEvents(),
-            loadShareSummary(),
-            loadNotifications(),
-            loadLogs()
-        ]);
+        await Promise.all(Object.keys(adminPanelLoaders).map((panelId) => loadAdminPanel(panelId, {force: true})));
     }
 
     async function loadPrompts() {
@@ -2011,11 +2098,15 @@
     }
 
     function updateLogAutoRefresh() {
+        syncLogAutoRefreshForActivePanel(panelIdFromLocation());
+    }
+
+    function syncLogAutoRefreshForActivePanel(panelId) {
         if (state.logRefreshTimer) {
             window.clearInterval(state.logRefreshTimer);
             state.logRefreshTimer = null;
         }
-        if (document.getElementById("log-auto-refresh").checked) {
+        if (state.adminReady && panelId === "service-logs" && document.getElementById("log-auto-refresh").checked) {
             state.logRefreshTimer = window.setInterval(loadLogs, 5000);
         }
     }
@@ -2510,6 +2601,9 @@
 
     function setFeedback(id, message, className) {
         const node = document.getElementById(id);
+        if (!node) {
+            return;
+        }
         node.textContent = message || "";
         node.className = `feedback ${className || ""}`.trim();
     }
