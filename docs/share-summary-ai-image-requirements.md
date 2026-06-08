@@ -68,7 +68,7 @@ Provider 配置项：
 | `base_url` | 上游 API Base URL | 是 |
 | `api_key` | 上游 API Key，保存后不明文回显 | 是 |
 | `model` | 生图模型或 Responses API 主模型 | 是 |
-| `request_timeout_seconds` | 单次请求超时时间，默认 300 秒，范围 1-600 秒 | 是 |
+| `request_timeout_seconds` | 单次请求超时时间，默认 300 秒，范围 1-1800 秒 | 是 |
 | `retry_count` | 失败重试次数 | 否 |
 | `quality` | 图片质量，例如 `low`、`medium`、`high`、`auto` | 否 |
 | `provider_extra_json` | 供应商扩展参数 JSON | 否 |

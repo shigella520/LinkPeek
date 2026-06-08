@@ -139,6 +139,39 @@ class ShareSummaryImageServiceTest {
     }
 
     @Test
+    void acceptsExtendedRequestTimeoutInConfig() {
+        FakeImageMapper imageMapper = new FakeImageMapper(config());
+        ShareSummaryImageService service = new ShareSummaryImageService(
+                imageMapper,
+                new FakeShareSummaryMapper(successfulRun()),
+                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new RedirectingImageHttpClient(),
+                new DirectExecutorService(),
+                null,
+                new LinkPeekProperties(),
+                Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
+        );
+
+        ShareSummaryImageService.ConfigResponse response = service.updateConfig(new ShareSummaryImageService.ConfigRequest(
+                true,
+                false,
+                "OPENAI_COMPATIBLE",
+                "https://api.example.com",
+                "/api-proxy/images/generations",
+                "sk-test",
+                "gpt-image-2",
+                "auto",
+                "auto",
+                "png",
+                "style",
+                1800
+        ));
+
+        assertEquals(1800, response.requestTimeoutSeconds());
+        assertEquals(1800, imageMapper.config.getRequestTimeoutSeconds());
+    }
+
+    @Test
     void deleteImagesForRunRemovesStoredFilesAndRows() throws Exception {
         FakeImageMapper imageMapper = new FakeImageMapper(config());
         LinkPeekProperties properties = new LinkPeekProperties();

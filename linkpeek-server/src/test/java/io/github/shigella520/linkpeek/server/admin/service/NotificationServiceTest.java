@@ -78,16 +78,25 @@ class NotificationServiceTest {
     }
 
     @Test
-    void retryDeliveryRejectsSuccessfulDelivery() {
+    void retryDeliveryResetsSuccessfulDeliveryAndSubmitsWebhook() {
         NotificationMapper mapper = mock(NotificationMapper.class);
+        ExecutorService executor = mock(ExecutorService.class);
         NotificationDeliveryRecord delivery = failedDelivery();
         delivery.setStatus("SUCCESS");
+        delivery.setRequestBody("{\"text\":\"hello\"}");
+        NotificationChannelRecord channel = channel();
         when(mapper.selectDelivery(9L)).thenReturn(delivery);
-        NotificationService service = service(mapper);
+        when(mapper.selectChannel(3L)).thenReturn(channel);
+        when(mapper.resetDeliveryForRetry(delivery)).thenReturn(1);
+        NotificationService service = service(mapper, executor);
 
-        assertThrows(IllegalStateException.class, () -> service.retryDelivery(9L));
+        NotificationDeliveryRecord response = service.retryDelivery(9L);
 
-        verify(mapper, never()).resetDeliveryForRetry(delivery);
+        assertEquals("PENDING", response.getStatus());
+        assertEquals(0, response.getAttemptCount());
+        verify(mapper).resetDeliveryForRetry(delivery);
+        ArgumentCaptor<Runnable> task = ArgumentCaptor.forClass(Runnable.class);
+        verify(executor).execute(task.capture());
     }
 
     @Test

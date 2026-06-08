@@ -1306,7 +1306,7 @@
                     <td>${escapeHtml(formatDuration(delivery.durationMs))}</td>
                     <td>
                         <div class="row-actions notification-delivery-actions">
-                            ${delivery.status === "FAILED" ? `<button type="button" class="secondary" data-retry-notification-delivery="${escapeAttribute(delivery.id)}">重发</button>` : ""}
+                            <button type="button" class="secondary" data-retry-notification-delivery="${escapeAttribute(delivery.id)}">重发</button>
                             <button type="button" class="danger" data-delete-notification-delivery="${escapeAttribute(delivery.id)}">删除</button>
                         </div>
                     </td>
@@ -2247,8 +2247,8 @@
         if (!["auto", "1024x1024", "1536x1024", "1024x1536"].includes((payload.imageSize || "").toLowerCase())) {
             return "Size 必须是 auto、1024x1024、1536x1024 或 1024x1536。";
         }
-        if (!Number.isInteger(payload.requestTimeoutSeconds) || payload.requestTimeoutSeconds < 1 || payload.requestTimeoutSeconds > 600) {
-            return "Timeout 必须是 1-600 秒之间的整数。";
+        if (!Number.isInteger(payload.requestTimeoutSeconds) || payload.requestTimeoutSeconds < 1 || payload.requestTimeoutSeconds > 1800) {
+            return "Timeout 必须是 1-1800 秒之间的整数。";
         }
         return "";
     }
