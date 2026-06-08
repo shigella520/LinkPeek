@@ -147,11 +147,14 @@ public class ShareSummaryPublicController {
                                     <span class="reader-control-label">语速</span>
                                     <span class="reader-control-value">
                                         <select data-reader-rate>
-                                            <option value="1">1.0x</option>
-                                            <option value="1.5" selected>1.5x</option>
-                                            <option value="2">2.0x</option>
+                                            <option value="1.0">1.0x</option>
+                                            <option value="1.2">1.2x</option>
+                                            <option value="1.4" selected>1.4x</option>
+                                            <option value="1.6">1.6x</option>
+                                            <option value="1.8">1.8x</option>
+                                            <option value="2.0">2.0x</option>
                                         </select>
-                                        <span class="reader-control-meta" data-reader-rate-label>1.5x</span>
+                                        <span class="reader-control-meta" data-reader-rate-label>1.4x</span>
                                     </span>
                                 </label>
                                 <label class="reader-control reader-voice">
@@ -317,7 +320,7 @@ public class ShareSummaryPublicController {
                             function createUtterance(text, index) {
                                 const utterance = new SpeechSynthesisUtterance(text);
                                 utterance.lang = "zh-CN";
-                                utterance.rate = Number(rateInput.value) || 1.5;
+                                utterance.rate = Number(rateInput.value) || 1.4;
                                 const voice = selectedVoice();
                                 if (voice) {
                                     utterance.voice = voice;
