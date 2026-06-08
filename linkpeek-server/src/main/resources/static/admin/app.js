@@ -2451,6 +2451,9 @@
         };
         document.getElementById("share-summary-window-auto-description").textContent = autoWindowDescription(task);
         document.getElementById("share-summary-window-manual-description").textContent = manualWindowDescription(task);
+        document.getElementById("share-summary-window-mode-chip").textContent = periodSelectionModeLabel(task.periodSelectionMode);
+        document.getElementById("share-summary-window-period-chip").textContent = periodLabel(task.periodType);
+        document.getElementById("share-summary-window-schedule-chip").textContent = scheduleLabel(task);
     }
 
     function openNotificationChannelModalForCreate() {
