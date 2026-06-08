@@ -236,6 +236,9 @@
         <if test="status != null and status != ''">
             AND status = #{status}
         </if>
+        <if test="triggerType != null and triggerType != ''">
+            AND trigger_type = #{triggerType}
+        </if>
     </sql>
 
     <select id="countRuns" resultType="long">

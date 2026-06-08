@@ -102,11 +102,12 @@ public class ShareSummaryAdminController {
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
             @RequestParam(required = false) Long taskId,
-            @RequestParam(required = false) String status
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String triggerType
     ) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return shareSummaryService.runs(page, size, taskId, status);
+            return shareSummaryService.runs(page, size, taskId, status, triggerType);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }

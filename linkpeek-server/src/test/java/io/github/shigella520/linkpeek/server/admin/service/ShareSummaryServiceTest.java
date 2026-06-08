@@ -224,6 +224,21 @@ class ShareSummaryServiceTest {
     }
 
     @Test
+    void runsFiltersByNormalizedTriggerType() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        ShareSummaryService service = service(mapper, "2026-06-04T02:00:00Z");
+
+        service.runs(1, 20, 9L, "success", "manual");
+
+        assertEquals(9L, mapper.lastCountTaskId);
+        assertEquals("SUCCESS", mapper.lastCountStatus);
+        assertEquals("MANUAL", mapper.lastCountTriggerType);
+        assertEquals(9L, mapper.lastSelectTaskId);
+        assertEquals("SUCCESS", mapper.lastSelectStatus);
+        assertEquals("MANUAL", mapper.lastSelectTriggerType);
+    }
+
+    @Test
     void runTaskSkipsAiWhenTitleCountIsBelowConfiguredMinimum() {
         FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
         ShareSummaryTaskRecord task = task("DAILY", "09:00", null);
@@ -364,6 +379,12 @@ class ShareSummaryServiceTest {
         private ShareSummaryRunRecord run;
         private long nextTaskId = 1;
         private long nextRunId = 1;
+        private Long lastCountTaskId;
+        private String lastCountStatus;
+        private String lastCountTriggerType;
+        private Long lastSelectTaskId;
+        private String lastSelectStatus;
+        private String lastSelectTriggerType;
 
         @Override
         public List<ShareSummaryTaskRecord> selectTasks() {
@@ -438,12 +459,18 @@ class ShareSummaryServiceTest {
         }
 
         @Override
-        public long countRuns(Long taskId, String status) {
+        public long countRuns(Long taskId, String status, String triggerType) {
+            lastCountTaskId = taskId;
+            lastCountStatus = status;
+            lastCountTriggerType = triggerType;
             return 0;
         }
 
         @Override
-        public List<ShareSummaryRunRecord> selectRuns(Long taskId, String status, int limit, int offset) {
+        public List<ShareSummaryRunRecord> selectRuns(Long taskId, String status, String triggerType, int limit, int offset) {
+            lastSelectTaskId = taskId;
+            lastSelectStatus = status;
+            lastSelectTriggerType = triggerType;
             return List.of();
         }
     }

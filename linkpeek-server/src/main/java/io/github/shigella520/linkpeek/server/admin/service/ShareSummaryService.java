@@ -115,14 +115,21 @@ public class ShareSummaryService {
         return executeWindow(task, window, ShareSummaryTriggerType.MANUAL);
     }
 
-    public RunPage runs(Integer page, Integer size, Long taskId, String status) {
+    public RunPage runs(Integer page, Integer size, Long taskId, String status, String triggerType) {
         int normalizedSize = normalizePageSize(size);
         int normalizedPage = page == null || page < 1 ? 1 : page;
         String normalizedStatus = normalizeStatusFilter(status);
-        long total = shareSummaryMapper.countRuns(taskId, normalizedStatus);
+        String normalizedTriggerType = normalizeTriggerTypeFilter(triggerType);
+        long total = shareSummaryMapper.countRuns(taskId, normalizedStatus, normalizedTriggerType);
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / normalizedSize);
         int offset = (normalizedPage - 1) * normalizedSize;
-        List<ShareSummaryRunRecord> items = shareSummaryMapper.selectRuns(taskId, normalizedStatus, normalizedSize, offset).stream()
+        List<ShareSummaryRunRecord> items = shareSummaryMapper.selectRuns(
+                        taskId,
+                        normalizedStatus,
+                        normalizedTriggerType,
+                        normalizedSize,
+                        offset
+                ).stream()
                 .map(this::withImageSummary)
                 .toList();
         return new RunPage(items, normalizedPage, normalizedSize, total, totalPages);
@@ -573,6 +580,15 @@ public class ShareSummaryService {
         }
         String normalized = status.strip().toUpperCase(Locale.ROOT);
         ShareSummaryRunStatus.valueOf(normalized);
+        return normalized;
+    }
+
+    private String normalizeTriggerTypeFilter(String triggerType) {
+        if (!StringUtils.hasText(triggerType)) {
+            return null;
+        }
+        String normalized = triggerType.strip().toUpperCase(Locale.ROOT);
+        ShareSummaryTriggerType.valueOf(normalized);
         return normalized;
     }
 

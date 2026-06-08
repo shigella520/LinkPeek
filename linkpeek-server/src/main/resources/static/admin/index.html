@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260608-share-summary-modal">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260608-share-summary-task-list">
 </head>
 <body>
 <header class="topbar">
@@ -255,7 +255,6 @@
                             <th>任务</th>
                             <th>周期</th>
                             <th>执行时间</th>
-                            <th>链接数</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
@@ -286,6 +285,14 @@
                                 <option value="EMPTY">EMPTY</option>
                                 <option value="FAILED">FAILED</option>
                                 <option value="SKIPPED">SKIPPED</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>执行类型</span>
+                            <select id="share-summary-run-filter-trigger">
+                                <option value="">全部</option>
+                                <option value="SCHEDULED">SCHEDULED</option>
+                                <option value="MANUAL">MANUAL</option>
                             </select>
                         </label>
                         <label>
@@ -958,6 +965,6 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260608-share-summary-modal"></script>
+<script src="/admin/app.js?v=20260608-share-summary-task-list"></script>
 </body>
 </html>

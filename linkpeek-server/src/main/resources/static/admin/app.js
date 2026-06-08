@@ -734,11 +734,15 @@
         params.set("size", document.getElementById("share-summary-run-size").value || "20");
         const taskId = document.getElementById("share-summary-run-filter-task").value;
         const status = document.getElementById("share-summary-run-filter-status").value;
+        const triggerType = document.getElementById("share-summary-run-filter-trigger").value;
         if (taskId) {
             params.set("taskId", taskId);
         }
         if (status) {
             params.set("status", status);
+        }
+        if (triggerType) {
+            params.set("triggerType", triggerType);
         }
 
         setFeedback("share-summary-history-feedback", "正在读取分享总结记录...", "");
@@ -1054,14 +1058,13 @@
     function renderShareSummaryTasks() {
         const body = document.getElementById("share-summary-task-table");
         if (!state.shareSummaryTasks.length) {
-            body.innerHTML = `<tr><td colspan="6" class="muted">暂无分享总结任务</td></tr>`;
+            body.innerHTML = `<tr><td colspan="5" class="muted">暂无分享总结任务</td></tr>`;
             return;
         }
         body.innerHTML = state.shareSummaryTasks.map((task) => `
             <tr>
                 <td>
                     <strong>${escapeHtml(task.name)}</strong>
-                    <div class="prompt-preview">${escapeHtml(promptPreview(task.prompt))}</div>
                 </td>
                     <td class="nowrap share-summary-period-cell">
                         <div class="period-window-trigger" tabindex="0" aria-label="查看时间窗口">
@@ -1071,7 +1074,6 @@
                         </div>
                     </td>
                     <td class="nowrap">${escapeHtml(scheduleLabel(task))}</td>
-                    <td class="nowrap">${escapeHtml(task.minLinks || 1)} / ${escapeHtml(task.maxLinks || 100)}</td>
                 <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
                 <td>
                     <div class="row-actions share-summary-task-actions">

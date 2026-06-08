@@ -434,12 +434,12 @@ class ShareSummaryImageServiceTest {
         }
 
         @Override
-        public long countRuns(Long taskId, String status) {
+        public long countRuns(Long taskId, String status, String triggerType) {
             return 0;
         }
 
         @Override
-        public List<ShareSummaryRunRecord> selectRuns(Long taskId, String status, int limit, int offset) {
+        public List<ShareSummaryRunRecord> selectRuns(Long taskId, String status, String triggerType, int limit, int offset) {
             return List.of();
         }
     }

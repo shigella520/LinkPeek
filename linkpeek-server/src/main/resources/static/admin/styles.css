@@ -1001,7 +1001,7 @@ textarea:focus {
 
 .share-summary-filter-form {
     display: grid;
-    grid-template-columns: minmax(320px, 1fr) minmax(150px, 180px) minmax(130px, 160px);
+    grid-template-columns: minmax(280px, 1fr) minmax(150px, 180px) minmax(150px, 180px) minmax(130px, 160px);
     align-items: end;
     gap: 14px;
 }
@@ -1201,7 +1201,7 @@ table {
 
 .share-summary-task-table th:nth-child(1),
 .share-summary-task-table td:nth-child(1) {
-    width: 38%;
+    width: 34%;
 }
 
 .share-summary-task-table th:nth-child(2),
@@ -1216,16 +1216,11 @@ table {
 
 .share-summary-task-table th:nth-child(4),
 .share-summary-task-table td:nth-child(4) {
-    width: 92px;
+    width: 86px;
 }
 
 .share-summary-task-table th:nth-child(5),
 .share-summary-task-table td:nth-child(5) {
-    width: 86px;
-}
-
-.share-summary-task-table th:nth-child(6),
-.share-summary-task-table td:nth-child(6) {
     width: 240px;
 }
 
