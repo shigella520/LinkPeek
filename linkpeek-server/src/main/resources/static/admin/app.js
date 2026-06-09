@@ -2873,7 +2873,7 @@
             ${run.errorMessage ? `<section class="summary-detail-section"><h4>错误信息</h4><pre class="summary-report is-error">${escapeHtml(run.errorMessage)}</pre></section>` : ""}
             <section class="summary-detail-section">
                 <h4>总结报告</h4>
-                <article class="summary-report summary-report-main">${escapeHtml(run.report || "")}</article>
+                <article class="summary-report summary-report-main">${renderSummaryReport(run.report || "")}</article>
             </section>
             <section class="summary-detail-section">
                 <h4>提示词快照</h4>
@@ -3051,6 +3051,34 @@
             return text;
         }
         return `${text.slice(0, 120)}...`;
+    }
+
+    function renderSummaryReport(value) {
+        return linkifySummaryText(escapeHtml(value));
+    }
+
+    function linkifySummaryText(value) {
+        let rendered = value.replace(/\[([^\]]+)]\((https?:\/\/[^\s)]+)\)/g, (_match, label, url) => linkHtml(url, label));
+        rendered = rendered
+            .split(/(<a\b[^>]*>.*?<\/a>)/g)
+            .map((part) => part.startsWith("<a ") ? part : linkifyPlainUrls(part))
+            .join("");
+        return rendered;
+    }
+
+    function linkifyPlainUrls(value) {
+        return value.replace(/(?<!["'=])(https?:\/\/[^\s<]+)/g, (match) => {
+            const url = stripTrailingUrlPunctuation(match);
+            return `${linkHtml(url, url)}${match.slice(url.length)}`;
+        });
+    }
+
+    function stripTrailingUrlPunctuation(value) {
+        return value.replace(/[.,;:!?，。；：！？]+$/g, "");
+    }
+
+    function linkHtml(escapedUrl, escapedLabel) {
+        return `<a href="${escapedUrl}" target="_blank" rel="noreferrer">${escapedLabel}</a>`;
     }
 
     function providerApiKind(provider) {

@@ -1238,6 +1238,8 @@ class PreviewControllerTest {
 
                 - 链接分享增长
                 - **内容洞察**稳定
+                - [图片测试标题](https://example.com/image)
+                - 裸链接 https://example.com/plain
                 """);
         jdbcTemplate.update(
                 "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1344,7 +1346,9 @@ class PreviewControllerTest {
                 .andExpect(content().string(not(containsString("data-reader-action=\"stop\""))))
                 .andExpect(content().string(containsString("<h2>分享总结报告正文</h2>")))
                 .andExpect(content().string(containsString("<li>链接分享增长</li>")))
-                .andExpect(content().string(containsString("<strong>内容洞察</strong>")));
+                .andExpect(content().string(containsString("<strong>内容洞察</strong>")))
+                .andExpect(content().string(containsString("<a href=\"https://example.com/image\" target=\"_blank\" rel=\"noreferrer\">图片测试标题</a>")))
+                .andExpect(content().string(containsString("<a href=\"https://example.com/plain\" target=\"_blank\" rel=\"noreferrer\">https://example.com/plain</a>")));
     }
 
     @Test

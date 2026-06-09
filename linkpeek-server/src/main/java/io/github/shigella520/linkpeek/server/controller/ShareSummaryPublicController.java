@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @RestController
@@ -27,6 +28,9 @@ import java.util.regex.Pattern;
 public class ShareSummaryPublicController {
     private static final Pattern BOLD = Pattern.compile("\\*\\*([^*]+)\\*\\*");
     private static final Pattern INLINE_CODE = Pattern.compile("`([^`]+)`");
+    private static final Pattern MARKDOWN_LINK = Pattern.compile("\\[([^\\]]+)]\\((https?://[^\\s)]+)\\)");
+    private static final Pattern URL = Pattern.compile("(?<![\"'=])(https?://[^\\s<]+)");
+    private static final Pattern ANCHOR = Pattern.compile("<a\\b[^>]*>.*?</a>");
     private static final Pattern ORDERED_LIST_ITEM = Pattern.compile("^\\d+[.)]\\s+(.+)$");
     private final ShareSummaryImageService shareSummaryImageService;
 
@@ -560,8 +564,71 @@ public class ShareSummaryPublicController {
 
     private String inlineMarkdown(String value) {
         String escaped = escapeHtml(value);
+        escaped = renderMarkdownLinks(escaped);
+        escaped = renderPlainUrls(escaped);
         escaped = BOLD.matcher(escaped).replaceAll("<strong>$1</strong>");
         return INLINE_CODE.matcher(escaped).replaceAll("<code>$1</code>");
+    }
+
+    private String renderMarkdownLinks(String value) {
+        Matcher matcher = MARKDOWN_LINK.matcher(value);
+        StringBuilder rendered = new StringBuilder();
+        while (matcher.find()) {
+            matcher.appendReplacement(rendered, Matcher.quoteReplacement(linkHtml(matcher.group(2), matcher.group(1))));
+        }
+        matcher.appendTail(rendered);
+        return rendered.toString();
+    }
+
+    private String renderPlainUrls(String value) {
+        Matcher anchor = ANCHOR.matcher(value);
+        StringBuilder rendered = new StringBuilder();
+        int lastIndex = 0;
+        while (anchor.find()) {
+            rendered.append(linkPlainUrls(value.substring(lastIndex, anchor.start())));
+            rendered.append(anchor.group());
+            lastIndex = anchor.end();
+        }
+        rendered.append(linkPlainUrls(value.substring(lastIndex)));
+        return rendered.toString();
+    }
+
+    private String linkPlainUrls(String value) {
+        Matcher matcher = URL.matcher(value);
+        StringBuilder rendered = new StringBuilder();
+        while (matcher.find()) {
+            String url = stripTrailingUrlPunctuation(matcher.group(1));
+            String trailing = matcher.group(1).substring(url.length());
+            matcher.appendReplacement(rendered, Matcher.quoteReplacement(linkHtml(url, url) + trailing));
+        }
+        matcher.appendTail(rendered);
+        return rendered.toString();
+    }
+
+    private String stripTrailingUrlPunctuation(String url) {
+        String stripped = url;
+        while (stripped.endsWith(".")
+                || stripped.endsWith(",")
+                || stripped.endsWith(";")
+                || stripped.endsWith(":")
+                || stripped.endsWith("!")
+                || stripped.endsWith("?")
+                || stripped.endsWith("，")
+                || stripped.endsWith("。")
+                || stripped.endsWith("；")
+                || stripped.endsWith("：")
+                || stripped.endsWith("！")
+                || stripped.endsWith("？")) {
+            stripped = stripped.substring(0, stripped.length() - 1);
+        }
+        return stripped;
+    }
+
+    private String linkHtml(String escapedUrl, String escapedLabel) {
+        return "<a href=\"%s\" target=\"_blank\" rel=\"noreferrer\">%s</a>".formatted(
+                escapedUrl,
+                escapedLabel
+        );
     }
 
     private String escapeHtml(String value) {

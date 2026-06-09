@@ -3,7 +3,7 @@
 # Required parameters:
 # @raycast.schemaVersion 1
 # @raycast.title LinkPeek
-# @raycast.mode silent
+# @raycast.mode compact
 
 # Optional parameters:
 # @raycast.icon 🔗
@@ -61,6 +61,8 @@ compact_response="${compact_response//$'\t'/}"
 compact_response="${compact_response// /}"
 
 if [[ "$compact_response" != *'"supported":true'* ]]; then
+  printf '%s\n' "$compact_response"
+  sleep 1
   open /System/Applications/Messages.app
   exit 0
 fi
