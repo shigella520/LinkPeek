@@ -147,15 +147,16 @@ public class ShareSummaryPublicController {
                                     <span class="reader-control-label">语速</span>
                                     <span class="reader-control-value">
                                         <select data-reader-rate>
+                                            <option value="1.0">1.0x</option>
                                             <option value="1.1">1.1x</option>
                                             <option value="1.2">1.2x</option>
                                             <option value="1.3">1.3x</option>
-                                            <option value="1.4" selected>1.4x</option>
+                                            <option value="1.4">1.4x</option>
                                             <option value="1.5">1.5x</option>
                                             <option value="1.8">1.8x</option>
                                             <option value="2.0">2.0x</option>
                                         </select>
-                                        <span class="reader-control-meta" data-reader-rate-label>1.4x</span>
+                                        <span class="reader-control-meta" data-reader-rate-label></span>
                                     </span>
                                 </label>
                                 <label class="reader-control reader-voice">
@@ -197,6 +198,19 @@ public class ShareSummaryPublicController {
                             let pausedByUser = false;
 
                             root.hidden = false;
+
+                            function defaultRate() {
+                                const viewportWidth = Math.min(
+                                    window.innerWidth || Number.MAX_SAFE_INTEGER,
+                                    (window.screen && window.screen.width) || Number.MAX_SAFE_INTEGER
+                                );
+                                return viewportWidth <= 520 ? 1.1 : 1.4;
+                            }
+
+                            function setRate(value) {
+                                rateInput.value = Number(value).toFixed(1);
+                                rateLabel.textContent = `${Number(rateInput.value).toFixed(1)}x`;
+                            }
 
                             function reportText() {
                                 return [
@@ -321,7 +335,7 @@ public class ShareSummaryPublicController {
                             function createUtterance(text, index) {
                                 const utterance = new SpeechSynthesisUtterance(text);
                                 utterance.lang = "zh-CN";
-                                utterance.rate = Number(rateInput.value) || 1.4;
+                                utterance.rate = Number(rateInput.value) || defaultRate();
                                 const voice = selectedVoice();
                                 if (voice) {
                                     utterance.voice = voice;
@@ -408,7 +422,7 @@ public class ShareSummaryPublicController {
 
                             actions.toggle.addEventListener("click", toggle);
                             rateInput.addEventListener("change", () => {
-                                rateLabel.textContent = `${Number(rateInput.value).toFixed(1)}x`;
+                                setRate(rateInput.value);
                                 if (synth.speaking || synth.paused) {
                                     stop();
                                     setStatus("语速已切换，请重新播放", "idle");
@@ -433,6 +447,7 @@ public class ShareSummaryPublicController {
                             if ("onvoiceschanged" in synth) {
                                 synth.onvoiceschanged = populateVoices;
                             }
+                            setRate(defaultRate());
                             populateVoices();
                             setStatus("准备播放", "idle");
                         })();
