@@ -22,6 +22,11 @@ base_url="${base_url%/}"
 support_url="${base_url}/api/preview/support"
 preview_base_url="${base_url}/preview?url="
 
+open_messages_after_notice() {
+  sleep 1
+  open /System/Applications/Messages.app
+}
+
 url_encode() {
   local LC_ALL=C
   local value="$1"
@@ -46,7 +51,8 @@ url_encode() {
 input="$(pbpaste)"
 
 if [[ -z "${input//[[:space:]]/}" ]]; then
-  open /System/Applications/Messages.app
+  printf '%s\n' "LinkPeek: 剪贴板没有可用文本，未生成预览链接。"
+  open_messages_after_notice
   exit 0
 fi
 
@@ -61,9 +67,12 @@ compact_response="${compact_response//$'\t'/}"
 compact_response="${compact_response// /}"
 
 if [[ "$compact_response" != *'"supported":true'* ]]; then
-  printf '%s\n' "$compact_response"
-  sleep 1
-  open /System/Applications/Messages.app
+  if [[ -n "$compact_response" ]]; then
+    printf '%s\n' "$compact_response"
+  else
+    printf '%s\n' "LinkPeek: 支持判定接口没有返回内容，未生成预览链接。"
+  fi
+  open_messages_after_notice
   exit 0
 fi
 
