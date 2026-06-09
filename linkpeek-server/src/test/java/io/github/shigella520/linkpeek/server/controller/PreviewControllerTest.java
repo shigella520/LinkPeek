@@ -41,9 +41,11 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -1079,10 +1081,12 @@ class PreviewControllerTest {
         long windowStart = window.start();
         long beforeRun = System.currentTimeMillis();
         insertStatsLink("key-a", "https://example.com/a", "数据库标题 A", windowStart + 1_000L);
+        insertStatsLink("key-a-duplicate", "https://example.com/a", "数据库标题 A 晚到", windowStart + 1_500L);
         insertStatsLink("key-b", "https://example.com/b", "数据库标题 B", windowStart + 2_000L);
         insertStatsLink("key-c", "https://example.com/c", "数据库标题 C", windowStart + 3_000L);
         insertStatsLink("key-empty", "https://example.com/empty", "", windowStart + 4_000L);
         insertPreviewCreatedEvent("key-a", "https://source.example.com/a1", windowStart + 1_000L, true, true);
+        insertPreviewCreatedEvent("key-a-duplicate", "https://source.example.com/a-duplicate", windowStart + 1_500L, true, true);
         insertPreviewCreatedEvent("key-b", "https://source.example.com/b", windowStart + 2_000L, false, false);
         insertPreviewCreatedEvent("key-a", "https://source.example.com/a2", windowStart + 3_000L, true, true);
         insertPreviewCreatedEvent("key-c", "https://source.example.com/c", windowStart + 4_000L, false, false);
@@ -1098,7 +1102,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.periodType").value("DAILY"))
                 .andExpect(jsonPath("$.windowStart").value(windowStart))
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
-                .andExpect(jsonPath("$.linkCount").value(5))
+                .andExpect(jsonPath("$.linkCount").value(6))
                 .andExpect(jsonPath("$.uniqueLinkCount").value(3))
                 .andExpect(jsonPath("$.inputLinkCount").value(2))
                 .andExpect(jsonPath("$.promptSnapshot").value("按主题聚合"))
@@ -1116,8 +1120,14 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.textRequests.get());
         AiTextPrompt prompt = testAiTitleClient.textPrompt.get();
         org.junit.jupiter.api.Assertions.assertTrue(prompt.prompt().contains("按主题聚合"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("[2次] 数据库标题 A"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("[1次] 数据库标题 B"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("链接分享列表"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("1.标题：数据库标题 A"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   链接：https://example.com/a"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   分享时间：" + expectedShareTime(windowStart + 1_000L)));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("2.标题：数据库标题 B"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   链接：https://example.com/b"));
+        org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("[2次]"));
+        org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 A 晚到"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 C"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("source.example.com"));
 
@@ -1196,12 +1206,15 @@ class PreviewControllerTest {
         Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "门槛总结");
         ExpectedWindow window = currentDailyManualWindow();
         insertStatsLink("min-key", "https://example.com/min", "门槛标题", window.start() + 1_000L);
+        insertStatsLink("min-key-duplicate", "https://example.com/min", "门槛标题重复", window.start() + 2_000L);
         insertPreviewCreatedEvent("min-key", "https://source.example.com/min", window.start() + 1_000L, true, true);
+        insertPreviewCreatedEvent("min-key-duplicate", "https://source.example.com/min-duplicate", window.start() + 2_000L, true, true);
 
         mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("EMPTY"))
+                .andExpect(jsonPath("$.linkCount").value(2))
                 .andExpect(jsonPath("$.uniqueLinkCount").value(1))
                 .andExpect(jsonPath("$.inputLinkCount").value(1))
                 .andExpect(jsonPath("$.errorMessage").value("Link title count 1 is below the configured minimum 2."));
@@ -1968,6 +1981,12 @@ class PreviewControllerTest {
                 LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli(),
                 System.currentTimeMillis()
         );
+    }
+
+    private static String expectedShareTime(long millis) {
+        return Instant.ofEpochMilli(millis)
+                .atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
     private static ExpectedWindow currentMonthlyManualWindow() {

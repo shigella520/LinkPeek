@@ -31,6 +31,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.List;
@@ -49,7 +50,8 @@ public class ShareSummaryService {
     private static final int MAX_MIN_LINKS = 2_000;
     private static final int CATCH_UP_LIMIT = 7;
     private static final long RUNNING_TIMEOUT_MILLIS = 30 * 60 * 1000L;
-    private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接标题列表，生成一份结构清晰、信息密度高的中文分享总结。";
+    private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接分享列表，生成一份结构清晰、信息密度高的中文分享总结。";
+    private static final DateTimeFormatter SUMMARY_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final ShareSummaryMapper shareSummaryMapper;
     private final ShareSummaryLinkMapper shareSummaryLinkMapper;
@@ -527,17 +529,31 @@ public class ShareSummaryService {
                 .append(window.startMillis())
                 .append(" ~ ")
                 .append(window.endMillis())
-                .append("\n\n链接标题列表：\n");
+                .append("\n\n链接分享列表：\n");
         for (int index = 0; index < links.size(); index++) {
             ShareSummaryLinkRow link = links.get(index);
             content.append(index + 1)
-                    .append(". [")
-                    .append(link.getOccurrenceCount())
-                    .append("次] ")
+                    .append(".标题：")
                     .append(link.getTitle())
+                    .append('\n')
+                    .append("   链接：")
+                    .append(summaryLinkUrl(link))
+                    .append('\n')
+                    .append("   分享时间：")
+                    .append(summaryTime(link.getFirstOccurredAt()))
                     .append('\n');
         }
         return content.toString();
+    }
+
+    private String summaryLinkUrl(ShareSummaryLinkRow link) {
+        return link.getCanonicalUrl() == null ? "" : link.getCanonicalUrl().strip();
+    }
+
+    private String summaryTime(long epochMillis) {
+        return Instant.ofEpochMilli(epochMillis)
+                .atZone(clock.getZone())
+                .format(SUMMARY_TIME_FORMATTER);
     }
 
     private ShareSummaryTaskRecord normalizeTask(ShareSummaryTaskRecord existing, TaskRequest request) {

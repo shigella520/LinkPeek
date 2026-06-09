@@ -13,23 +13,39 @@
 
     <select id="selectSummaryLinks" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryLinkRow">
         SELECT
-            event.preview_key,
-            COALESCE(MIN(NULLIF(event.source_url, '')), '') AS source_url,
-            link.canonical_url,
-            COALESCE(event.provider_id, link.provider_id) AS provider_id,
-            link.title,
-            COUNT(*) AS occurrence_count,
-            MIN(event.occurred_at) AS first_occurred_at,
-            MAX(event.ai_requested) AS ai_requested,
-            MAX(event.ai_succeeded) AS ai_succeeded
-        FROM stats_event event
-        JOIN stats_link link ON link.preview_key = event.preview_key
-        WHERE event.event_type = 'PREVIEW_CREATED'
-          AND event.occurred_at &gt;= #{windowStart}
-          AND event.occurred_at &lt; #{windowEnd}
-          AND link.title IS NOT NULL
-          AND TRIM(link.title) != ''
-        GROUP BY event.preview_key, link.canonical_url, link.title
-        ORDER BY occurrence_count DESC, first_occurred_at ASC
+            ranked.preview_key,
+            COALESCE(NULLIF(ranked.source_url, ''), '') AS source_url,
+            ranked.canonical_url,
+            ranked.provider_id,
+            ranked.title,
+            ranked.occurrence_count,
+            ranked.first_occurred_at,
+            ranked.ai_requested,
+            ranked.ai_succeeded
+        FROM (
+            SELECT
+                event.preview_key,
+                event.source_url,
+                link.canonical_url,
+                COALESCE(event.provider_id, link.provider_id) AS provider_id,
+                link.title,
+                1 AS occurrence_count,
+                event.occurred_at AS first_occurred_at,
+                event.ai_requested,
+                event.ai_succeeded,
+                ROW_NUMBER() OVER (
+                    PARTITION BY link.canonical_url
+                    ORDER BY event.occurred_at ASC, event.id ASC
+                ) AS row_number
+            FROM stats_event event
+            JOIN stats_link link ON link.preview_key = event.preview_key
+            WHERE event.event_type = 'PREVIEW_CREATED'
+              AND event.occurred_at &gt;= #{windowStart}
+              AND event.occurred_at &lt; #{windowEnd}
+              AND link.title IS NOT NULL
+              AND TRIM(link.title) != ''
+        ) ranked
+        WHERE ranked.row_number = 1
+        ORDER BY ranked.first_occurred_at ASC
     </select>
 </mapper>
