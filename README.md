@@ -4,7 +4,7 @@
 
 采用 `Spring Boot 3.x + Maven` 多模块结构，对外统一暴露 `GET /preview?url=...` 入口，内部通过 provider SPI 解析目标链接，并重点提供可配置的 AI 标题生成能力。
 
-![LinkPeek Dashboard 预览](docs/preview.png)
+![LinkPeek Dashboard 预览](docs/preview-dashboard.png)
 
 [在线体验 Live Demo](https://linkpeek.jianyutan.com/dashboard)
 管理密码:linkpeek，在 Dashboard 连续按 3 下 6 弹出跳转按钮。
@@ -15,12 +15,16 @@
 
 ## 功能特点
 
-- AI 标题生成：文本卡片可通过 Style Prompt 生成标题，支持 `FREESTYLE` 随机风格、AI Provider fallback、请求超时和自动降级。
-- 统一预览入口：爬虫返回 Open Graph HTML，普通浏览器点击直接跳转原始链接。
-- 多平台 provider：内置 Bilibili、GapHub、V2EX、NGA、LINUX DO，并保留 provider SPI 便于扩展。
-- 稳定缓存链路：本地缓存元数据和缩略图，并对并发预览渲染做单飞去重。
-- 运行时管理：`/admin` 可维护 Style Prompt、论坛 Cookie、AI Provider、服务日志和统计清理。
+- 统一预览入口：`/preview` 对爬虫返回 Open Graph HTML，对普通浏览器跳转原始链接。
+- 多平台解析：内置 Bilibili、GapHub、V2EX、NGA、LINUX DO，并提供 provider SPI 便于扩展。
+- AI 标题生成：文本卡片支持自定义 Style Prompt、`FREESTYLE`、多 Provider fallback、超时和自动降级。
+- 缓存与预热：磁盘缓存元数据和缩略图，并对并发渲染、浏览器点击预热做去重处理。
 - 数据看板：Dashboard 展示创建、打开、失败、热门链接、AI 渲染占比和 AI 成功率。
+- 管理后台：`/admin` 可维护 Prompt、AI Provider、论坛 Cookie、Provider 配置、服务日志和预览事件。
+- 分享总结：支持每日、每周、每月任务和手动执行，按数据库中的分享记录生成 AI 总结。
+- 分享资产：总结报告可生成 AI 分享图、公开 OG 分享页和 TTS 音频。
+- WebHook 通知：分享图生成成功后触发 `SHARE_SUMMARY_IMAGE_SUCCESS`，支持模板、筛选、签名、重试和投递记录。
+- iMessageBot：WebHook 可接入 BlueBubbles Server，把总结分享页自动发送到指定 iMessage 会话。
 - 自动化入口：Raycast Script 和 iOS Shortcut 可以直接生成 LinkPeek 分享链接。
 
 ## AI 标题生成
@@ -33,6 +37,27 @@ AI 标题生成是 LinkPeek 的核心增强能力：对 GapHub、V2EX、NGA、LI
 - AI Provider：可配置多条上游服务，按启用状态和排序 fallback；每个 Provider 有独立请求超时。
 - 自动降级：全局开启后，Provider 连续超时达到阈值会被移动到列表最后，并写入明显运行日志。
 - 缓存隔离：AI styled 预览使用 `canonical URL + style + prompt hash` 生成独立 `PreviewKey`，不同风格不会互相污染缓存。
+
+## 分享总结
+
+- 周期任务：支持每日、每周、每月按完整自然窗口生成报告。
+- 数据来源：直接读取数据库中的分享链接标题，不依赖 Meta 缓存。
+- AI 总结：复用后台 AI Provider 和 Prompt 配置生成报告。
+- 历史记录：保存执行窗口、链接数量、Provider、状态和报告正文。
+- 分享资产：可生成 AI 分享图、公开图片 URL 和带完整 OG meta 的分享页。
+
+## iMessageBot
+
+- 事件触发：AI 分享图和分享页生成成功后触发 `SHARE_SUMMARY_IMAGE_SUCCESS`。
+- WebHook 投递：按模板发送分享页、图片、标题、摘要和报告正文等字段。
+- BlueBubbles 集成：WebHook 指向 BlueBubbles Server 后，可发送到指定 iMessage 会话。
+- 自动链路：从周期总结到 iMessage 推送可全程后台自动完成。
+
+## 效果预览
+
+![LinkPeek Usage](docs/preview-usage.png)
+
+![LinkPeek Usage](docs/report-image.png)
 
 ## 安装（Docker）
 
