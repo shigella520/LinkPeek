@@ -10,6 +10,7 @@ import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryAudio
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryImageMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryMapper;
 import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
+import io.github.shigella520.linkpeek.server.render.ShareSummaryMarkdownRenderer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -337,7 +338,7 @@ public class ShareSummaryAudioService {
             text.append(description).append('\n');
         }
         if (StringUtils.hasText(run.getReport())) {
-            text.append(run.getReport().strip());
+            text.append(ShareSummaryMarkdownRenderer.toPlainText(run.getReport()));
         }
         return text.toString().strip();
     }

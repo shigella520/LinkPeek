@@ -4,6 +4,7 @@ import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioService;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageService;
+import io.github.shigella520.linkpeek.server.render.ShareSummaryMarkdownRenderer;
 import io.swagger.v3.oas.annotations.Hidden;
 import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
@@ -17,22 +18,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/share-summary")
 @Hidden
 public class ShareSummaryPublicController {
-    private static final Pattern BOLD = Pattern.compile("\\*\\*([^*]+)\\*\\*");
-    private static final Pattern INLINE_CODE = Pattern.compile("`([^`]+)`");
-    private static final Pattern MARKDOWN_LINK = Pattern.compile("\\[([^\\]]+)]\\((https?://[^\\s)]+)\\)");
-    private static final Pattern URL = Pattern.compile("(?<![\"'=])(https?://[^\\s<]+)");
-    private static final Pattern ANCHOR = Pattern.compile("<a\\b[^>]*>.*?</a>");
-    private static final Pattern ORDERED_LIST_ITEM = Pattern.compile("^\\d+[.)]\\s+(.+)$");
     private final ShareSummaryImageService shareSummaryImageService;
     private final ShareSummaryAudioService shareSummaryAudioService;
 
@@ -576,169 +567,13 @@ public class ShareSummaryPublicController {
                 escapeAttribute(audioUrl),
                 hasAudio ? "" : "hidden",
                 escapeAttribute(audioUrl),
-                renderMarkdown(report)
+                ShareSummaryMarkdownRenderer.toHtml(report)
         );
     }
 
     private String audioUrl(long runId) {
         ShareSummaryAudioService.AudioSummary summary = shareSummaryAudioService.audioSummary(runId);
         return summary == null ? "" : summary.audioUrl();
-    }
-
-    private String renderMarkdown(String markdown) {
-        if (!StringUtils.hasText(markdown)) {
-            return "";
-        }
-        List<String> blocks = new ArrayList<>();
-        List<String> paragraph = new ArrayList<>();
-        List<String> listItems = new ArrayList<>();
-        StringBuilder code = null;
-        for (String rawLine : markdown.replace("\r\n", "\n").replace('\r', '\n').split("\n", -1)) {
-            String line = rawLine.stripTrailing();
-            if (code != null) {
-                if (line.strip().startsWith("```")) {
-                    blocks.add("<pre><code>" + escapeHtml(code.toString().stripTrailing()) + "</code></pre>");
-                    code = null;
-                } else {
-                    code.append(line).append('\n');
-                }
-                continue;
-            }
-            String trimmed = line.strip();
-            if (trimmed.startsWith("```")) {
-                flushParagraph(blocks, paragraph);
-                flushList(blocks, listItems);
-                code = new StringBuilder();
-                continue;
-            }
-            if (trimmed.isEmpty()) {
-                flushParagraph(blocks, paragraph);
-                flushList(blocks, listItems);
-                continue;
-            }
-            if (trimmed.startsWith("# ")) {
-                flushParagraph(blocks, paragraph);
-                flushList(blocks, listItems);
-                blocks.add("<h2>" + inlineMarkdown(trimmed.substring(2).strip()) + "</h2>");
-                continue;
-            }
-            if (trimmed.startsWith("## ")) {
-                flushParagraph(blocks, paragraph);
-                flushList(blocks, listItems);
-                blocks.add("<h2>" + inlineMarkdown(trimmed.substring(3).strip()) + "</h2>");
-                continue;
-            }
-            if (trimmed.startsWith("### ")) {
-                flushParagraph(blocks, paragraph);
-                flushList(blocks, listItems);
-                blocks.add("<h3>" + inlineMarkdown(trimmed.substring(4).strip()) + "</h3>");
-                continue;
-            }
-            if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
-                flushParagraph(blocks, paragraph);
-                listItems.add("<li>" + inlineMarkdown(trimmed.substring(2).strip()) + "</li>");
-                continue;
-            }
-            java.util.regex.Matcher orderedItem = ORDERED_LIST_ITEM.matcher(trimmed);
-            if (orderedItem.matches()) {
-                flushParagraph(blocks, paragraph);
-                listItems.add("<li>" + inlineMarkdown(orderedItem.group(1).strip()) + "</li>");
-                continue;
-            }
-            flushList(blocks, listItems);
-            paragraph.add(trimmed);
-        }
-        if (code != null) {
-            blocks.add("<pre><code>" + escapeHtml(code.toString().stripTrailing()) + "</code></pre>");
-        }
-        flushParagraph(blocks, paragraph);
-        flushList(blocks, listItems);
-        return String.join("\n", blocks);
-    }
-
-    private void flushParagraph(List<String> blocks, List<String> paragraph) {
-        if (paragraph.isEmpty()) {
-            return;
-        }
-        blocks.add("<p>" + inlineMarkdown(String.join(" ", paragraph)) + "</p>");
-        paragraph.clear();
-    }
-
-    private void flushList(List<String> blocks, List<String> listItems) {
-        if (listItems.isEmpty()) {
-            return;
-        }
-        blocks.add("<ul>" + String.join("", listItems) + "</ul>");
-        listItems.clear();
-    }
-
-    private String inlineMarkdown(String value) {
-        String escaped = escapeHtml(value);
-        escaped = renderMarkdownLinks(escaped);
-        escaped = renderPlainUrls(escaped);
-        escaped = BOLD.matcher(escaped).replaceAll("<strong>$1</strong>");
-        return INLINE_CODE.matcher(escaped).replaceAll("<code>$1</code>");
-    }
-
-    private String renderMarkdownLinks(String value) {
-        Matcher matcher = MARKDOWN_LINK.matcher(value);
-        StringBuilder rendered = new StringBuilder();
-        while (matcher.find()) {
-            matcher.appendReplacement(rendered, Matcher.quoteReplacement(linkHtml(matcher.group(2), matcher.group(1))));
-        }
-        matcher.appendTail(rendered);
-        return rendered.toString();
-    }
-
-    private String renderPlainUrls(String value) {
-        Matcher anchor = ANCHOR.matcher(value);
-        StringBuilder rendered = new StringBuilder();
-        int lastIndex = 0;
-        while (anchor.find()) {
-            rendered.append(linkPlainUrls(value.substring(lastIndex, anchor.start())));
-            rendered.append(anchor.group());
-            lastIndex = anchor.end();
-        }
-        rendered.append(linkPlainUrls(value.substring(lastIndex)));
-        return rendered.toString();
-    }
-
-    private String linkPlainUrls(String value) {
-        Matcher matcher = URL.matcher(value);
-        StringBuilder rendered = new StringBuilder();
-        while (matcher.find()) {
-            String url = stripTrailingUrlPunctuation(matcher.group(1));
-            String trailing = matcher.group(1).substring(url.length());
-            matcher.appendReplacement(rendered, Matcher.quoteReplacement(linkHtml(url, url) + trailing));
-        }
-        matcher.appendTail(rendered);
-        return rendered.toString();
-    }
-
-    private String stripTrailingUrlPunctuation(String url) {
-        String stripped = url;
-        while (stripped.endsWith(".")
-                || stripped.endsWith(",")
-                || stripped.endsWith(";")
-                || stripped.endsWith(":")
-                || stripped.endsWith("!")
-                || stripped.endsWith("?")
-                || stripped.endsWith("，")
-                || stripped.endsWith("。")
-                || stripped.endsWith("；")
-                || stripped.endsWith("：")
-                || stripped.endsWith("！")
-                || stripped.endsWith("？")) {
-            stripped = stripped.substring(0, stripped.length() - 1);
-        }
-        return stripped;
-    }
-
-    private String linkHtml(String escapedUrl, String escapedLabel) {
-        return "<a href=\"%s\" target=\"_blank\" rel=\"noreferrer\">%s</a>".formatted(
-                escapedUrl,
-                escapedLabel
-        );
     }
 
     private String escapeHtml(String value) {

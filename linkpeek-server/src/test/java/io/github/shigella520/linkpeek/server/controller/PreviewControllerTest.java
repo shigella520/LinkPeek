@@ -1365,6 +1365,11 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(0, testShareSummaryAudioClient.config.get().getPitch());
         org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("LinkPeek - "));
         org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("分享总结报告正文"));
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("内容洞察稳定"));
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("图片测试标题"));
+        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("# 分享总结报告正文"));
+        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("**内容洞察**"));
+        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("[图片测试标题](https://example.com/image)"));
 
         mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
                         .cookie(cookie))
