@@ -27,6 +27,9 @@ public class ShareSummaryRunRecord {
     private String ogTitle;
     private String ogDescription;
     private String imageErrorMessage;
+    private String audioStatus;
+    private String audioUrl;
+    private String audioErrorMessage;
 
     public Long getId() {
         return id;
@@ -234,5 +237,29 @@ public class ShareSummaryRunRecord {
 
     public void setImageErrorMessage(String imageErrorMessage) {
         this.imageErrorMessage = imageErrorMessage;
+    }
+
+    public String getAudioStatus() {
+        return audioStatus;
+    }
+
+    public void setAudioStatus(String audioStatus) {
+        this.audioStatus = audioStatus;
+    }
+
+    public String getAudioUrl() {
+        return audioUrl;
+    }
+
+    public void setAudioUrl(String audioUrl) {
+        this.audioUrl = audioUrl;
+    }
+
+    public String getAudioErrorMessage() {
+        return audioErrorMessage;
+    }
+
+    public void setAudioErrorMessage(String audioErrorMessage) {
+        this.audioErrorMessage = audioErrorMessage;
     }
 }

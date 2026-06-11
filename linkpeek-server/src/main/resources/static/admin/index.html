@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260601-admin-pinned-drawer">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260608-share-summary-task-list">
 </head>
 <body>
 <header class="topbar">
@@ -245,6 +245,7 @@
                 </div>
                 <div class="panel-action-row">
                     <button type="button" class="secondary" id="share-summary-image-config-button">AI 生图配置</button>
+                    <button type="button" class="secondary" id="share-summary-audio-config-button">TTS 配置</button>
                     <button type="button" id="share-summary-new-button">新建任务</button>
                 </div>
                 <p id="share-summary-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -255,7 +256,6 @@
                             <th>任务</th>
                             <th>周期</th>
                             <th>执行时间</th>
-                            <th>链接数</th>
                             <th>状态</th>
                             <th>操作</th>
                         </tr>
@@ -286,6 +286,14 @@
                                 <option value="EMPTY">EMPTY</option>
                                 <option value="FAILED">FAILED</option>
                                 <option value="SKIPPED">SKIPPED</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>执行类型</span>
+                            <select id="share-summary-run-filter-trigger">
+                                <option value="">全部</option>
+                                <option value="SCHEDULED">SCHEDULED</option>
+                                <option value="MANUAL">MANUAL</option>
                             </select>
                         </label>
                         <label>
@@ -626,61 +634,118 @@
             <h3 id="share-summary-task-modal-title">新建分享总结任务</h3>
             <button type="button" class="secondary" id="share-summary-task-cancel-button">取消</button>
         </div>
-        <form id="share-summary-task-form" class="grid-form">
-            <input id="share-summary-task-id" type="hidden">
-            <label>
-                <span>任务名称</span>
-                <input id="share-summary-task-name" type="text" autocomplete="off" required>
-            </label>
-            <label>
-                <span>周期</span>
-                <select id="share-summary-task-period" required>
-                    <option value="DAILY">每日</option>
-                    <option value="WEEKLY">每周</option>
-                    <option value="MONTHLY">每月</option>
-                </select>
-            </label>
-            <label>
-                <span>执行时间</span>
-                <input id="share-summary-task-run-time" type="time" value="09:00" required>
-            </label>
-            <label id="share-summary-task-weekday-field">
-                <span>周几</span>
-                <select id="share-summary-task-day-of-week">
-                    <option value="1">周一</option>
-                    <option value="2">周二</option>
-                    <option value="3">周三</option>
-                    <option value="4">周四</option>
-                    <option value="5">周五</option>
-                    <option value="6">周六</option>
-                    <option value="7">周日</option>
-                </select>
-            </label>
-            <label id="share-summary-task-monthly-field">
-                <span>每月触发日</span>
-                <input type="text" value="月末" disabled>
-            </label>
-            <label>
-                <span>最大链接数</span>
-                <input id="share-summary-task-max-links" type="number" min="1" max="2000" value="100" required>
-            </label>
-            <label>
-                <span>最小链接数</span>
-                <input id="share-summary-task-min-links" type="number" min="1" max="2000" value="1" required>
-            </label>
-            <label class="checkbox-row">
-                <input id="share-summary-task-enabled" type="checkbox">
-                <span>启用定时执行</span>
-            </label>
-            <label class="wide">
-                <span>分享总结提示词</span>
-                <textarea id="share-summary-task-prompt" rows="7" required></textarea>
-            </label>
-            <div class="modal-actions wide">
-                <button type="submit">保存任务</button>
+        <form id="share-summary-task-form" class="share-summary-task-form">
+            <div class="share-summary-task-fields">
+                <input id="share-summary-task-id" type="hidden">
+                <div class="task-form-section">
+                    <div class="task-form-section-head">
+                        <p>任务</p>
+                    </div>
+                    <div class="grid-form">
+                        <label class="wide">
+                            <span>任务名称</span>
+                            <input id="share-summary-task-name" type="text" autocomplete="off" required>
+                        </label>
+                    </div>
+                </div>
+                <div class="task-form-section">
+                    <div class="task-form-section-head">
+                        <p>周期与触发</p>
+                    </div>
+                    <div class="grid-form">
+                        <label>
+                            <span>周期</span>
+                            <select id="share-summary-task-period" required>
+                                <option value="DAILY">每日</option>
+                                <option value="WEEKLY">每周</option>
+                                <option value="MONTHLY">每月</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>周期选择模式</span>
+                            <select id="share-summary-task-period-selection-mode" required>
+                                <option value="CURRENT">本周期</option>
+                                <option value="PREVIOUS">上周期</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span>执行时间</span>
+                            <input id="share-summary-task-run-time" type="time" value="09:00" required>
+                        </label>
+                        <label id="share-summary-task-weekday-field">
+                            <span>周几</span>
+                            <select id="share-summary-task-day-of-week">
+                                <option value="1">周一</option>
+                                <option value="2">周二</option>
+                                <option value="3">周三</option>
+                                <option value="4">周四</option>
+                                <option value="5">周五</option>
+                                <option value="6">周六</option>
+                                <option value="7">周日</option>
+                            </select>
+                        </label>
+                        <label id="share-summary-task-monthly-field">
+                            <span>每月触发日</span>
+                            <input id="share-summary-task-monthly-trigger-label" type="text" value="月末" disabled>
+                        </label>
+                        <label class="checkbox-row task-enabled-row">
+                            <input id="share-summary-task-enabled" type="checkbox">
+                            <span>启用定时执行</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="task-form-section">
+                    <div class="task-form-section-head">
+                        <p>生成约束</p>
+                    </div>
+                    <div class="grid-form">
+                        <label>
+                            <span>最大链接数</span>
+                            <input id="share-summary-task-max-links" type="number" min="1" max="2000" value="100" required>
+                        </label>
+                        <label>
+                            <span>最小链接数</span>
+                            <input id="share-summary-task-min-links" type="number" min="1" max="2000" value="1" required>
+                        </label>
+                    </div>
+                </div>
+                <div class="task-form-section task-prompt-section">
+                    <div class="task-form-section-head">
+                        <p>提示词</p>
+                    </div>
+                    <label class="wide">
+                        <span>分享总结提示词</span>
+                        <textarea id="share-summary-task-prompt" rows="8" required></textarea>
+                    </label>
+                </div>
+            </div>
+            <aside class="share-summary-window-help" aria-label="时间窗口说明">
+                <div class="window-help-head">
+                    <p>时间窗口</p>
+                    <span id="share-summary-window-mode-chip">本周期</span>
+                </div>
+                <dl>
+                    <div>
+                        <dt>自动执行</dt>
+                        <dd id="share-summary-window-auto-description"></dd>
+                    </div>
+                    <div>
+                        <dt>手动执行</dt>
+                        <dd id="share-summary-window-manual-description"></dd>
+                    </div>
+                </dl>
+                <div class="window-help-summary">
+                    <span id="share-summary-window-period-chip">每日</span>
+                    <span id="share-summary-window-schedule-chip">09:00</span>
+                </div>
+            </aside>
+            <div class="share-summary-task-footer">
+                <p id="share-summary-task-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
+                <div class="modal-actions">
+                    <button type="submit">保存任务</button>
+                </div>
             </div>
         </form>
-        <p id="share-summary-task-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
     </section>
 </div>
 
@@ -734,7 +799,7 @@
             </label>
             <label>
                 <span>Timeout</span>
-                <input id="share-summary-image-timeout" type="number" min="1" max="600" value="300">
+                <input id="share-summary-image-timeout" type="number" min="1" max="1800" value="300">
             </label>
             <label class="full">
                 <span>风格提示词</span>
@@ -745,6 +810,74 @@
             </div>
         </form>
         <p id="share-summary-image-config-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
+    </section>
+</div>
+
+<div class="modal-shell" id="share-summary-audio-config-modal" hidden>
+    <div class="modal-backdrop" data-close-modal="share-summary-audio-config"></div>
+    <section class="modal modal-wide" role="dialog" aria-modal="true" aria-labelledby="share-summary-audio-config-modal-title">
+        <div class="modal-head">
+            <h3 id="share-summary-audio-config-modal-title">TTS 配置</h3>
+            <button type="button" class="secondary" id="share-summary-audio-config-cancel-button">取消</button>
+        </div>
+        <form id="share-summary-audio-config-form" class="grid-form">
+            <label class="switch-row image-config-switch">
+                <input id="share-summary-audio-enabled" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                <span class="switch-text">启用 TTS</span>
+            </label>
+            <label class="switch-row image-config-switch">
+                <input id="share-summary-audio-auto-generate" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                <span class="switch-text">分享总结成功后自动生成</span>
+            </label>
+            <label>
+                <span>Provider</span>
+                <select id="share-summary-audio-provider-type">
+                    <option value="OPENAI_COMPATIBLE">OpenAI Compatible</option>
+                </select>
+            </label>
+            <label>
+                <span>Base URL</span>
+                <input id="share-summary-audio-base-url" type="url" placeholder="https://tts.wangwangit.com">
+            </label>
+            <label>
+                <span>Endpoint Path</span>
+                <input id="share-summary-audio-endpoint-path" type="text" value="/v1/audio/speech">
+            </label>
+            <label>
+                <span>API Key</span>
+                <input id="share-summary-audio-api-key" type="password" autocomplete="off" placeholder="留空表示不修改">
+            </label>
+            <label>
+                <span>Model</span>
+                <input id="share-summary-audio-model" type="text" autocomplete="off" placeholder="可选，例如 tts-1">
+            </label>
+            <label>
+                <span>Voice</span>
+                <input id="share-summary-audio-voice" type="text" value="zh-CN-YunhaoNeural">
+            </label>
+            <label>
+                <span>Speed</span>
+                <input id="share-summary-audio-speed" type="number" min="0.25" max="4" step="any" value="1.2">
+            </label>
+            <label>
+                <span>Pitch</span>
+                <input id="share-summary-audio-pitch" type="number" step="1" value="0">
+            </label>
+            <label>
+                <span>Style</span>
+                <input id="share-summary-audio-style" type="text" value="newscast">
+            </label>
+            <label>
+                <span>Timeout</span>
+                <input id="share-summary-audio-timeout" type="number" min="1" max="1800" value="120">
+            </label>
+            <div class="modal-actions wide">
+                <button type="submit">保存配置</button>
+            </div>
+        </form>
+        <p id="share-summary-audio-config-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
     </section>
 </div>
 
@@ -901,6 +1034,6 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260601-admin-pinned-drawer"></script>
+<script src="/admin/app.js?v=20260608-share-summary-task-list"></script>
 </body>
 </html>

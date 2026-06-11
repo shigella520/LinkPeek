@@ -240,9 +240,6 @@ public class NotificationService {
 
     public NotificationDeliveryRecord retryDelivery(long deliveryId) {
         NotificationDeliveryRecord delivery = delivery(deliveryId);
-        if (!NotificationDeliveryStatus.FAILED.name().equals(delivery.getStatus())) {
-            throw new IllegalStateException("Only failed notification deliveries can be retried.");
-        }
         NotificationChannelRecord channel = existingChannel(delivery.getChannelId());
         String body = retryRequestBody(delivery);
         delivery.setStatus(NotificationDeliveryStatus.PENDING.name());
@@ -256,7 +253,7 @@ public class NotificationService {
         delivery.setDurationMs(0);
         delivery.setFinishedAt(null);
         if (notificationMapper.resetDeliveryForRetry(delivery) == 0) {
-            throw new IllegalStateException("Only failed notification deliveries can be retried.");
+            throw new IllegalStateException("Notification delivery could not be reset for retry.");
         }
         submitDelivery(delivery.getId(), channel, delivery.getEventType(), now(), body);
         return delivery;

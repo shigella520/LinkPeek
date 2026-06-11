@@ -11,6 +11,7 @@ import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.service.NotificationService;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioClient;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClient;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
@@ -41,9 +42,11 @@ import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -119,6 +122,9 @@ class PreviewControllerTest {
     private TestShareSummaryImageClient testShareSummaryImageClient;
 
     @Autowired
+    private TestShareSummaryAudioClient testShareSummaryAudioClient;
+
+    @Autowired
     private NotificationService notificationService;
 
     @Autowired
@@ -146,6 +152,8 @@ class PreviewControllerTest {
         jdbcTemplate.execute("DELETE FROM stats_link");
         jdbcTemplate.execute("DELETE FROM share_summary_image");
         jdbcTemplate.execute("DELETE FROM share_summary_image_config");
+        jdbcTemplate.execute("DELETE FROM share_summary_audio");
+        jdbcTemplate.execute("DELETE FROM share_summary_audio_config");
         jdbcTemplate.execute("DELETE FROM share_summary_run");
         jdbcTemplate.execute("DELETE FROM share_summary_task");
         jdbcTemplate.execute("DELETE FROM notification_delivery");
@@ -159,6 +167,7 @@ class PreviewControllerTest {
         testPreviewProvider.reset();
         testAiTitleClient.reset();
         testShareSummaryImageClient.reset();
+        testShareSummaryAudioClient.reset();
         statisticsEventDeduplicator.clear();
     }
 
@@ -1020,13 +1029,14 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2000,"minLinks":2000}
+                                {"name":" 每日总结 ","enabled":true,"periodType":"DAILY","periodSelectionMode":"CURRENT","runTime":"09:00","prompt":" 总结重点 ","maxLinks":2000,"minLinks":2000}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").exists())
                 .andExpect(jsonPath("$.name").value("每日总结"))
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.periodType").value("DAILY"))
+                .andExpect(jsonPath("$.periodSelectionMode").value("CURRENT"))
                 .andExpect(jsonPath("$.runTime").value("09:00"))
                 .andExpect(jsonPath("$.dayOfWeek").doesNotExist())
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist())
@@ -1039,10 +1049,11 @@ class PreviewControllerTest {
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
                         .content("""
-                                {"name":"周总结","enabled":true,"periodType":"WEEKLY","runTime":"10:30","dayOfWeek":3,"prompt":"按主题聚合","maxLinks":2,"minLinks":1}
+                                {"name":"周总结","enabled":true,"periodType":"WEEKLY","periodSelectionMode":"PREVIOUS","runTime":"10:30","dayOfWeek":3,"prompt":"按主题聚合","maxLinks":2,"minLinks":1}
                                 """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.periodType").value("WEEKLY"))
+                .andExpect(jsonPath("$.periodSelectionMode").value("PREVIOUS"))
                 .andExpect(jsonPath("$.dayOfWeek").value(3))
                 .andExpect(jsonPath("$.dayOfMonth").doesNotExist());
 
@@ -1077,10 +1088,12 @@ class PreviewControllerTest {
         long windowStart = window.start();
         long beforeRun = System.currentTimeMillis();
         insertStatsLink("key-a", "https://example.com/a", "数据库标题 A", windowStart + 1_000L);
+        insertStatsLink("key-a-duplicate", "https://example.com/a", "数据库标题 A 晚到", windowStart + 1_500L);
         insertStatsLink("key-b", "https://example.com/b", "数据库标题 B", windowStart + 2_000L);
         insertStatsLink("key-c", "https://example.com/c", "数据库标题 C", windowStart + 3_000L);
         insertStatsLink("key-empty", "https://example.com/empty", "", windowStart + 4_000L);
         insertPreviewCreatedEvent("key-a", "https://source.example.com/a1", windowStart + 1_000L, true, true);
+        insertPreviewCreatedEvent("key-a-duplicate", "https://source.example.com/a-duplicate", windowStart + 1_500L, true, true);
         insertPreviewCreatedEvent("key-b", "https://source.example.com/b", windowStart + 2_000L, false, false);
         insertPreviewCreatedEvent("key-a", "https://source.example.com/a2", windowStart + 3_000L, true, true);
         insertPreviewCreatedEvent("key-c", "https://source.example.com/c", windowStart + 4_000L, false, false);
@@ -1096,7 +1109,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.periodType").value("DAILY"))
                 .andExpect(jsonPath("$.windowStart").value(windowStart))
                 .andExpect(jsonPath("$.status").value("SUCCESS"))
-                .andExpect(jsonPath("$.linkCount").value(5))
+                .andExpect(jsonPath("$.linkCount").value(6))
                 .andExpect(jsonPath("$.uniqueLinkCount").value(3))
                 .andExpect(jsonPath("$.inputLinkCount").value(2))
                 .andExpect(jsonPath("$.promptSnapshot").value("按主题聚合"))
@@ -1114,8 +1127,14 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.textRequests.get());
         AiTextPrompt prompt = testAiTitleClient.textPrompt.get();
         org.junit.jupiter.api.Assertions.assertTrue(prompt.prompt().contains("按主题聚合"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("[2次] 数据库标题 A"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("[1次] 数据库标题 B"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("链接分享列表"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("1.标题：数据库标题 A"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   链接：https://example.com/a"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   分享时间：" + expectedShareTime(windowStart + 1_000L)));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("2.标题：数据库标题 B"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   链接：https://example.com/b"));
+        org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("[2次]"));
+        org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 A 晚到"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 C"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("source.example.com"));
 
@@ -1194,12 +1213,15 @@ class PreviewControllerTest {
         Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "门槛总结");
         ExpectedWindow window = currentDailyManualWindow();
         insertStatsLink("min-key", "https://example.com/min", "门槛标题", window.start() + 1_000L);
+        insertStatsLink("min-key-duplicate", "https://example.com/min", "门槛标题重复", window.start() + 2_000L);
         insertPreviewCreatedEvent("min-key", "https://source.example.com/min", window.start() + 1_000L, true, true);
+        insertPreviewCreatedEvent("min-key-duplicate", "https://source.example.com/min-duplicate", window.start() + 2_000L, true, true);
 
         mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("EMPTY"))
+                .andExpect(jsonPath("$.linkCount").value(2))
                 .andExpect(jsonPath("$.uniqueLinkCount").value(1))
                 .andExpect(jsonPath("$.inputLinkCount").value(1))
                 .andExpect(jsonPath("$.errorMessage").value("Link title count 1 is below the configured minimum 2."));
@@ -1223,6 +1245,8 @@ class PreviewControllerTest {
 
                 - 链接分享增长
                 - **内容洞察**稳定
+                - [图片测试标题](https://example.com/image)
+                - 裸链接 https://example.com/plain
                 """);
         jdbcTemplate.update(
                 "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -1231,6 +1255,17 @@ class PreviewControllerTest {
 
         mockMvc.perform(get("/api/admin/share-summary/image-config"))
                 .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/admin/share-summary/audio-config")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.baseUrl").value("https://tts.wangwangit.com"))
+                .andExpect(jsonPath("$.endpointPath").value("/v1/audio/speech"))
+                .andExpect(jsonPath("$.model").value(""))
+                .andExpect(jsonPath("$.voice").value("zh-CN-YunhaoNeural"))
+                .andExpect(jsonPath("$.speed").value(1.2))
+                .andExpect(jsonPath("$.pitch").value(0))
+                .andExpect(jsonPath("$.style").value("newscast"));
 
         mockMvc.perform(put("/api/admin/share-summary/image-config")
                         .cookie(cookie)
@@ -1253,6 +1288,17 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.apiKeyConfigured").value(true))
                 .andExpect(jsonPath("$.model").value("image-model-2"));
         org.junit.jupiter.api.Assertions.assertEquals("sk-image", jdbcTemplate.queryForObject("SELECT api_key FROM share_summary_image_config WHERE id = 1", String.class));
+
+        mockMvc.perform(put("/api/admin/share-summary/audio-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://tts.wangwangit.com","endpointPath":"/v1/audio/speech","apiKey":"","model":"","voice":"zh-CN-YunhaoNeural","speed":1.2,"pitch":0,"style":"newscast","outputFormat":"mp3","requestTimeoutSeconds":120}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.model").value(""))
+                .andExpect(jsonPath("$.pitch").value(0));
 
         mockMvc.perform(post("/api/admin/share-summary/tasks")
                         .cookie(cookie)
@@ -1287,6 +1333,7 @@ class PreviewControllerTest {
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.imageStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.audioStatus").value("NOT_GENERATED"))
                 .andExpect(jsonPath("$.ogImageUrl").value(containsString("/share-summary/og-images/")))
                 .andExpect(jsonPath("$.ogPageUrl").value(containsString("/share-summary/reports/")))
                 .andExpect(jsonPath("$.ogTitle").value(containsString("LinkPeek - ")))
@@ -1304,13 +1351,71 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "image/png"));
 
+        mockMvc.perform(get("/share-summary/audios/{publicToken}.mp3", publicToken))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/audio", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(isIn(List.of("PENDING", "GENERATING"))));
+
+        waitForAudioSuccess(runId);
+        org.junit.jupiter.api.Assertions.assertEquals(1, testShareSummaryAudioClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("", testShareSummaryAudioClient.config.get().getModel());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testShareSummaryAudioClient.config.get().getPitch());
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("LinkPeek - "));
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("分享总结报告正文"));
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("内容洞察稳定"));
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("图片测试标题"));
+        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("# 分享总结报告正文"));
+        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("**内容洞察**"));
+        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("[图片测试标题](https://example.com/image)"));
+
+        mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.audioStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.audioUrl").value(containsString("/share-summary/audios/")));
+
+        mockMvc.perform(get("/share-summary/audios/{publicToken}.mp3", publicToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "audio/mpeg"));
+
         mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("og:title")))
                 .andExpect(content().string(containsString("og:image")))
+                .andExpect(content().string(containsString("og:audio")))
+                .andExpect(content().string(containsString("og:audio:secure_url")))
+                .andExpect(content().string(containsString("og:audio:type")))
+                .andExpect(content().string(containsString("audio/mpeg")))
+                .andExpect(content().string(containsString("data-audio-reader")))
+                .andExpect(content().string(containsString("data-audio-element")))
+                .andExpect(content().string(containsString("/share-summary/audios/")))
+                .andExpect(content().string(containsString("data-reader")))
+                .andExpect(content().string(containsString("speechSynthesis")))
+                .andExpect(content().string(containsString("data-reader-voice")))
+                .andExpect(content().string(containsString("synth.getVoices()")))
+                .andExpect(content().string(containsString("linkpeek.shareSummary.readerVoice")))
+                .andExpect(content().string(containsString("<option value=\"1.0\">1.0x</option>")))
+                .andExpect(content().string(containsString("<option value=\"1.1\">1.1x</option>")))
+                .andExpect(content().string(containsString("<option value=\"1.2\">1.2x</option>")))
+                .andExpect(content().string(containsString("<option value=\"1.3\">1.3x</option>")))
+                .andExpect(content().string(containsString("<option value=\"1.4\">1.4x</option>")))
+                .andExpect(content().string(containsString("<option value=\"1.5\">1.5x</option>")))
+                .andExpect(content().string(containsString("<option value=\"1.8\">1.8x</option>")))
+                .andExpect(content().string(containsString("<option value=\"2.0\">2.0x</option>")))
+                .andExpect(content().string(containsString("function defaultRate()")))
+                .andExpect(content().string(containsString("return viewportWidth <= 520 ? 1.1 : 1.4;")))
+                .andExpect(content().string(containsString("setRate(defaultRate())")))
+                .andExpect(content().string(containsString("createUtterance")))
+                .andExpect(content().string(containsString("准备播放")))
+                .andExpect(content().string(not(containsString("data-reader-action=\"stop\""))))
                 .andExpect(content().string(containsString("<h2>分享总结报告正文</h2>")))
                 .andExpect(content().string(containsString("<li>链接分享增长</li>")))
-                .andExpect(content().string(containsString("<strong>内容洞察</strong>")));
+                .andExpect(content().string(containsString("<strong>内容洞察</strong>")))
+                .andExpect(content().string(containsString("<a href=\"https://example.com/image\" target=\"_blank\" rel=\"noreferrer\">图片测试标题</a>")))
+                .andExpect(content().string(containsString("<a href=\"https://example.com/plain\" target=\"_blank\" rel=\"noreferrer\">https://example.com/plain</a>")));
     }
 
     @Test
@@ -1924,6 +2029,22 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.fail("Expected share summary image generation to succeed.");
     }
 
+    private void waitForAudioSuccess(long runId) throws InterruptedException {
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            List<String> statuses = jdbcTemplate.queryForList(
+                    "SELECT status FROM share_summary_audio WHERE run_id = ? ORDER BY id DESC",
+                    String.class,
+                    runId
+            );
+            if (!statuses.isEmpty() && "SUCCESS".equals(statuses.get(0))) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected share summary audio generation to succeed.");
+    }
+
     private void waitForNotificationDelivery(long imageId) throws InterruptedException {
         String eventKey = "SHARE_SUMMARY_IMAGE_SUCCESS:" + imageId;
         long deadline = System.nanoTime() + 3_000_000_000L;
@@ -1947,6 +2068,12 @@ class PreviewControllerTest {
                 LocalDate.now(zone).atStartOfDay(zone).toInstant().toEpochMilli(),
                 System.currentTimeMillis()
         );
+    }
+
+    private static String expectedShareTime(long millis) {
+        return Instant.ofEpochMilli(millis)
+                .atZone(ZoneId.systemDefault())
+                .format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"));
     }
 
     private static ExpectedWindow currentMonthlyManualWindow() {
@@ -1985,6 +2112,12 @@ class PreviewControllerTest {
         @Primary
         TestShareSummaryImageClient testShareSummaryImageClient() {
             return new TestShareSummaryImageClient();
+        }
+
+        @Bean
+        @Primary
+        TestShareSummaryAudioClient testShareSummaryAudioClient() {
+            return new TestShareSummaryAudioClient();
         }
     }
 
@@ -2150,6 +2283,36 @@ class PreviewControllerTest {
             prompt.set("");
             base64.set(testPngBase64());
         }
+    }
+
+    static final class TestShareSummaryAudioClient extends ShareSummaryAudioClient {
+        private final AtomicInteger requests = new AtomicInteger();
+        private final AtomicReference<io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord> config = new AtomicReference<>();
+        private final AtomicReference<String> input = new AtomicReference<>("");
+        private final AtomicReference<byte[]> bytes = new AtomicReference<>(testMp3Bytes());
+
+        TestShareSummaryAudioClient() {
+            super(null, null);
+        }
+
+        @Override
+        public AudioGenerationResult generate(io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord config, String input) {
+            requests.incrementAndGet();
+            this.config.set(config);
+            this.input.set(input);
+            return new AudioGenerationResult(bytes.get(), "{\"test\":true}", 19);
+        }
+
+        void reset() {
+            requests.set(0);
+            config.set(null);
+            input.set("");
+            bytes.set(testMp3Bytes());
+        }
+    }
+
+    private static byte[] testMp3Bytes() {
+        return new byte[]{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0, 0};
     }
 
     private static String testPngBase64() {

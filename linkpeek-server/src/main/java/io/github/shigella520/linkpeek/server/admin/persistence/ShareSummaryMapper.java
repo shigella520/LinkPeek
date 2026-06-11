@@ -47,12 +47,14 @@ public interface ShareSummaryMapper {
 
     long countRuns(
             @Param("taskId") Long taskId,
-            @Param("status") String status
+            @Param("status") String status,
+            @Param("triggerType") String triggerType
     );
 
     List<ShareSummaryRunRecord> selectRuns(
             @Param("taskId") Long taskId,
             @Param("status") String status,
+            @Param("triggerType") String triggerType,
             @Param("limit") int limit,
             @Param("offset") int offset
     );

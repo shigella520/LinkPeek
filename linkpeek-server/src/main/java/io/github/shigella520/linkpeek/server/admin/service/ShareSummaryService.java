@@ -3,6 +3,7 @@ package io.github.shigella520.linkpeek.server.admin.service;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryLinkRow;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryPeriodType;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryPeriodSelectionMode;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunStatus;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord;
@@ -30,6 +31,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.YearMonth;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,13 +50,15 @@ public class ShareSummaryService {
     private static final int MAX_MIN_LINKS = 2_000;
     private static final int CATCH_UP_LIMIT = 7;
     private static final long RUNNING_TIMEOUT_MILLIS = 30 * 60 * 1000L;
-    private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接标题列表，生成一份结构清晰、信息密度高的中文分享总结。";
+    private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接分享列表，生成一份结构清晰、信息密度高的中文分享总结。";
+    private static final DateTimeFormatter SUMMARY_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final ShareSummaryMapper shareSummaryMapper;
     private final ShareSummaryLinkMapper shareSummaryLinkMapper;
     private final AiProviderMapper aiProviderMapper;
     private final AiTitleClient aiTitleClient;
     private final ShareSummaryImageService shareSummaryImageService;
+    private final ShareSummaryAudioService shareSummaryAudioService;
     private final AiProviderDowngradeService aiProviderDowngradeService;
     private final Clock clock;
     private final AtomicBoolean scheduledRunning = new AtomicBoolean(false);
@@ -65,6 +69,7 @@ public class ShareSummaryService {
             AiProviderMapper aiProviderMapper,
             AiTitleClient aiTitleClient,
             ShareSummaryImageService shareSummaryImageService,
+            ShareSummaryAudioService shareSummaryAudioService,
             AiProviderDowngradeService aiProviderDowngradeService,
             Clock clock
     ) {
@@ -73,6 +78,7 @@ public class ShareSummaryService {
         this.aiProviderMapper = aiProviderMapper;
         this.aiTitleClient = aiTitleClient;
         this.shareSummaryImageService = shareSummaryImageService;
+        this.shareSummaryAudioService = shareSummaryAudioService;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
         this.clock = clock;
     }
@@ -114,15 +120,22 @@ public class ShareSummaryService {
         return executeWindow(task, window, ShareSummaryTriggerType.MANUAL);
     }
 
-    public RunPage runs(Integer page, Integer size, Long taskId, String status) {
+    public RunPage runs(Integer page, Integer size, Long taskId, String status, String triggerType) {
         int normalizedSize = normalizePageSize(size);
         int normalizedPage = page == null || page < 1 ? 1 : page;
         String normalizedStatus = normalizeStatusFilter(status);
-        long total = shareSummaryMapper.countRuns(taskId, normalizedStatus);
+        String normalizedTriggerType = normalizeTriggerTypeFilter(triggerType);
+        long total = shareSummaryMapper.countRuns(taskId, normalizedStatus, normalizedTriggerType);
         int totalPages = total == 0 ? 0 : (int) Math.ceil((double) total / normalizedSize);
         int offset = (normalizedPage - 1) * normalizedSize;
-        List<ShareSummaryRunRecord> items = shareSummaryMapper.selectRuns(taskId, normalizedStatus, normalizedSize, offset).stream()
-                .map(this::withImageSummary)
+        List<ShareSummaryRunRecord> items = shareSummaryMapper.selectRuns(
+                        taskId,
+                        normalizedStatus,
+                        normalizedTriggerType,
+                        normalizedSize,
+                        offset
+                ).stream()
+                .map(this::withShareAssetSummaries)
                 .toList();
         return new RunPage(items, normalizedPage, normalizedSize, total, totalPages);
     }
@@ -132,7 +145,7 @@ public class ShareSummaryService {
         if (run == null) {
             throw new IllegalArgumentException("Share summary run was not found.");
         }
-        return withImageSummary(run);
+        return withShareAssetSummaries(run);
     }
 
     @Transactional
@@ -144,9 +157,10 @@ public class ShareSummaryService {
         if (ShareSummaryRunStatus.RUNNING.name().equals(run.getStatus())) {
             throw new IllegalStateException("Share summary run is in progress.");
         }
+        int deletedAudios = shareSummaryAudioService == null ? 0 : shareSummaryAudioService.deleteAudiosForRun(runId);
         int deletedImages = shareSummaryImageService == null ? 0 : shareSummaryImageService.deleteImagesForRun(runId);
         int deletedRuns = shareSummaryMapper.deleteRun(runId);
-        return new DeleteRunResponse(deletedRuns, deletedImages);
+        return new DeleteRunResponse(deletedRuns, deletedImages, deletedAudios);
     }
 
     @Scheduled(fixedDelay = 60_000L, initialDelay = 30_000L)
@@ -192,28 +206,30 @@ public class ShareSummaryService {
 
     List<Window> dueWindows(ShareSummaryTaskRecord task) {
         ShareSummaryPeriodType periodType = ShareSummaryPeriodType.fromValue(task.getPeriodType());
+        ShareSummaryPeriodSelectionMode selectionMode = ShareSummaryPeriodSelectionMode.fromValue(task.getPeriodSelectionMode());
         ZoneId zone = clock.getZone();
         LocalDateTime nowDateTime = LocalDateTime.ofInstant(Instant.now(clock), zone);
         LocalTime runTime = parseRunTime(task.getRunTime());
-        LocalDateTime latestDueTrigger = latestDueTrigger(periodType, nowDateTime, runTime, task);
+        LocalDateTime latestDueTrigger = latestDueTrigger(periodType, selectionMode, nowDateTime, runTime, task);
 
         ShareSummaryRunRecord latest = shareSummaryMapper.selectLatestCompletedScheduledRun(task.getId());
         LocalDateTime nextTrigger = latest == null
                 ? latestDueTrigger
-                : nextTriggerAfter(periodType, millisToDateTime(latest.getWindowEnd(), zone), runTime, task);
+                : nextTriggerAfter(periodType, selectionMode, triggerFromWindowEnd(periodType, selectionMode, latest.getWindowEnd(), zone, runTime, task), runTime, task);
         List<Window> windows = new ArrayList<>();
         while (!nextTrigger.isAfter(latestDueTrigger)) {
-            windows.add(windowForTrigger(periodType, nextTrigger, zone));
+            windows.add(windowForTrigger(periodType, selectionMode, nextTrigger, zone));
             if (windows.size() >= CATCH_UP_LIMIT) {
                 break;
             }
-            nextTrigger = nextTriggerAfter(periodType, nextTrigger, runTime, task);
+            nextTrigger = nextTriggerAfter(periodType, selectionMode, nextTrigger, runTime, task);
         }
         return windows;
     }
 
     private LocalDateTime latestDueTrigger(
             ShareSummaryPeriodType periodType,
+            ShareSummaryPeriodSelectionMode selectionMode,
             LocalDateTime nowDateTime,
             LocalTime runTime,
             ShareSummaryTaskRecord task
@@ -221,7 +237,7 @@ public class ShareSummaryService {
         return switch (periodType) {
             case DAILY -> latestDailyTrigger(nowDateTime, runTime);
             case WEEKLY -> latestWeeklyTrigger(nowDateTime, runTime, task.getDayOfWeek());
-            case MONTHLY -> latestMonthlyTrigger(nowDateTime, runTime);
+            case MONTHLY -> latestMonthlyTrigger(selectionMode, nowDateTime, runTime);
         };
     }
 
@@ -237,17 +253,22 @@ public class ShareSummaryService {
         return trigger.isAfter(nowDateTime) ? trigger.minusWeeks(1) : trigger;
     }
 
-    private LocalDateTime latestMonthlyTrigger(LocalDateTime nowDateTime, LocalTime runTime) {
+    private LocalDateTime latestMonthlyTrigger(
+            ShareSummaryPeriodSelectionMode selectionMode,
+            LocalDateTime nowDateTime,
+            LocalTime runTime
+    ) {
         YearMonth currentMonth = YearMonth.from(nowDateTime);
-        LocalDateTime trigger = currentMonth.atEndOfMonth().atTime(runTime);
+        LocalDateTime trigger = monthlyTrigger(selectionMode, currentMonth, runTime);
         if (trigger.isAfter(nowDateTime)) {
-            trigger = currentMonth.minusMonths(1).atEndOfMonth().atTime(runTime);
+            trigger = monthlyTrigger(selectionMode, currentMonth.minusMonths(1), runTime);
         }
         return trigger;
     }
 
     private LocalDateTime nextTriggerAfter(
             ShareSummaryPeriodType periodType,
+            ShareSummaryPeriodSelectionMode selectionMode,
             LocalDateTime after,
             LocalTime runTime,
             ShareSummaryTaskRecord task
@@ -255,7 +276,28 @@ public class ShareSummaryService {
         return switch (periodType) {
             case DAILY -> nextDailyTriggerAfter(after, runTime);
             case WEEKLY -> nextWeeklyTriggerAfter(after, runTime, task.getDayOfWeek());
-            case MONTHLY -> nextMonthlyTriggerAfter(after, runTime);
+            case MONTHLY -> nextMonthlyTriggerAfter(selectionMode, after, runTime);
+        };
+    }
+
+    private LocalDateTime triggerFromWindowEnd(
+            ShareSummaryPeriodType periodType,
+            ShareSummaryPeriodSelectionMode selectionMode,
+            long windowEnd,
+            ZoneId zone,
+            LocalTime runTime,
+            ShareSummaryTaskRecord task
+    ) {
+        LocalDateTime windowEndDateTime = millisToDateTime(windowEnd, zone);
+        if (selectionMode == ShareSummaryPeriodSelectionMode.CURRENT) {
+            return windowEndDateTime;
+        }
+        return switch (periodType) {
+            case DAILY -> windowEndDateTime.toLocalDate().atTime(runTime);
+            case WEEKLY -> windowEndDateTime.toLocalDate()
+                    .with(TemporalAdjusters.nextOrSame(DayOfWeek.of(task.getDayOfWeek())))
+                    .atTime(runTime);
+            case MONTHLY -> YearMonth.from(windowEndDateTime).atDay(1).atTime(runTime);
         };
     }
 
@@ -271,25 +313,75 @@ public class ShareSummaryService {
         return trigger.isAfter(after) ? trigger : trigger.plusWeeks(1);
     }
 
-    private LocalDateTime nextMonthlyTriggerAfter(LocalDateTime after, LocalTime runTime) {
+    private LocalDateTime nextMonthlyTriggerAfter(
+            ShareSummaryPeriodSelectionMode selectionMode,
+            LocalDateTime after,
+            LocalTime runTime
+    ) {
         YearMonth month = YearMonth.from(after);
-        LocalDateTime trigger = month.atEndOfMonth().atTime(runTime);
+        LocalDateTime trigger = monthlyTrigger(selectionMode, month, runTime);
         if (!trigger.isAfter(after)) {
-            trigger = month.plusMonths(1).atEndOfMonth().atTime(runTime);
+            trigger = monthlyTrigger(selectionMode, month.plusMonths(1), runTime);
         }
         return trigger;
     }
 
-    private Window windowForTrigger(ShareSummaryPeriodType periodType, LocalDateTime trigger, ZoneId zone) {
-        LocalDate windowStart = switch (periodType) {
+    private LocalDateTime monthlyTrigger(
+            ShareSummaryPeriodSelectionMode selectionMode,
+            YearMonth month,
+            LocalTime runTime
+    ) {
+        return switch (selectionMode) {
+            case CURRENT -> month.atEndOfMonth().atTime(runTime);
+            case PREVIOUS -> month.atDay(1).atTime(runTime);
+        };
+    }
+
+    private Window windowForTrigger(
+            ShareSummaryPeriodType periodType,
+            ShareSummaryPeriodSelectionMode selectionMode,
+            LocalDateTime trigger,
+            ZoneId zone
+    ) {
+        LocalDate windowStart = switch (selectionMode) {
+            case CURRENT -> currentPeriodWindowStart(periodType, trigger);
+            case PREVIOUS -> previousPeriodWindowStart(periodType, trigger);
+        };
+        LocalDateTime windowEnd = switch (selectionMode) {
+            case CURRENT -> trigger;
+            case PREVIOUS -> previousPeriodWindowEnd(periodType, trigger);
+        };
+        return new Window(
+                windowStart.atStartOfDay(zone).toInstant().toEpochMilli(),
+                windowEnd.atZone(zone).toInstant().toEpochMilli()
+        );
+    }
+
+    private LocalDate currentPeriodWindowStart(ShareSummaryPeriodType periodType, LocalDateTime trigger) {
+        return switch (periodType) {
             case DAILY -> trigger.toLocalDate();
             case WEEKLY -> trigger.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
             case MONTHLY -> trigger.toLocalDate().withDayOfMonth(1);
         };
-        return new Window(
-                windowStart.atStartOfDay(zone).toInstant().toEpochMilli(),
-                trigger.atZone(zone).toInstant().toEpochMilli()
-        );
+    }
+
+    private LocalDate previousPeriodWindowStart(ShareSummaryPeriodType periodType, LocalDateTime trigger) {
+        return switch (periodType) {
+            case DAILY -> trigger.toLocalDate().minusDays(1);
+            case WEEKLY -> trigger.toLocalDate()
+                    .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+                    .minusWeeks(1);
+            case MONTHLY -> YearMonth.from(trigger).minusMonths(1).atDay(1);
+        };
+    }
+
+    private LocalDateTime previousPeriodWindowEnd(ShareSummaryPeriodType periodType, LocalDateTime trigger) {
+        LocalDate endDate = switch (periodType) {
+            case DAILY -> trigger.toLocalDate();
+            case WEEKLY -> trigger.toLocalDate().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            case MONTHLY -> YearMonth.from(trigger).atDay(1);
+        };
+        return endDate.atStartOfDay();
     }
 
     private LocalDateTime millisToDateTime(long millis, ZoneId zone) {
@@ -315,7 +407,10 @@ public class ShareSummaryService {
         if (shareSummaryImageService != null && ShareSummaryRunStatus.SUCCESS.name().equals(savedRun.getStatus())) {
             shareSummaryImageService.triggerAutoGeneration(savedRun);
         }
-        return withImageSummary(savedRun);
+        if (shareSummaryAudioService != null && ShareSummaryRunStatus.SUCCESS.name().equals(savedRun.getStatus())) {
+            shareSummaryAudioService.triggerAutoGeneration(savedRun);
+        }
+        return withShareAssetSummaries(savedRun);
     }
 
     private ShareSummaryRunRecord createRunningRun(
@@ -441,17 +536,31 @@ public class ShareSummaryService {
                 .append(window.startMillis())
                 .append(" ~ ")
                 .append(window.endMillis())
-                .append("\n\n链接标题列表：\n");
+                .append("\n\n链接分享列表：\n");
         for (int index = 0; index < links.size(); index++) {
             ShareSummaryLinkRow link = links.get(index);
             content.append(index + 1)
-                    .append(". [")
-                    .append(link.getOccurrenceCount())
-                    .append("次] ")
+                    .append(".标题：")
                     .append(link.getTitle())
+                    .append('\n')
+                    .append("   链接：")
+                    .append(summaryLinkUrl(link))
+                    .append('\n')
+                    .append("   分享时间：")
+                    .append(summaryTime(link.getFirstOccurredAt()))
                     .append('\n');
         }
         return content.toString();
+    }
+
+    private String summaryLinkUrl(ShareSummaryLinkRow link) {
+        return link.getCanonicalUrl() == null ? "" : link.getCanonicalUrl().strip();
+    }
+
+    private String summaryTime(long epochMillis) {
+        return Instant.ofEpochMilli(epochMillis)
+                .atZone(clock.getZone())
+                .format(SUMMARY_TIME_FORMATTER);
     }
 
     private ShareSummaryTaskRecord normalizeTask(ShareSummaryTaskRecord existing, TaskRequest request) {
@@ -463,6 +572,7 @@ public class ShareSummaryService {
         task.setName(required(request.name(), "Task name"));
         task.setEnabled(request.enabled() == null ? existing == null || existing.isEnabled() : request.enabled());
         task.setPeriodType(periodType.name());
+        task.setPeriodSelectionMode(ShareSummaryPeriodSelectionMode.fromValue(request.periodSelectionMode()).name());
         task.setRunTime(normalizeRunTime(request.runTime()));
         task.setPrompt(required(request.prompt(), "Prompt"));
         task.setMaxLinks(normalizeMaxLinks(request.maxLinks()));
@@ -473,9 +583,10 @@ public class ShareSummaryService {
 
     private Window manualWindow(ShareSummaryTaskRecord task) {
         ShareSummaryPeriodType periodType = ShareSummaryPeriodType.fromValue(task.getPeriodType());
+        ShareSummaryPeriodSelectionMode selectionMode = ShareSummaryPeriodSelectionMode.fromValue(task.getPeriodSelectionMode());
         ZoneId zone = clock.getZone();
         LocalDateTime nowDateTime = LocalDateTime.ofInstant(Instant.now(clock), zone);
-        return windowForTrigger(periodType, nowDateTime, zone);
+        return windowForTrigger(periodType, selectionMode, nowDateTime, zone);
     }
 
     private ShareSummaryTaskRecord existingTask(long taskId) {
@@ -492,6 +603,15 @@ public class ShareSummaryService {
         }
         String normalized = status.strip().toUpperCase(Locale.ROOT);
         ShareSummaryRunStatus.valueOf(normalized);
+        return normalized;
+    }
+
+    private String normalizeTriggerTypeFilter(String triggerType) {
+        if (!StringUtils.hasText(triggerType)) {
+            return null;
+        }
+        String normalized = triggerType.strip().toUpperCase(Locale.ROOT);
+        ShareSummaryTriggerType.valueOf(normalized);
         return normalized;
     }
 
@@ -560,22 +680,27 @@ public class ShareSummaryService {
         return Instant.now(clock).toEpochMilli();
     }
 
-    private ShareSummaryRunRecord withImageSummary(ShareSummaryRunRecord run) {
+    private ShareSummaryRunRecord withShareAssetSummaries(ShareSummaryRunRecord run) {
         if (run == null || run.getId() == null) {
             return run;
         }
-        if (shareSummaryImageService == null) {
-            return run;
+        if (shareSummaryImageService != null) {
+            ShareSummaryImageService.ImageSummary summary = shareSummaryImageService.imageSummary(run.getId());
+            run.setImageStatus(summary.imageStatus());
+            run.setLatestImageUrl(summary.latestImageUrl());
+            run.setOgImageUrl(summary.ogImageUrl());
+            run.setOgPageUrl(summary.ogPageUrl());
+            run.setOgShareUrl(summary.ogPageUrl());
+            run.setOgTitle(summary.ogTitle());
+            run.setOgDescription(summary.ogDescription());
+            run.setImageErrorMessage(summary.imageErrorMessage());
         }
-        ShareSummaryImageService.ImageSummary summary = shareSummaryImageService.imageSummary(run.getId());
-        run.setImageStatus(summary.imageStatus());
-        run.setLatestImageUrl(summary.latestImageUrl());
-        run.setOgImageUrl(summary.ogImageUrl());
-        run.setOgPageUrl(summary.ogPageUrl());
-        run.setOgShareUrl(summary.ogPageUrl());
-        run.setOgTitle(summary.ogTitle());
-        run.setOgDescription(summary.ogDescription());
-        run.setImageErrorMessage(summary.imageErrorMessage());
+        if (shareSummaryAudioService != null) {
+            ShareSummaryAudioService.AudioSummary summary = shareSummaryAudioService.audioSummary(run.getId());
+            run.setAudioStatus(summary.audioStatus());
+            run.setAudioUrl(summary.audioUrl());
+            run.setAudioErrorMessage(summary.audioErrorMessage());
+        }
         return run;
     }
 
@@ -583,6 +708,7 @@ public class ShareSummaryService {
             String name,
             Boolean enabled,
             String periodType,
+            String periodSelectionMode,
             String runTime,
             Integer dayOfWeek,
             String prompt,
@@ -603,7 +729,7 @@ public class ShareSummaryService {
     public record DeleteResponse(int deleted) {
     }
 
-    public record DeleteRunResponse(int deleted, int deletedImages) {
+    public record DeleteRunResponse(int deleted, int deletedImages, int deletedAudios) {
     }
 
     public record Window(long startMillis, long endMillis) {

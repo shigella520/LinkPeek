@@ -58,6 +58,7 @@ public class ShareSummaryImageService {
     private static final long MAX_IMAGE_BYTES = 10L * 1024L * 1024L;
     private static final int MAX_IMAGE_REDIRECTS = 5;
     private static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 300;
+    private static final int MAX_REQUEST_TIMEOUT_SECONDS = 1800;
     private static final int DEFAULT_WIDTH = 1200;
     private static final int DEFAULT_HEIGHT = 630;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
@@ -301,8 +302,8 @@ public class ShareSummaryImageService {
         config.setOutputFormat(normalizeOutputFormat(request.outputFormat()));
         config.setStylePrompt(StringUtils.hasText(request.stylePrompt()) ? request.stylePrompt().strip() : DEFAULT_STYLE_PROMPT);
         int timeout = request.requestTimeoutSeconds() == null ? DEFAULT_REQUEST_TIMEOUT_SECONDS : request.requestTimeoutSeconds();
-        if (timeout < 1 || timeout > 600) {
-            throw new IllegalArgumentException("Image request timeout must be between 1 and 600 seconds.");
+        if (timeout < 1 || timeout > MAX_REQUEST_TIMEOUT_SECONDS) {
+            throw new IllegalArgumentException("Image request timeout must be between 1 and 1800 seconds.");
         }
         config.setRequestTimeoutSeconds(timeout);
         return config;

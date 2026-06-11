@@ -294,7 +294,6 @@
             duration_ms = #{durationMs},
             finished_at = #{finishedAt}
         WHERE id = #{id}
-          AND status = 'FAILED'
     </update>
 
     <sql id="deliveryFilter">

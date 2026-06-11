@@ -173,6 +173,7 @@ class StatisticsConfigurationTest {
             org.junit.jupiter.api.Assertions.assertFalse(hasColumn(jdbcTemplate, "share_summary_task", "day_of_month"));
             assertTrue(hasColumn(jdbcTemplate, "share_summary_task", "deleted"));
             assertTrue(hasColumn(jdbcTemplate, "share_summary_task", "min_links"));
+            assertTrue(hasColumn(jdbcTemplate, "share_summary_task", "period_selection_mode"));
             assertTrue(hasColumn(jdbcTemplate, "share_summary_run", "link_count"));
             assertTrue(hasColumn(jdbcTemplate, "share_summary_image", "public_token"));
             assertEquals(0, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM share_summary_task", Integer.class));
