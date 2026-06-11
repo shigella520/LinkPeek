@@ -80,6 +80,7 @@ public class ShareSummaryPublicController {
         String pageUrl = image.getOgPageUrl();
         String audioUrl = audioUrl(run.getId());
         boolean hasAudio = StringUtils.hasText(audioUrl);
+        String audioMeta = audioMeta(audioUrl);
         String report = StringUtils.hasText(run.getReport()) ? run.getReport() : "";
         return """
                 <!doctype html>
@@ -95,6 +96,7 @@ public class ShareSummaryPublicController {
                     <meta property="og:image:height" content="630">
                     <meta property="og:type" content="article">
                     <meta property="og:url" content="%s">
+                    %s
                     <meta name="twitter:card" content="summary_large_image">
                     <meta name="twitter:title" content="%s">
                     <meta name="twitter:description" content="%s">
@@ -557,6 +559,7 @@ public class ShareSummaryPublicController {
                 escapeAttribute(description),
                 escapeAttribute(imageUrl),
                 escapeAttribute(pageUrl),
+                audioMeta,
                 escapeAttribute(title),
                 escapeAttribute(description),
                 escapeAttribute(imageUrl),
@@ -568,6 +571,20 @@ public class ShareSummaryPublicController {
                 hasAudio ? "" : "hidden",
                 escapeAttribute(audioUrl),
                 ShareSummaryMarkdownRenderer.toHtml(report)
+        );
+    }
+
+    private String audioMeta(String audioUrl) {
+        if (!StringUtils.hasText(audioUrl)) {
+            return "";
+        }
+        String escapedAudioUrl = escapeAttribute(audioUrl);
+        return """
+                <meta property="og:audio" content="%s">
+                    <meta property="og:audio:secure_url" content="%s">
+                    <meta property="og:audio:type" content="audio/mpeg">""".formatted(
+                escapedAudioUrl,
+                escapedAudioUrl
         );
     }
 
