@@ -2009,6 +2009,10 @@ td .share-summary-task-actions {
     align-self: end;
 }
 
+.share-summary-audio-preview {
+    width: 100%;
+}
+
 .summary-error-hint {
     max-width: 180px;
     color: #b45309;

@@ -11,6 +11,7 @@ import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.service.NotificationService;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioClient;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClient;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
@@ -121,6 +122,9 @@ class PreviewControllerTest {
     private TestShareSummaryImageClient testShareSummaryImageClient;
 
     @Autowired
+    private TestShareSummaryAudioClient testShareSummaryAudioClient;
+
+    @Autowired
     private NotificationService notificationService;
 
     @Autowired
@@ -148,6 +152,8 @@ class PreviewControllerTest {
         jdbcTemplate.execute("DELETE FROM stats_link");
         jdbcTemplate.execute("DELETE FROM share_summary_image");
         jdbcTemplate.execute("DELETE FROM share_summary_image_config");
+        jdbcTemplate.execute("DELETE FROM share_summary_audio");
+        jdbcTemplate.execute("DELETE FROM share_summary_audio_config");
         jdbcTemplate.execute("DELETE FROM share_summary_run");
         jdbcTemplate.execute("DELETE FROM share_summary_task");
         jdbcTemplate.execute("DELETE FROM notification_delivery");
@@ -161,6 +167,7 @@ class PreviewControllerTest {
         testPreviewProvider.reset();
         testAiTitleClient.reset();
         testShareSummaryImageClient.reset();
+        testShareSummaryAudioClient.reset();
         statisticsEventDeduplicator.clear();
     }
 
@@ -1249,6 +1256,17 @@ class PreviewControllerTest {
         mockMvc.perform(get("/api/admin/share-summary/image-config"))
                 .andExpect(status().isUnauthorized());
 
+        mockMvc.perform(get("/api/admin/share-summary/audio-config")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.baseUrl").value("https://tts.wangwangit.com"))
+                .andExpect(jsonPath("$.endpointPath").value("/v1/audio/speech"))
+                .andExpect(jsonPath("$.model").value(""))
+                .andExpect(jsonPath("$.voice").value("zh-CN-YunhaoNeural"))
+                .andExpect(jsonPath("$.speed").value(1.2))
+                .andExpect(jsonPath("$.pitch").value(0))
+                .andExpect(jsonPath("$.style").value("newscast"));
+
         mockMvc.perform(put("/api/admin/share-summary/image-config")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -1270,6 +1288,17 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.apiKeyConfigured").value(true))
                 .andExpect(jsonPath("$.model").value("image-model-2"));
         org.junit.jupiter.api.Assertions.assertEquals("sk-image", jdbcTemplate.queryForObject("SELECT api_key FROM share_summary_image_config WHERE id = 1", String.class));
+
+        mockMvc.perform(put("/api/admin/share-summary/audio-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://tts.wangwangit.com","endpointPath":"/v1/audio/speech","apiKey":"","model":"","voice":"zh-CN-YunhaoNeural","speed":1.2,"pitch":0,"style":"newscast","outputFormat":"mp3","requestTimeoutSeconds":120}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.model").value(""))
+                .andExpect(jsonPath("$.pitch").value(0));
 
         mockMvc.perform(post("/api/admin/share-summary/tasks")
                         .cookie(cookie)
@@ -1304,6 +1333,7 @@ class PreviewControllerTest {
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.imageStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.audioStatus").value("NOT_GENERATED"))
                 .andExpect(jsonPath("$.ogImageUrl").value(containsString("/share-summary/og-images/")))
                 .andExpect(jsonPath("$.ogPageUrl").value(containsString("/share-summary/reports/")))
                 .andExpect(jsonPath("$.ogTitle").value(containsString("LinkPeek - ")))
@@ -1321,10 +1351,38 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "image/png"));
 
+        mockMvc.perform(get("/share-summary/audios/{publicToken}.mp3", publicToken))
+                .andExpect(status().isNotFound());
+
+        mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/audio", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value(isIn(List.of("PENDING", "GENERATING"))));
+
+        waitForAudioSuccess(runId);
+        org.junit.jupiter.api.Assertions.assertEquals(1, testShareSummaryAudioClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("", testShareSummaryAudioClient.config.get().getModel());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testShareSummaryAudioClient.config.get().getPitch());
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("LinkPeek - "));
+        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("分享总结报告正文"));
+
+        mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.audioStatus").value("SUCCESS"))
+                .andExpect(jsonPath("$.audioUrl").value(containsString("/share-summary/audios/")));
+
+        mockMvc.perform(get("/share-summary/audios/{publicToken}.mp3", publicToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "audio/mpeg"));
+
         mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("og:title")))
                 .andExpect(content().string(containsString("og:image")))
+                .andExpect(content().string(containsString("data-audio-reader")))
+                .andExpect(content().string(containsString("data-audio-element")))
+                .andExpect(content().string(containsString("/share-summary/audios/")))
                 .andExpect(content().string(containsString("data-reader")))
                 .andExpect(content().string(containsString("speechSynthesis")))
                 .andExpect(content().string(containsString("data-reader-voice")))
@@ -1962,6 +2020,22 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.fail("Expected share summary image generation to succeed.");
     }
 
+    private void waitForAudioSuccess(long runId) throws InterruptedException {
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            List<String> statuses = jdbcTemplate.queryForList(
+                    "SELECT status FROM share_summary_audio WHERE run_id = ? ORDER BY id DESC",
+                    String.class,
+                    runId
+            );
+            if (!statuses.isEmpty() && "SUCCESS".equals(statuses.get(0))) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected share summary audio generation to succeed.");
+    }
+
     private void waitForNotificationDelivery(long imageId) throws InterruptedException {
         String eventKey = "SHARE_SUMMARY_IMAGE_SUCCESS:" + imageId;
         long deadline = System.nanoTime() + 3_000_000_000L;
@@ -2029,6 +2103,12 @@ class PreviewControllerTest {
         @Primary
         TestShareSummaryImageClient testShareSummaryImageClient() {
             return new TestShareSummaryImageClient();
+        }
+
+        @Bean
+        @Primary
+        TestShareSummaryAudioClient testShareSummaryAudioClient() {
+            return new TestShareSummaryAudioClient();
         }
     }
 
@@ -2194,6 +2274,36 @@ class PreviewControllerTest {
             prompt.set("");
             base64.set(testPngBase64());
         }
+    }
+
+    static final class TestShareSummaryAudioClient extends ShareSummaryAudioClient {
+        private final AtomicInteger requests = new AtomicInteger();
+        private final AtomicReference<io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord> config = new AtomicReference<>();
+        private final AtomicReference<String> input = new AtomicReference<>("");
+        private final AtomicReference<byte[]> bytes = new AtomicReference<>(testMp3Bytes());
+
+        TestShareSummaryAudioClient() {
+            super(null, null);
+        }
+
+        @Override
+        public AudioGenerationResult generate(io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord config, String input) {
+            requests.incrementAndGet();
+            this.config.set(config);
+            this.input.set(input);
+            return new AudioGenerationResult(bytes.get(), "{\"test\":true}", 19);
+        }
+
+        void reset() {
+            requests.set(0);
+            config.set(null);
+            input.set("");
+            bytes.set(testMp3Bytes());
+        }
+    }
+
+    private static byte[] testMp3Bytes() {
+        return new byte[]{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0, 0};
     }
 
     private static String testPngBase64() {

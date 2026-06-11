@@ -32,6 +32,7 @@
             totalPages: 0
         },
         shareSummaryImageConfig: {},
+        shareSummaryAudioConfig: {},
         notificationEvents: [],
         notificationChannels: [],
         notificationTasks: [],
@@ -447,6 +448,9 @@
         document.getElementById("share-summary-image-config-button").addEventListener("click", openShareSummaryImageConfigModal);
         document.getElementById("share-summary-image-config-cancel-button").addEventListener("click", closeShareSummaryImageConfigModal);
         document.getElementById("share-summary-image-config-form").addEventListener("submit", saveShareSummaryImageConfig);
+        document.getElementById("share-summary-audio-config-button").addEventListener("click", openShareSummaryAudioConfigModal);
+        document.getElementById("share-summary-audio-config-cancel-button").addEventListener("click", closeShareSummaryAudioConfigModal);
+        document.getElementById("share-summary-audio-config-form").addEventListener("submit", saveShareSummaryAudioConfig);
         document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
         document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
         document.getElementById("share-summary-task-period").addEventListener("change", updateShareSummaryPeriodFields);
@@ -527,6 +531,10 @@
                     closeShareSummaryImageConfigModal();
                     return;
                 }
+                if (node.dataset.closeModal === "share-summary-audio-config") {
+                    closeShareSummaryAudioConfigModal();
+                    return;
+                }
                 if (node.dataset.closeModal === "share-summary-run") {
                     closeShareSummaryRunModal();
                     return;
@@ -558,6 +566,10 @@
             }
             if (!document.getElementById("share-summary-image-config-modal").hidden) {
                 closeShareSummaryImageConfigModal();
+                return;
+            }
+            if (!document.getElementById("share-summary-audio-config-modal").hidden) {
+                closeShareSummaryAudioConfigModal();
                 return;
             }
             if (!document.getElementById("share-summary-run-modal").hidden) {
@@ -714,12 +726,17 @@
 
     async function loadShareSummary() {
         await loadShareSummaryImageConfig();
+        await loadShareSummaryAudioConfig();
         await loadShareSummaryTasks();
         await loadShareSummaryRuns();
     }
 
     async function loadShareSummaryImageConfig() {
         state.shareSummaryImageConfig = await fetchJson("/api/admin/share-summary/image-config");
+    }
+
+    async function loadShareSummaryAudioConfig() {
+        state.shareSummaryAudioConfig = await fetchJson("/api/admin/share-summary/audio-config");
     }
 
     async function loadShareSummaryTasks() {
@@ -1561,7 +1578,7 @@
         body.querySelectorAll("[data-delete-share-run]").forEach((button) => {
             button.addEventListener("click", async () => deleteShareSummaryRun(button));
         });
-        bindShareSummaryImageButtons(body);
+        bindShareSummaryAssetButtons(body);
         renderShareSummaryRunPagination(payload);
     }
 
@@ -1614,12 +1631,15 @@
     function renderShareSummaryRunActions(run) {
         const canGenerate = run.status === "SUCCESS";
         const hasImage = Boolean(run.ogImageUrl);
+        const hasAudio = Boolean(run.audioUrl);
         return `
             <div class="row-actions share-summary-run-actions">
                 <button type="button" class="secondary" data-view-share-run="${escapeAttribute(run.id)}">详情</button>
                 ${renderShareSummaryImageActionButton(run, canGenerate, hasImage)}
+                ${renderShareSummaryAudioActionButton(run, canGenerate, hasAudio)}
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG</button>
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图</button>
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.audioUrl || "")}" ${run.audioUrl ? "" : "disabled"}>复制音频</button>
                 <button type="button" class="danger" data-delete-share-run="${escapeAttribute(run.id)}">删除</button>
             </div>
         `;
@@ -1629,6 +1649,12 @@
         const imageActionAttribute = hasImage ? "data-regenerate-share-image" : "data-generate-share-image";
         const imageActionLabel = hasImage ? "重生成" : "生成图";
         return `<button type="button" class="secondary" ${imageActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate ? "" : "disabled"}>${imageActionLabel}</button>`;
+    }
+
+    function renderShareSummaryAudioActionButton(run, canGenerate = run.status === "SUCCESS", hasAudio = Boolean(run.audioUrl)) {
+        const audioActionAttribute = hasAudio ? "data-regenerate-share-audio" : "data-generate-share-audio";
+        const audioActionLabel = hasAudio ? "重生成音频" : "生成音频";
+        return `<button type="button" class="secondary" ${audioActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate ? "" : "disabled"}>${audioActionLabel}</button>`;
     }
 
     function renderShareSummaryRunPagination(payload) {
@@ -1675,6 +1701,10 @@
         };
         const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" || normalized === "TIMEOUT" ? "is-warning" : "";
         return `<span class="status-pill status-pill-compact ${className}" title="${escapeAttribute(normalized)}">${escapeHtml(labels[normalized] || normalized)}</span>`;
+    }
+
+    function renderAudioStatus(status) {
+        return renderImageStatus(status || "NOT_GENERATED");
     }
 
     function renderNotificationStatus(status) {
@@ -1770,12 +1800,18 @@
         }[group] || group;
     }
 
-    function bindShareSummaryImageButtons(root) {
+    function bindShareSummaryAssetButtons(root) {
         root.querySelectorAll("[data-generate-share-image]").forEach((button) => {
             button.addEventListener("click", () => generateShareSummaryImage(button.dataset.generateShareImage, false));
         });
         root.querySelectorAll("[data-regenerate-share-image]").forEach((button) => {
             button.addEventListener("click", () => generateShareSummaryImage(button.dataset.regenerateShareImage, true));
+        });
+        root.querySelectorAll("[data-generate-share-audio]").forEach((button) => {
+            button.addEventListener("click", () => generateShareSummaryAudio(button.dataset.generateShareAudio, false));
+        });
+        root.querySelectorAll("[data-regenerate-share-audio]").forEach((button) => {
+            button.addEventListener("click", () => generateShareSummaryAudio(button.dataset.regenerateShareAudio, true));
         });
         root.querySelectorAll("[data-copy-url]").forEach((button) => {
             button.addEventListener("click", () => copyShareSummaryUrl(button.dataset.copyUrl));
@@ -1795,6 +1831,25 @@
                 await openShareSummaryRunDetail(runId);
             }
             setFeedback("share-summary-history-feedback", "分享图任务已提交。", "is-success");
+        } catch (error) {
+            setFeedback("share-summary-history-feedback", error.message, "is-error");
+            setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    async function generateShareSummaryAudio(runId, regenerate) {
+        if (!runId) {
+            return;
+        }
+        setFeedback("share-summary-history-feedback", regenerate ? "正在重新生成音频..." : "正在生成音频...", "");
+        try {
+            const path = regenerate ? "audio/regenerate" : "audio";
+            await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/${path}`, {method: "POST"});
+            await loadShareSummaryRuns();
+            if (state.activeShareSummaryRunId && String(state.activeShareSummaryRunId) === String(runId)) {
+                await openShareSummaryRunDetail(runId);
+            }
+            setFeedback("share-summary-history-feedback", "音频任务已提交。", "is-success");
         } catch (error) {
             setFeedback("share-summary-history-feedback", error.message, "is-error");
             setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
@@ -2420,6 +2475,109 @@
         return "";
     }
 
+    async function openShareSummaryAudioConfigModal() {
+        openModal("share-summary-audio-config-modal");
+        setFeedback("share-summary-audio-config-modal-feedback", "正在读取 TTS 配置...", "");
+        try {
+            await loadShareSummaryAudioConfig();
+            fillShareSummaryAudioConfigForm(state.shareSummaryAudioConfig || {});
+            setFeedback("share-summary-audio-config-modal-feedback", "", "");
+        } catch (error) {
+            setFeedback("share-summary-audio-config-modal-feedback", error.message, "is-error");
+        }
+    }
+
+    function closeShareSummaryAudioConfigModal(clearFeedback = true) {
+        closeModal("share-summary-audio-config-modal");
+        document.getElementById("share-summary-audio-config-form").reset();
+        if (clearFeedback) {
+            setFeedback("share-summary-audio-config-modal-feedback", "", "");
+        }
+    }
+
+    function fillShareSummaryAudioConfigForm(config) {
+        document.getElementById("share-summary-audio-enabled").checked = Boolean(config.enabled);
+        document.getElementById("share-summary-audio-auto-generate").checked = Boolean(config.autoGenerate);
+        document.getElementById("share-summary-audio-provider-type").value = config.providerType || "OPENAI_COMPATIBLE";
+        document.getElementById("share-summary-audio-base-url").value = config.baseUrl || "https://tts.wangwangit.com";
+        document.getElementById("share-summary-audio-endpoint-path").value = config.endpointPath || "/v1/audio/speech";
+        document.getElementById("share-summary-audio-api-key").value = "";
+        document.getElementById("share-summary-audio-api-key").placeholder = config.apiKeyConfigured ? "已配置，留空表示不修改" : "可选";
+        document.getElementById("share-summary-audio-model").value = config.model || "";
+        document.getElementById("share-summary-audio-voice").value = config.voice || "zh-CN-YunhaoNeural";
+        document.getElementById("share-summary-audio-speed").value = config.speed || 1.2;
+        document.getElementById("share-summary-audio-pitch").value = config.pitch ?? 0;
+        document.getElementById("share-summary-audio-style").value = config.style || "newscast";
+        document.getElementById("share-summary-audio-timeout").value = config.requestTimeoutSeconds || 120;
+    }
+
+    async function saveShareSummaryAudioConfig(event) {
+        event.preventDefault();
+        const payload = {
+            enabled: document.getElementById("share-summary-audio-enabled").checked,
+            autoGenerate: document.getElementById("share-summary-audio-auto-generate").checked,
+            providerType: document.getElementById("share-summary-audio-provider-type").value,
+            baseUrl: document.getElementById("share-summary-audio-base-url").value.trim(),
+            endpointPath: document.getElementById("share-summary-audio-endpoint-path").value.trim(),
+            apiKey: document.getElementById("share-summary-audio-api-key").value.trim(),
+            model: document.getElementById("share-summary-audio-model").value.trim(),
+            voice: document.getElementById("share-summary-audio-voice").value.trim(),
+            speed: Number(document.getElementById("share-summary-audio-speed").value || 1.2),
+            pitch: Number(document.getElementById("share-summary-audio-pitch").value || 0),
+            style: document.getElementById("share-summary-audio-style").value.trim(),
+            outputFormat: "mp3",
+            requestTimeoutSeconds: Number(document.getElementById("share-summary-audio-timeout").value || 120)
+        };
+        const error = validateShareSummaryAudioConfig(payload);
+        if (error) {
+            setFeedback("share-summary-audio-config-modal-feedback", error, "is-error");
+            return;
+        }
+        setFeedback("share-summary-audio-config-modal-feedback", "正在保存 TTS 配置...", "");
+        try {
+            state.shareSummaryAudioConfig = await fetchJson("/api/admin/share-summary/audio-config", {
+                method: "PUT",
+                body: JSON.stringify(payload)
+            });
+            fillShareSummaryAudioConfigForm(state.shareSummaryAudioConfig);
+            setFeedback("share-summary-audio-config-modal-feedback", "TTS 配置已保存。", "is-success");
+        } catch (saveError) {
+            setFeedback("share-summary-audio-config-modal-feedback", saveError.message, "is-error");
+        }
+    }
+
+    function validateShareSummaryAudioConfig(payload) {
+        if (payload.enabled || payload.autoGenerate) {
+            if (!payload.baseUrl) {
+                return "Base URL 不能为空。";
+            }
+            try {
+                const url = new URL(payload.baseUrl);
+                if (url.protocol !== "http:" && url.protocol !== "https:") {
+                    return "Base URL 必须使用 http 或 https。";
+                }
+            } catch (error) {
+                return "Base URL 必须是合法 URL。";
+            }
+            if (!payload.voice) {
+                return "Voice 不能为空。";
+            }
+        }
+        if (!payload.endpointPath) {
+            return "Endpoint Path 不能为空。";
+        }
+        if (!Number.isFinite(payload.speed) || payload.speed < 0.25 || payload.speed > 4) {
+            return "Speed 必须是 0.25-4 之间的数字。";
+        }
+        if (!Number.isInteger(payload.pitch)) {
+            return "Pitch 必须是整数。";
+        }
+        if (!Number.isInteger(payload.requestTimeoutSeconds) || payload.requestTimeoutSeconds < 1 || payload.requestTimeoutSeconds > 1800) {
+            return "Timeout 必须是 1-1800 秒之间的整数。";
+        }
+        return "";
+    }
+
     function openShareSummaryTaskModalForCreate() {
         resetShareSummaryTaskForm();
         document.getElementById("share-summary-task-modal-title").textContent = "新建分享总结任务";
@@ -2606,10 +2764,13 @@
         setFeedback("share-summary-run-modal-feedback", "", "");
         try {
             const run = await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}`);
-            const images = await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/images`);
+            const [images, audios] = await Promise.all([
+                fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/images`),
+                fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/audios`)
+            ]);
             document.getElementById("share-summary-run-modal-title").textContent = `分享总结详情：${run.taskName || run.id}`;
-            document.getElementById("share-summary-run-detail").innerHTML = renderShareSummaryRunDetail(run, images);
-            bindShareSummaryImageButtons(document.getElementById("share-summary-run-detail"));
+            document.getElementById("share-summary-run-detail").innerHTML = renderShareSummaryRunDetail(run, images, audios);
+            bindShareSummaryAssetButtons(document.getElementById("share-summary-run-detail"));
         } catch (error) {
             setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
         }
@@ -2849,7 +3010,7 @@
         return `<div class="keyline summary-error-hint" title="${escapeAttribute(errorMessage)}">${escapeHtml(errorMessage)}</div>`;
     }
 
-    function renderShareSummaryRunDetail(run, images = []) {
+    function renderShareSummaryRunDetail(run, images = [], audios = []) {
         return `
             <div class="summary-detail-grid">
                 <div><b>状态</b><span>${renderRunStatus(run.status)}</span></div>
@@ -2869,6 +3030,16 @@
                     </div>
                 </div>
                 ${renderShareSummaryImageDetail(run, images)}
+            </section>
+            <section class="summary-detail-section">
+                <div class="section-title-row">
+                    <h4>语音文件</h4>
+                    <div class="row-actions">
+                        ${renderShareSummaryAudioActionButton(run)}
+                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.audioUrl || "")}" ${run.audioUrl ? "" : "disabled"}>复制音频链接</button>
+                    </div>
+                </div>
+                ${renderShareSummaryAudioDetail(run, audios)}
             </section>
             ${run.errorMessage ? `<section class="summary-detail-section"><h4>错误信息</h4><pre class="summary-report is-error">${escapeHtml(run.errorMessage)}</pre></section>` : ""}
             <section class="summary-detail-section">
@@ -2919,6 +3090,51 @@
                         <th>次数</th>
                         <th>状态</th>
                         <th>模型</th>
+                        <th>耗时</th>
+                        <th>创建时间</th>
+                        <th>错误</th>
+                    </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    }
+
+    function renderShareSummaryAudioDetail(run, audios) {
+        const attempts = Array.isArray(audios) ? audios : [];
+        const player = run.audioUrl
+                ? `<audio class="share-summary-audio-preview" controls preload="metadata" src="${escapeAttribute(run.audioUrl)}"></audio>`
+                : `<div class="share-summary-preview-placeholder">暂无音频文件</div>`;
+        const meta = `
+            <div class="summary-detail-grid">
+                <div><b>音频状态</b><span>${renderAudioStatus(run.audioStatus || "NOT_GENERATED")}</span></div>
+                <div><b>音频链接</b><span class="url-cell">${escapeHtml(run.audioUrl || "-")}</span></div>
+                <div><b>错误</b><span>${escapeHtml(run.audioErrorMessage || "-")}</span></div>
+            </div>
+        `;
+        const rows = attempts.length ? attempts.map((audio) => `
+            <tr>
+                <td>${escapeHtml(audio.attemptNo || "-")}</td>
+                <td>${renderAudioStatus(audio.status)}</td>
+                <td>${escapeHtml(audio.voice || "-")}<div class="keyline">${escapeHtml(audio.model || "无 model")} · ${escapeHtml(String(audio.speed || "-"))}x · pitch ${escapeHtml(String(audio.pitch ?? "-"))} · ${escapeHtml(audio.style || "-")}</div></td>
+                <td>${escapeHtml(formatDuration(audio.durationMs))}</td>
+                <td>${escapeHtml(formatTimestamp(audio.createdAt))}</td>
+                <td>${escapeHtml(audio.errorMessage || "-")}</td>
+            </tr>
+        `).join("") : `<tr><td colspan="6" class="muted">暂无生成记录</td></tr>`;
+        return `
+            <div class="share-summary-image-detail">
+                ${player}
+                ${meta}
+            </div>
+            <div class="table-shell">
+                <table class="share-summary-image-attempt-table">
+                    <thead>
+                    <tr>
+                        <th>次数</th>
+                        <th>状态</th>
+                        <th>语音</th>
                         <th>耗时</th>
                         <th>创建时间</th>
                         <th>错误</th>

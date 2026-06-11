@@ -208,6 +208,7 @@ class ShareSummaryServiceTest {
 
         assertEquals(1, response.deleted());
         assertEquals(0, response.deletedImages());
+        assertEquals(0, response.deletedAudios());
         assertNull(mapper.run);
     }
 
@@ -325,6 +326,7 @@ class ShareSummaryServiceTest {
                 linkMapper,
                 providerMapper,
                 aiTitleClient,
+                null,
                 null,
                 downgradeService,
                 Clock.fixed(Instant.parse(instant), ZONE)

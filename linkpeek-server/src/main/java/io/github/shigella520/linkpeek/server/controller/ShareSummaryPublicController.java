@@ -2,6 +2,7 @@ package io.github.shigella520.linkpeek.server.controller;
 
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioService;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageService;
 import io.swagger.v3.oas.annotations.Hidden;
 import org.springframework.core.io.Resource;
@@ -33,9 +34,14 @@ public class ShareSummaryPublicController {
     private static final Pattern ANCHOR = Pattern.compile("<a\\b[^>]*>.*?</a>");
     private static final Pattern ORDERED_LIST_ITEM = Pattern.compile("^\\d+[.)]\\s+(.+)$");
     private final ShareSummaryImageService shareSummaryImageService;
+    private final ShareSummaryAudioService shareSummaryAudioService;
 
-    public ShareSummaryPublicController(ShareSummaryImageService shareSummaryImageService) {
+    public ShareSummaryPublicController(
+            ShareSummaryImageService shareSummaryImageService,
+            ShareSummaryAudioService shareSummaryAudioService
+    ) {
         this.shareSummaryImageService = shareSummaryImageService;
+        this.shareSummaryAudioService = shareSummaryAudioService;
     }
 
     @GetMapping("/og-images/{publicToken}.{ext}")
@@ -63,11 +69,26 @@ public class ShareSummaryPublicController {
         }
     }
 
+    @GetMapping("/audios/{publicToken}.{ext}")
+    public ResponseEntity<Resource> audio(@PathVariable String publicToken, @PathVariable String ext) {
+        try {
+            ShareSummaryAudioService.PublicAudio audio = shareSummaryAudioService.publicAudio(publicToken, ext);
+            return ResponseEntity.ok()
+                    .contentType(audio.mediaType())
+                    .cacheControl(CacheControl.maxAge(30, TimeUnit.DAYS).cachePublic())
+                    .body(audio.resource());
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.notFound().build();
+        }
+    }
+
     private String reportHtml(ShareSummaryImageRecord image, ShareSummaryRunRecord run) {
         String title = image.getOgTitle();
         String description = image.getOgDescription();
         String imageUrl = image.getOgImageUrl();
         String pageUrl = image.getOgPageUrl();
+        String audioUrl = audioUrl(run.getId());
+        boolean hasAudio = StringUtils.hasText(audioUrl);
         String report = StringUtils.hasText(run.getReport()) ? run.getReport() : "";
         return """
                 <!doctype html>
@@ -136,7 +157,19 @@ public class ShareSummaryPublicController {
                         <img src="%s" alt="%s">
                         <h1 data-reader-title>%s</h1>
                         <p data-reader-description>%s</p>
-                        <section class="reader" data-reader hidden aria-label="报告朗读">
+                        <section class="reader reader-audio" data-audio-reader data-audio-src="%s" %s aria-label="报告音频播放">
+                            <audio data-audio-element preload="metadata" src="%s"></audio>
+                            <div class="reader-main">
+                                <button class="reader-play" type="button" data-audio-action="toggle" aria-label="播放"></button>
+                                <div>
+                                    <div class="reader-status" data-audio-status>服务端语音</div>
+                                    <div class="reader-progress" aria-hidden="true">
+                                        <span class="reader-progress-bar" data-audio-progress></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                        <section class="reader reader-system" data-reader hidden aria-label="报告朗读">
                             <div class="reader-main">
                                 <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放"></button>
                                 <div>
@@ -178,10 +211,77 @@ public class ShareSummaryPublicController {
                     </main>
                     <script>
                         (() => {
+                            const audioRoot = document.querySelector("[data-audio-reader]");
+                            const systemRoot = document.querySelector("[data-reader]");
+                            const audio = audioRoot ? audioRoot.querySelector("[data-audio-element]") : null;
+
+                            function enableSystemReader() {
+                                if (systemRoot) {
+                                    systemRoot.dataset.readerFallback = "true";
+                                    window.dispatchEvent(new CustomEvent("linkpeek:share-summary-system-reader"));
+                                }
+                            }
+
+                            if (audioRoot && audio && audioRoot.dataset.audioSrc) {
+                                const action = audioRoot.querySelector('[data-audio-action="toggle"]');
+                                const status = audioRoot.querySelector("[data-audio-status]");
+                                const progress = audioRoot.querySelector("[data-audio-progress]");
+                                audioRoot.hidden = false;
+
+                                function setAudioStatus(message, playing) {
+                                    status.textContent = message;
+                                    action.classList.toggle("is-playing", playing);
+                                    action.setAttribute("aria-label", playing ? "暂停" : "播放");
+                                }
+
+                                function updateAudioProgress() {
+                                    const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+                                    const percent = duration ? Math.min(100, Math.round((audio.currentTime / duration) * 100)) : 0;
+                                    progress.style.width = `${percent}%%`;
+                                }
+
+                                action.addEventListener("click", async () => {
+                                    if (audio.paused) {
+                                        try {
+                                            await audio.play();
+                                        } catch (error) {
+                                            audioRoot.hidden = true;
+                                            enableSystemReader();
+                                        }
+                                    } else {
+                                        audio.pause();
+                                    }
+                                });
+                                audio.addEventListener("play", () => setAudioStatus("服务端语音播放中", true));
+                                audio.addEventListener("pause", () => setAudioStatus(audio.ended ? "播放完成" : "已暂停", false));
+                                audio.addEventListener("ended", () => {
+                                    updateAudioProgress();
+                                    setAudioStatus("播放完成", false);
+                                });
+                                audio.addEventListener("timeupdate", updateAudioProgress);
+                                audio.addEventListener("loadedmetadata", updateAudioProgress);
+                                audio.addEventListener("error", () => {
+                                    audioRoot.hidden = true;
+                                    enableSystemReader();
+                                });
+                            } else {
+                                enableSystemReader();
+                            }
+                        })();
+
+                        (() => {
                             const root = document.querySelector("[data-reader]");
                             const content = document.querySelector("[data-reader-content]");
                             if (!root || !content || !("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
                                 return;
+                            }
+
+                            const hasAudioReader = Boolean(document.querySelector("[data-audio-reader]:not([hidden])"));
+                            const enableSystemReader = () => root.dataset.readerFallback === "true";
+                            if (hasAudioReader && !enableSystemReader()) {
+                                window.addEventListener("linkpeek:share-summary-system-reader", () => {
+                                    root.hidden = false;
+                                }, {once: true});
                             }
 
                             const synth = window.speechSynthesis;
@@ -201,7 +301,9 @@ public class ShareSummaryPublicController {
                             let stopRequested = false;
                             let pausedByUser = false;
 
-                            root.hidden = false;
+                            if (!hasAudioReader || enableSystemReader()) {
+                                root.hidden = false;
+                            }
 
                             function defaultRate() {
                                 const viewportWidth = Math.min(
@@ -471,8 +573,16 @@ public class ShareSummaryPublicController {
                 escapeAttribute(title),
                 escapeHtml(title),
                 escapeHtml(description),
+                escapeAttribute(audioUrl),
+                hasAudio ? "" : "hidden",
+                escapeAttribute(audioUrl),
                 renderMarkdown(report)
         );
+    }
+
+    private String audioUrl(long runId) {
+        ShareSummaryAudioService.AudioSummary summary = shareSummaryAudioService.audioSummary(runId);
+        return summary == null ? "" : summary.audioUrl();
     }
 
     private String renderMarkdown(String markdown) {

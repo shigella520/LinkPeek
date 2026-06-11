@@ -59,6 +59,33 @@ public class ProviderConfiguration {
         );
     }
 
+    @Bean(name = "shareSummaryAudioHttpClient")
+    public HttpClient shareSummaryAudioHttpClient(LinkPeekProperties properties) {
+        return HttpClient.newBuilder()
+                .connectTimeout(properties.getDownloadTimeout())
+                .followRedirects(HttpClient.Redirect.NEVER)
+                .version(HttpClient.Version.HTTP_1_1)
+                .build();
+    }
+
+    @Bean(name = "shareSummaryAudioExecutor", destroyMethod = "shutdown")
+    public ExecutorService shareSummaryAudioExecutor() {
+        AtomicInteger threadIndex = new AtomicInteger();
+        return new ThreadPoolExecutor(
+                1,
+                1,
+                0L,
+                TimeUnit.MILLISECONDS,
+                new LinkedBlockingQueue<>(32),
+                runnable -> {
+                    Thread thread = new Thread(runnable, "share-summary-audio-" + threadIndex.incrementAndGet());
+                    thread.setDaemon(true);
+                    return thread;
+                },
+                new ThreadPoolExecutor.AbortPolicy()
+        );
+    }
+
     @Bean(name = "notificationWebhookHttpClient")
     public HttpClient notificationWebhookHttpClient(LinkPeekProperties properties) {
         return HttpClient.newBuilder()

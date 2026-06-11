@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryAudioMapper">
+    <sql id="configColumns">
+        id,
+        enabled,
+        auto_generate,
+        provider_type,
+        base_url,
+        endpoint_path,
+        api_key,
+        model,
+        voice,
+        speed,
+        pitch,
+        style,
+        output_format,
+        request_timeout_seconds,
+        updated_at
+    </sql>
+
+    <sql id="audioColumns">
+        id,
+        run_id,
+        attempt_no,
+        status,
+        provider_type,
+        model,
+        voice,
+        speed,
+        pitch,
+        style,
+        output_format,
+        text_snapshot,
+        storage_key,
+        audio_url,
+        raw_response_snapshot,
+        error_message,
+        duration_ms,
+        created_at,
+        started_at,
+        finished_at
+    </sql>
+
+    <select id="selectConfig" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord">
+        SELECT <include refid="configColumns"/>
+        FROM share_summary_audio_config
+        WHERE id = 1
+    </select>
+
+    <insert id="upsertConfig" parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord">
+        INSERT INTO share_summary_audio_config (
+            id,
+            enabled,
+            auto_generate,
+            provider_type,
+            base_url,
+            endpoint_path,
+            api_key,
+            model,
+            voice,
+            speed,
+            pitch,
+            style,
+            output_format,
+            request_timeout_seconds,
+            updated_at
+        )
+        VALUES (
+            1,
+            #{enabled},
+            #{autoGenerate},
+            #{providerType},
+            #{baseUrl},
+            #{endpointPath},
+            #{apiKey},
+            #{model},
+            #{voice},
+            #{speed},
+            #{pitch},
+            #{style},
+            #{outputFormat},
+            #{requestTimeoutSeconds},
+            #{updatedAt}
+        )
+        ON CONFLICT(id) DO UPDATE SET
+            enabled = excluded.enabled,
+            auto_generate = excluded.auto_generate,
+            provider_type = excluded.provider_type,
+            base_url = excluded.base_url,
+            endpoint_path = excluded.endpoint_path,
+            api_key = excluded.api_key,
+            model = excluded.model,
+            voice = excluded.voice,
+            speed = excluded.speed,
+            pitch = excluded.pitch,
+            style = excluded.style,
+            output_format = excluded.output_format,
+            request_timeout_seconds = excluded.request_timeout_seconds,
+            updated_at = excluded.updated_at
+    </insert>
+
+    <insert id="insertAudio"
+            parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord"
+            useGeneratedKeys="true"
+            keyProperty="id">
+        INSERT INTO share_summary_audio (
+            run_id,
+            attempt_no,
+            status,
+            provider_type,
+            model,
+            voice,
+            speed,
+            pitch,
+            style,
+            output_format,
+            text_snapshot,
+            storage_key,
+            audio_url,
+            raw_response_snapshot,
+            error_message,
+            duration_ms,
+            created_at,
+            started_at,
+            finished_at
+        )
+        VALUES (
+            #{runId},
+            #{attemptNo},
+            #{status},
+            #{providerType},
+            #{model},
+            #{voice},
+            #{speed},
+            #{pitch},
+            #{style},
+            #{outputFormat},
+            #{textSnapshot},
+            #{storageKey},
+            #{audioUrl},
+            #{rawResponseSnapshot},
+            #{errorMessage},
+            #{durationMs},
+            #{createdAt},
+            #{startedAt},
+            #{finishedAt}
+        )
+    </insert>
+
+    <update id="updateAudio" parameterType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord">
+        UPDATE share_summary_audio
+        SET
+            status = #{status},
+            storage_key = #{storageKey},
+            audio_url = #{audioUrl},
+            raw_response_snapshot = #{rawResponseSnapshot},
+            error_message = #{errorMessage},
+            duration_ms = #{durationMs},
+            started_at = #{startedAt},
+            finished_at = #{finishedAt}
+        WHERE id = #{id}
+    </update>
+
+    <select id="selectAudio" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord">
+        SELECT <include refid="audioColumns"/>
+        FROM share_summary_audio
+        WHERE id = #{id}
+    </select>
+
+    <select id="selectLatestAudio" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord">
+        SELECT <include refid="audioColumns"/>
+        FROM share_summary_audio
+        WHERE run_id = #{runId}
+        ORDER BY attempt_no DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectLatestSuccessfulAudio" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord">
+        SELECT <include refid="audioColumns"/>
+        FROM share_summary_audio
+        WHERE run_id = #{runId}
+          AND status = 'SUCCESS'
+        ORDER BY attempt_no DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectActiveAudio" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord">
+        SELECT <include refid="audioColumns"/>
+        FROM share_summary_audio
+        WHERE run_id = #{runId}
+          AND status IN ('PENDING', 'GENERATING')
+        ORDER BY attempt_no DESC, id DESC
+        LIMIT 1
+    </select>
+
+    <select id="selectNextAttemptNo" resultType="int">
+        SELECT COALESCE(MAX(attempt_no), 0) + 1
+        FROM share_summary_audio
+        WHERE run_id = #{runId}
+    </select>
+
+    <select id="selectAudiosForRun" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord">
+        SELECT <include refid="audioColumns"/>
+        FROM share_summary_audio
+        WHERE run_id = #{runId}
+        ORDER BY attempt_no DESC, id DESC
+    </select>
+
+    <delete id="deleteAudiosForRun">
+        DELETE FROM share_summary_audio
+        WHERE run_id = #{runId}
+    </delete>
+</mapper>

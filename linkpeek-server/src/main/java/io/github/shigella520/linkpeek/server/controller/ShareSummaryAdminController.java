@@ -3,6 +3,7 @@ package io.github.shigella520.linkpeek.server.controller;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryTaskRecord;
 import io.github.shigella520.linkpeek.server.admin.service.AdminAuthService;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioService;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageService;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryService;
 import io.swagger.v3.oas.annotations.Hidden;
@@ -29,15 +30,18 @@ public class ShareSummaryAdminController {
     private final AdminAuthService adminAuthService;
     private final ShareSummaryService shareSummaryService;
     private final ShareSummaryImageService shareSummaryImageService;
+    private final ShareSummaryAudioService shareSummaryAudioService;
 
     public ShareSummaryAdminController(
             AdminAuthService adminAuthService,
             ShareSummaryService shareSummaryService,
-            ShareSummaryImageService shareSummaryImageService
+            ShareSummaryImageService shareSummaryImageService,
+            ShareSummaryAudioService shareSummaryAudioService
     ) {
         this.adminAuthService = adminAuthService;
         this.shareSummaryService = shareSummaryService;
         this.shareSummaryImageService = shareSummaryImageService;
+        this.shareSummaryAudioService = shareSummaryAudioService;
     }
 
     @GetMapping("/tasks")
@@ -167,6 +171,38 @@ public class ShareSummaryAdminController {
         }
     }
 
+    @GetMapping("/audio-config")
+    public ShareSummaryAudioService.ConfigResponse audioConfig(HttpServletRequest request) {
+        adminAuthService.requireAuthenticated(request);
+        return shareSummaryAudioService.config();
+    }
+
+    @PutMapping("/audio-config")
+    public ShareSummaryAudioService.ConfigResponse updateAudioConfig(
+            HttpServletRequest request,
+            @RequestBody ShareSummaryAudioService.ConfigRequest audioConfigRequest
+    ) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return shareSummaryAudioService.updateConfig(audioConfigRequest);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
+    @PostMapping("/audio-config/test")
+    public ShareSummaryAudioService.ConfigResponse testAudioConfig(
+            HttpServletRequest request,
+            @RequestBody ShareSummaryAudioService.ConfigRequest audioConfigRequest
+    ) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return shareSummaryAudioService.testConfig(audioConfigRequest);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
     @PostMapping("/runs/{runId}/image")
     public ShareSummaryImageService.ImageResponse generateImage(HttpServletRequest request, @PathVariable long runId) {
         adminAuthService.requireAuthenticated(request);
@@ -206,6 +242,40 @@ public class ShareSummaryAdminController {
         adminAuthService.requireAuthenticated(request);
         try {
             return shareSummaryImageService.image(imageId);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
+        }
+    }
+
+    @PostMapping("/runs/{runId}/audio")
+    public ShareSummaryAudioService.AudioResponse generateAudio(HttpServletRequest request, @PathVariable long runId) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return shareSummaryAudioService.generateAudio(runId, false);
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
+    @PostMapping("/runs/{runId}/audio/regenerate")
+    public ShareSummaryAudioService.AudioResponse regenerateAudio(HttpServletRequest request, @PathVariable long runId) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return shareSummaryAudioService.generateAudio(runId, true);
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
+    @GetMapping("/runs/{runId}/audios")
+    public List<ShareSummaryAudioService.AudioResponse> audios(HttpServletRequest request, @PathVariable long runId) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return shareSummaryAudioService.audios(runId);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }

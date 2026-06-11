@@ -58,6 +58,7 @@ public class ShareSummaryService {
     private final AiProviderMapper aiProviderMapper;
     private final AiTitleClient aiTitleClient;
     private final ShareSummaryImageService shareSummaryImageService;
+    private final ShareSummaryAudioService shareSummaryAudioService;
     private final AiProviderDowngradeService aiProviderDowngradeService;
     private final Clock clock;
     private final AtomicBoolean scheduledRunning = new AtomicBoolean(false);
@@ -68,6 +69,7 @@ public class ShareSummaryService {
             AiProviderMapper aiProviderMapper,
             AiTitleClient aiTitleClient,
             ShareSummaryImageService shareSummaryImageService,
+            ShareSummaryAudioService shareSummaryAudioService,
             AiProviderDowngradeService aiProviderDowngradeService,
             Clock clock
     ) {
@@ -76,6 +78,7 @@ public class ShareSummaryService {
         this.aiProviderMapper = aiProviderMapper;
         this.aiTitleClient = aiTitleClient;
         this.shareSummaryImageService = shareSummaryImageService;
+        this.shareSummaryAudioService = shareSummaryAudioService;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
         this.clock = clock;
     }
@@ -132,7 +135,7 @@ public class ShareSummaryService {
                         normalizedSize,
                         offset
                 ).stream()
-                .map(this::withImageSummary)
+                .map(this::withShareAssetSummaries)
                 .toList();
         return new RunPage(items, normalizedPage, normalizedSize, total, totalPages);
     }
@@ -142,7 +145,7 @@ public class ShareSummaryService {
         if (run == null) {
             throw new IllegalArgumentException("Share summary run was not found.");
         }
-        return withImageSummary(run);
+        return withShareAssetSummaries(run);
     }
 
     @Transactional
@@ -154,9 +157,10 @@ public class ShareSummaryService {
         if (ShareSummaryRunStatus.RUNNING.name().equals(run.getStatus())) {
             throw new IllegalStateException("Share summary run is in progress.");
         }
+        int deletedAudios = shareSummaryAudioService == null ? 0 : shareSummaryAudioService.deleteAudiosForRun(runId);
         int deletedImages = shareSummaryImageService == null ? 0 : shareSummaryImageService.deleteImagesForRun(runId);
         int deletedRuns = shareSummaryMapper.deleteRun(runId);
-        return new DeleteRunResponse(deletedRuns, deletedImages);
+        return new DeleteRunResponse(deletedRuns, deletedImages, deletedAudios);
     }
 
     @Scheduled(fixedDelay = 60_000L, initialDelay = 30_000L)
@@ -403,7 +407,10 @@ public class ShareSummaryService {
         if (shareSummaryImageService != null && ShareSummaryRunStatus.SUCCESS.name().equals(savedRun.getStatus())) {
             shareSummaryImageService.triggerAutoGeneration(savedRun);
         }
-        return withImageSummary(savedRun);
+        if (shareSummaryAudioService != null && ShareSummaryRunStatus.SUCCESS.name().equals(savedRun.getStatus())) {
+            shareSummaryAudioService.triggerAutoGeneration(savedRun);
+        }
+        return withShareAssetSummaries(savedRun);
     }
 
     private ShareSummaryRunRecord createRunningRun(
@@ -673,22 +680,27 @@ public class ShareSummaryService {
         return Instant.now(clock).toEpochMilli();
     }
 
-    private ShareSummaryRunRecord withImageSummary(ShareSummaryRunRecord run) {
+    private ShareSummaryRunRecord withShareAssetSummaries(ShareSummaryRunRecord run) {
         if (run == null || run.getId() == null) {
             return run;
         }
-        if (shareSummaryImageService == null) {
-            return run;
+        if (shareSummaryImageService != null) {
+            ShareSummaryImageService.ImageSummary summary = shareSummaryImageService.imageSummary(run.getId());
+            run.setImageStatus(summary.imageStatus());
+            run.setLatestImageUrl(summary.latestImageUrl());
+            run.setOgImageUrl(summary.ogImageUrl());
+            run.setOgPageUrl(summary.ogPageUrl());
+            run.setOgShareUrl(summary.ogPageUrl());
+            run.setOgTitle(summary.ogTitle());
+            run.setOgDescription(summary.ogDescription());
+            run.setImageErrorMessage(summary.imageErrorMessage());
         }
-        ShareSummaryImageService.ImageSummary summary = shareSummaryImageService.imageSummary(run.getId());
-        run.setImageStatus(summary.imageStatus());
-        run.setLatestImageUrl(summary.latestImageUrl());
-        run.setOgImageUrl(summary.ogImageUrl());
-        run.setOgPageUrl(summary.ogPageUrl());
-        run.setOgShareUrl(summary.ogPageUrl());
-        run.setOgTitle(summary.ogTitle());
-        run.setOgDescription(summary.ogDescription());
-        run.setImageErrorMessage(summary.imageErrorMessage());
+        if (shareSummaryAudioService != null) {
+            ShareSummaryAudioService.AudioSummary summary = shareSummaryAudioService.audioSummary(run.getId());
+            run.setAudioStatus(summary.audioStatus());
+            run.setAudioUrl(summary.audioUrl());
+            run.setAudioErrorMessage(summary.audioErrorMessage());
+        }
         return run;
     }
 
@@ -717,7 +729,7 @@ public class ShareSummaryService {
     public record DeleteResponse(int deleted) {
     }
 
-    public record DeleteRunResponse(int deleted, int deletedImages) {
+    public record DeleteRunResponse(int deleted, int deletedImages, int deletedAudios) {
     }
 
     public record Window(long startMillis, long endMillis) {

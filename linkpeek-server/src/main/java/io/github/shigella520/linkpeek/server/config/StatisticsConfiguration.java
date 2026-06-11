@@ -139,6 +139,52 @@ public class StatisticsConfiguration {
             ensureColumn(jdbcTemplate, "share_summary_image_config", "endpoint_path", "TEXT NOT NULL DEFAULT '/v1/images/generations'");
             ensureColumn(jdbcTemplate, "share_summary_image_config", "quality", "TEXT NOT NULL DEFAULT 'auto'");
             ensureColumn(jdbcTemplate, "share_summary_image", "quality", "TEXT");
+            ensureTable(jdbcTemplate, "share_summary_audio_config", """
+                    CREATE TABLE IF NOT EXISTS share_summary_audio_config (
+                        id INTEGER PRIMARY KEY,
+                        enabled INTEGER NOT NULL DEFAULT 0,
+                        auto_generate INTEGER NOT NULL DEFAULT 0,
+                        provider_type TEXT NOT NULL DEFAULT 'OPENAI_COMPATIBLE',
+                        base_url TEXT NOT NULL DEFAULT 'https://tts.wangwangit.com',
+                        endpoint_path TEXT NOT NULL DEFAULT '/v1/audio/speech',
+                        api_key TEXT NOT NULL DEFAULT '',
+                        model TEXT NOT NULL DEFAULT '',
+                        voice TEXT NOT NULL DEFAULT 'zh-CN-YunhaoNeural',
+                        speed REAL NOT NULL DEFAULT 1.2,
+                        pitch INTEGER NOT NULL DEFAULT 0,
+                        style TEXT NOT NULL DEFAULT 'newscast',
+                        output_format TEXT NOT NULL DEFAULT 'mp3',
+                        request_timeout_seconds INTEGER NOT NULL DEFAULT 120,
+                        updated_at INTEGER NOT NULL DEFAULT 0
+                    )
+                    """);
+            ensureTable(jdbcTemplate, "share_summary_audio", """
+                    CREATE TABLE IF NOT EXISTS share_summary_audio (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        run_id INTEGER NOT NULL,
+                        attempt_no INTEGER NOT NULL,
+                        status TEXT NOT NULL,
+                        provider_type TEXT NOT NULL,
+                        model TEXT,
+                        voice TEXT NOT NULL,
+                        speed REAL NOT NULL,
+                        pitch INTEGER NOT NULL,
+                        style TEXT NOT NULL,
+                        output_format TEXT NOT NULL,
+                        text_snapshot TEXT NOT NULL,
+                        storage_key TEXT,
+                        audio_url TEXT,
+                        raw_response_snapshot TEXT,
+                        error_message TEXT,
+                        duration_ms INTEGER NOT NULL DEFAULT 0,
+                        created_at INTEGER NOT NULL,
+                        started_at INTEGER,
+                        finished_at INTEGER
+                    )
+                    """);
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_run_id ON share_summary_audio (run_id)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_status ON share_summary_audio (status)");
+            jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_created_at ON share_summary_audio (created_at)");
             ensureNotificationTables(jdbcTemplate);
         }
 
