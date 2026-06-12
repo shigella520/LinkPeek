@@ -101,44 +101,107 @@ public class ShareSummaryPublicController {
                     <meta name="twitter:title" content="%s">
                     <meta name="twitter:description" content="%s">
                     <meta name="twitter:image" content="%s">
+                    <link rel="icon" href="/favicon.ico">
+                    <link rel="stylesheet" href="/dashboard/styles.css">
                     <style>
-                        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #172033; }
-                        main { max-width: 860px; margin: 0 auto; padding: 32px 20px 48px; }
-                        img { width: 100%%; height: auto; border-radius: 8px; background: #e8ebf0; }
-                        .reader { margin: 18px 0; padding: 14px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; box-shadow: 0 10px 24px rgba(23, 32, 51, 0.05); }
+                        .report-shell { max-width: 1180px; padding-bottom: 72px; }
+                        .report-topbar { margin-bottom: 24px; }
+                        .project-link { width: 48px; height: 48px; background: rgba(255, 255, 255, 0.9); box-shadow: 0 20px 42px rgba(18, 22, 28, 0.14); }
+                        .project-link svg { width: 21px; height: 21px; }
+                        .report-hero {
+                            position: relative;
+                            z-index: 1;
+                            display: grid;
+                            grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+                            gap: 26px;
+                            align-items: stretch;
+                            padding: 30px;
+                            margin-bottom: 34px;
+                            border-radius: 44px;
+                            background: linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.58));
+                            border: 1px solid rgba(255, 255, 255, 0.82);
+                            box-shadow: var(--shadow);
+                            backdrop-filter: blur(26px);
+                            -webkit-backdrop-filter: blur(26px);
+                        }
+                        .report-visual { position: relative; min-height: 0; overflow: hidden; border-radius: 38px; box-shadow: var(--shadow-soft); }
+                        .report-cover { display: block; width: 100%%; height: 100%%; min-height: 320px; aspect-ratio: 1200 / 630; object-fit: cover; background: rgba(255, 255, 255, 0.74); }
+                        .report-visual::after {
+                            content: "";
+                            position: absolute;
+                            inset: auto 0 0;
+                            height: 34%%;
+                            background: linear-gradient(180deg, transparent, rgba(17, 17, 17, 0.18));
+                            pointer-events: none;
+                        }
+                        .report-copy { display: flex; flex-direction: column; min-width: 0; }
+                        .report-copy h1 {
+                            margin: 0;
+                            font-size: clamp(34px, 5vw, 58px);
+                            line-height: 1.02;
+                            letter-spacing: -0.05em;
+                            background: linear-gradient(120deg, rgba(24, 24, 24, 0.98) 0%%, rgba(24, 24, 24, 0.72) 32%%, rgba(10, 132, 255, 0.82) 70%%, rgba(249, 115, 22, 0.76) 100%%);
+                            -webkit-background-clip: text;
+                            background-clip: text;
+                            color: transparent;
+                            filter: drop-shadow(0 14px 30px rgba(10, 132, 255, 0.08));
+                        }
+                        .report-description { margin: 18px 0 4px; color: var(--muted); font-size: 16px; line-height: 1.75; }
+                        .report-main { position: relative; z-index: 1; display: block; }
+                        .reader {
+                            margin: 18px 0 0;
+                            padding: 16px;
+                            border-radius: 24px;
+                            background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.64));
+                            border: 1px solid rgba(255, 255, 255, 0.86);
+                            box-shadow: var(--shadow-soft);
+                            backdrop-filter: blur(26px);
+                            -webkit-backdrop-filter: blur(26px);
+                        }
                         .reader[hidden] { display: none !important; }
-                        .reader-main { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; align-items: center; }
+                        .reader-main { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; }
                         .reader button { border: 0; font: inherit; cursor: pointer; position: relative; }
                         .reader button:disabled { cursor: not-allowed; opacity: 0.42; }
-                        .reader-play { width: 38px; height: 38px; border-radius: 8px; background: #172033; color: #fff; display: grid; place-items: center; box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.12); }
-                        .reader-play:hover:not(:disabled) { background: #263044; }
+                        .reader-play { width: 44px; height: 44px; border-radius: 999px; background: linear-gradient(135deg, #111111, #363636); color: #fff; display: grid; place-items: center; box-shadow: 0 12px 24px rgba(17, 17, 17, 0.16); transition: transform 180ms ease, box-shadow 180ms ease; }
+                        .reader-play:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 30px rgba(17, 17, 17, 0.2); }
                         .reader-play::before { content: ""; display: block; width: 0; height: 0; margin-left: 3px; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 11px solid currentColor; }
                         .reader-play.is-playing::before { width: 4px; height: 14px; margin-left: 0; border: 0; border-radius: 2px; background: currentColor; box-shadow: 8px 0 0 currentColor; transform: translateX(-4px); }
-                        .reader-status { min-width: 0; color: #5d6678; font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                        .reader-progress { height: 4px; margin-top: 8px; border-radius: 999px; background: #e8edf4; overflow: hidden; }
-                        .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: #2563eb; transition: width 180ms ease; }
+                        .reader-status { min-width: 0; color: var(--muted); font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .reader-progress { height: 5px; margin-top: 10px; border-radius: 999px; background: rgba(10, 132, 255, 0.12); overflow: hidden; }
+                        .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-3)); transition: width 180ms ease; }
                         .reader-settings { display: grid; grid-template-columns: minmax(128px, 0.7fr) minmax(220px, 1.3fr); gap: 14px; margin-top: 14px; align-items: end; }
-                        .reader-control { display: grid; grid-template-columns: minmax(44px, auto) minmax(0, 1fr); gap: 8px; min-width: 0; align-items: center; color: #5d6678; font-size: 13px; }
+                        .reader-control { display: grid; grid-template-columns: minmax(44px, auto) minmax(0, 1fr); gap: 8px; min-width: 0; align-items: center; color: var(--muted); font-size: 13px; }
                         .reader-control-label { display: block; line-height: 34px; white-space: nowrap; }
                         .reader-control-value { min-width: 0; display: grid; gap: 4px; }
                         .reader-control-meta { display: none; }
-                        .reader input, .reader select { width: 100%%; min-height: 34px; border: 1px solid #d7dde7; border-radius: 7px; background: #f8fafc; color: #172033; font: inherit; }
-                        .reader input { accent-color: #2563eb; }
-                        .reader select { padding: 0 10px; }
-                        article { line-height: 1.72; background: #fff; border: 1px solid #dfe3ea; border-radius: 8px; padding: 24px; }
-                        article h2 { margin: 28px 0 12px; font-size: 22px; line-height: 1.35; }
-                        article h3 { margin: 22px 0 10px; font-size: 18px; line-height: 1.4; }
-                        article p { margin: 0 0 14px; color: #263044; }
-                        article ul, article ol { margin: 0 0 16px 22px; padding: 0; }
-                        article li { margin: 6px 0; }
-                        article pre { overflow-x: auto; margin: 0 0 16px; padding: 14px; border-radius: 6px; background: #f1f3f6; }
-                        article code { padding: 1px 5px; border-radius: 4px; background: #eef1f5; }
-                        article pre code { padding: 0; background: transparent; }
-                        h1 { font-size: 28px; line-height: 1.25; margin: 24px 0 12px; }
-                        main > p { color: #5d6678; }
+                        .reader input, .reader select { width: 100%%; min-height: 38px; border: 1px solid rgba(20, 20, 20, 0.08); border-radius: 16px; background: rgba(255, 255, 255, 0.86); color: var(--text); font: inherit; }
+                        .reader input { accent-color: var(--accent); }
+                        .reader select { padding: 0 12px; }
+                        .report-content { line-height: 1.78; font-size: 16px; }
+                        .report-content h2 { margin: 30px 0 12px; font-size: clamp(25px, 3vw, 34px); line-height: 1.18; letter-spacing: -0.04em; }
+                        .report-content h2:first-child { margin-top: 0; }
+                        .report-content h3 { margin: 24px 0 10px; font-size: 21px; line-height: 1.35; letter-spacing: -0.02em; }
+                        .report-content p { margin: 0 0 15px; color: rgba(24, 24, 24, 0.82); }
+                        .report-content ul, .report-content ol { margin: 0 0 18px 22px; padding: 0; color: rgba(24, 24, 24, 0.82); }
+                        .report-content li { margin: 7px 0; }
+                        .report-content a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(10, 132, 255, 0.24); }
+                        .report-content a:hover { border-bottom-color: currentColor; }
+                        .report-content pre { overflow-x: auto; margin: 0 0 18px; padding: 16px; border-radius: 20px; background: rgba(255, 255, 255, 0.72); border: 1px solid rgba(20, 20, 20, 0.06); }
+                        .report-content code { padding: 2px 6px; border-radius: 8px; background: rgba(10, 132, 255, 0.1); }
+                        .report-content pre code { padding: 0; background: transparent; }
+                        @media (max-width: 860px) {
+                            .report-hero { grid-template-columns: 1fr; border-radius: 34px; padding: 22px; }
+                            .report-cover { height: auto; min-height: 0; }
+                        }
                         @media (max-width: 520px) {
-                            main { padding: 20px 14px 36px; }
-                            article { padding: 18px; }
+                            .page-shell { padding: 18px 14px 48px; }
+                            .topbar { border-radius: 24px; align-items: center; }
+                            .brand-text { max-width: 56vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                            .report-hero { padding: 16px; border-radius: 28px; gap: 18px; }
+                            .report-visual { border-radius: 24px; }
+                            .report-copy h1 { font-size: 32px; letter-spacing: -0.04em; }
+                            .report-description { font-size: 15px; }
+                            .report-content { padding: 18px; border-radius: 28px; }
                             .reader { padding: 14px; }
                             .reader-settings { grid-template-columns: 1fr; }
                             .reader-control { grid-template-columns: 44px minmax(0, 1fr); }
@@ -146,62 +209,96 @@ public class ShareSummaryPublicController {
                     </style>
                 </head>
                 <body>
-                    <main>
-                        <img src="%s" alt="%s">
-                        <h1 data-reader-title>%s</h1>
-                        <p data-reader-description>%s</p>
-                        <section class="reader reader-audio" data-audio-reader data-audio-src="%s" %s aria-label="报告音频播放">
-                            <audio data-audio-element preload="metadata" src="%s"></audio>
-                            <div class="reader-main">
-                                <button class="reader-play" type="button" data-audio-action="toggle" aria-label="播放"></button>
-                                <div>
-                                    <div class="reader-status" data-audio-status>服务端语音</div>
-                                    <div class="reader-progress" aria-hidden="true">
-                                        <span class="reader-progress-bar" data-audio-progress></span>
+                    <div class="page-shell report-shell">
+                        <div class="backdrop-grid"></div>
+                        <div class="backdrop-glow backdrop-glow-left"></div>
+                        <div class="backdrop-glow backdrop-glow-right"></div>
+
+                        <header class="topbar report-topbar">
+                            <div class="brand-mark">
+                                <span class="brand-dot"></span>
+                                <span class="brand-text">LinkPeek Share Report</span>
+                            </div>
+                            <div class="topbar-meta">
+                                <a
+                                    class="icon-link project-link"
+                                    href="https://github.com/shigella520/LinkPeek"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    aria-label="打开 LinkPeek 项目"
+                                    title="LinkPeek 项目"
+                                >
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M12 1.5C6.2 1.5 1.5 6.3 1.5 12.2c0 4.7 3 8.7 7.2 10.1.5.1.7-.2.7-.5v-1.9c-2.9.7-3.5-1.2-3.5-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1 1.6 1 .9 1.5 2.3 1 2.8.8.1-.7.4-1 .6-1.3-2.3-.3-4.8-1.2-4.8-5.3 0-1.2.4-2.2 1-3-.1-.2-.4-1.3.1-2.8 0 0 .9-.3 3 .9a10.2 10.2 0 0 1 5.5 0c2.1-1.2 3-.9 3-.9.6 1.5.2 2.6.1 2.8.7.8 1 1.8 1 3 0 4.1-2.5 5-4.8 5.3.4.3.7.9.7 1.9v2.7c0 .3.2.7.7.5a10.7 10.7 0 0 0 7.2-10C22.5 6.3 17.8 1.5 12 1.5Z"/>
+                                    </svg>
+                                </a>
+                            </div>
+                        </header>
+
+                        <section class="report-hero">
+                            <div class="report-visual">
+                                <img class="report-cover" src="%s" alt="%s">
+                            </div>
+                            <div class="report-copy">
+                                <p class="eyebrow">Share Summary</p>
+                                <h1 data-reader-title>%s</h1>
+                                <p class="report-description" data-reader-description>%s</p>
+                                <section class="reader reader-audio" data-audio-reader data-audio-src="%s" %s aria-label="报告音频播放">
+                                    <audio data-audio-element preload="metadata" src="%s"></audio>
+                                    <div class="reader-main">
+                                        <button class="reader-play" type="button" data-audio-action="toggle" aria-label="播放"></button>
+                                        <div>
+                                            <div class="reader-status" data-audio-status>准备播放</div>
+                                            <div class="reader-progress" aria-hidden="true">
+                                                <span class="reader-progress-bar" data-audio-progress></span>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
+                                </section>
+                                <section class="reader reader-system" data-reader hidden aria-label="报告朗读">
+                                    <div class="reader-main">
+                                        <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放"></button>
+                                        <div>
+                                            <div class="reader-status" data-reader-status>准备播放</div>
+                                            <div class="reader-progress" aria-hidden="true">
+                                                <span class="reader-progress-bar" data-reader-progress></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="reader-settings">
+                                        <label class="reader-control">
+                                            <span class="reader-control-label">语速</span>
+                                            <span class="reader-control-value">
+                                                <select data-reader-rate>
+                                                    <option value="1.0">1.0x</option>
+                                                    <option value="1.1">1.1x</option>
+                                                    <option value="1.2">1.2x</option>
+                                                    <option value="1.3">1.3x</option>
+                                                    <option value="1.4">1.4x</option>
+                                                    <option value="1.5">1.5x</option>
+                                                    <option value="1.8">1.8x</option>
+                                                    <option value="2.0">2.0x</option>
+                                                </select>
+                                                <span class="reader-control-meta" data-reader-rate-label></span>
+                                            </span>
+                                        </label>
+                                        <label class="reader-control reader-voice">
+                                            <span class="reader-control-label">音色</span>
+                                            <span class="reader-control-value">
+                                                <select data-reader-voice>
+                                                    <option value="">系统默认</option>
+                                                </select>
+                                                <span class="reader-control-meta" data-reader-voice-hint>系统默认</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </section>
                             </div>
                         </section>
-                        <section class="reader reader-system" data-reader hidden aria-label="报告朗读">
-                            <div class="reader-main">
-                                <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放"></button>
-                                <div>
-                                    <div class="reader-status" data-reader-status>准备播放</div>
-                                    <div class="reader-progress" aria-hidden="true">
-                                        <span class="reader-progress-bar" data-reader-progress></span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="reader-settings">
-                                <label class="reader-control">
-                                    <span class="reader-control-label">语速</span>
-                                    <span class="reader-control-value">
-                                        <select data-reader-rate>
-                                            <option value="1.0">1.0x</option>
-                                            <option value="1.1">1.1x</option>
-                                            <option value="1.2">1.2x</option>
-                                            <option value="1.3">1.3x</option>
-                                            <option value="1.4">1.4x</option>
-                                            <option value="1.5">1.5x</option>
-                                            <option value="1.8">1.8x</option>
-                                            <option value="2.0">2.0x</option>
-                                        </select>
-                                        <span class="reader-control-meta" data-reader-rate-label></span>
-                                    </span>
-                                </label>
-                                <label class="reader-control reader-voice">
-                                    <span class="reader-control-label">音色</span>
-                                    <span class="reader-control-value">
-                                        <select data-reader-voice>
-                                            <option value="">系统默认</option>
-                                        </select>
-                                        <span class="reader-control-meta" data-reader-voice-hint>系统默认</span>
-                                    </span>
-                                </label>
-                            </div>
-                        </section>
-                        <article data-reader-content>%s</article>
-                    </main>
+                        <main class="report-main">
+                            <article class="content-card report-content" data-reader-content>%s</article>
+                        </main>
+                    </div>
                     <script>
                         (() => {
                             const audioRoot = document.querySelector("[data-audio-reader]");
@@ -245,7 +342,7 @@ public class ShareSummaryPublicController {
                                         audio.pause();
                                     }
                                 });
-                                audio.addEventListener("play", () => setAudioStatus("服务端语音播放中", true));
+                                audio.addEventListener("play", () => setAudioStatus("正在播放", true));
                                 audio.addEventListener("pause", () => setAudioStatus(audio.ended ? "播放完成" : "已暂停", false));
                                 audio.addEventListener("ended", () => {
                                     updateAudioProgress();
