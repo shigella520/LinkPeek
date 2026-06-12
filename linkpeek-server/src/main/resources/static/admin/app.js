@@ -1165,20 +1165,20 @@
             return;
         }
         body.innerHTML = state.shareSummaryTasks.map((task) => `
-            <tr>
-                <td>
+            <tr class="share-summary-task-row">
+                <td class="share-summary-task-name-cell">
                     <strong>${escapeHtml(task.name)}</strong>
                 </td>
-                    <td class="nowrap share-summary-period-cell">
-                        <div class="period-window-trigger" tabindex="0" aria-label="查看时间窗口">
-                            <span>${escapeHtml(periodLabel(task.periodType))}</span>
-                            <div class="keyline">${escapeHtml(periodSelectionModeLabel(task.periodSelectionMode))}</div>
-                            ${renderShareSummaryWindowPopover(task)}
-                        </div>
-                    </td>
-                    <td class="nowrap">${escapeHtml(scheduleLabel(task))}</td>
-                <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
-                <td>
+                <td class="nowrap share-summary-period-cell">
+                    <div class="period-window-trigger" tabindex="0" aria-label="查看时间窗口">
+                        <span>${escapeHtml(periodLabel(task.periodType))}</span>
+                        <div class="keyline">${escapeHtml(periodSelectionModeLabel(task.periodSelectionMode))}</div>
+                        ${renderShareSummaryWindowPopover(task)}
+                    </div>
+                </td>
+                <td class="nowrap share-summary-schedule-cell">${escapeHtml(scheduleLabel(task))}</td>
+                <td class="share-summary-status-cell">${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
+                <td class="share-summary-task-action-cell">
                     <div class="row-actions share-summary-task-actions">
                         <button type="button" class="secondary" data-run-share-task="${task.id}">执行</button>
                         <button type="button" class="secondary" data-edit-share-task="${task.id}">编辑</button>
@@ -1666,15 +1666,15 @@
             body.innerHTML = `<tr><td colspan="8" class="muted">暂无分享总结记录</td></tr>`;
         } else {
             body.innerHTML = items.map((run) => `
-                <tr>
-                    <td class="nowrap">${escapeHtml(formatTimestamp(run.startedAt))}</td>
-                    <td>${escapeHtml(run.taskName || "-")}<div class="keyline">${escapeHtml(run.triggerType || "-")}</div></td>
+                <tr class="share-summary-run-row">
+                    <td class="nowrap share-summary-run-start-cell">${escapeHtml(formatTimestamp(run.startedAt))}</td>
+                    <td class="share-summary-run-task-cell">${escapeHtml(run.taskName || "-")}<div class="keyline">${escapeHtml(run.triggerType || "-")}</div></td>
                     <td class="summary-window-cell">${renderSummaryWindow(run.windowStart, run.windowEnd)}</td>
-                    <td>${renderRunStatus(run.status)}${renderRunErrorHint(run.errorMessage)}</td>
-                    <td>${escapeHtml(run.inputLinkCount || 0)}</td>
-                    <td>${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
-                    <td>${renderShareSummaryImageCell(run)}</td>
-                    <td>${renderShareSummaryRunActions(run)}</td>
+                    <td class="share-summary-run-status-cell">${renderRunStatus(run.status)}${renderRunErrorHint(run.errorMessage)}</td>
+                    <td class="share-summary-run-count-cell">${escapeHtml(run.inputLinkCount || 0)}</td>
+                    <td class="share-summary-run-ai-cell">${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
+                    <td class="share-summary-run-image-cell">${renderShareSummaryImageCell(run)}</td>
+                    <td class="share-summary-run-action-cell">${renderShareSummaryRunActions(run)}</td>
                 </tr>
             `).join("");
         }

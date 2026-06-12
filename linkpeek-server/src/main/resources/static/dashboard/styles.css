@@ -37,6 +37,8 @@ body {
     min-height: 100vh;
     font-family: var(--font-sans);
     color: var(--text);
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
     background:
         radial-gradient(circle at 10% 10%, rgba(255, 204, 153, 0.28), transparent 24%),
         radial-gradient(circle at 88% 4%, rgba(10, 132, 255, 0.22), transparent 22%),
@@ -1083,14 +1085,41 @@ td a:hover {
 
 @media (max-width: 780px) {
     .page-shell {
-        padding: 18px 16px 56px;
+        padding: 16px 12px 48px;
     }
 
     .topbar {
         position: static;
-        flex-direction: column;
-        align-items: flex-start;
-        border-radius: 28px;
+        flex-direction: row;
+        align-items: center;
+        gap: 12px;
+        border-radius: 22px;
+        padding: 12px 14px;
+        margin-bottom: 16px;
+    }
+
+    .brand-mark {
+        gap: 10px;
+        min-width: 0;
+    }
+
+    .brand-dot {
+        width: 8px;
+        height: 8px;
+        box-shadow: 0 0 0 7px rgba(10, 132, 255, 0.1);
+    }
+
+    .brand-text {
+        max-width: 58vw;
+        font-size: 18px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .icon-link {
+        width: 38px;
+        height: 38px;
     }
 
     .topbar-meta,
@@ -1104,8 +1133,8 @@ td a:hover {
     .hero,
     .content-card,
     .story-metric-card {
-        padding: 20px;
-        border-radius: 28px;
+        padding: 16px;
+        border-radius: 22px;
     }
 
     .hero-stage,
@@ -1120,11 +1149,14 @@ td a:hover {
     }
 
     .hero h1 {
-        font-size: clamp(42px, 12vw, 62px);
+        font-size: clamp(34px, 10vw, 46px);
+        line-height: 1;
+        letter-spacing: -0.04em;
     }
 
     .link-builder {
-        padding: 18px;
+        padding: 14px;
+        border-radius: 18px;
     }
 
     .link-builder-actions {
@@ -1177,7 +1209,7 @@ td a:hover {
 
     .floating-chip strong,
     .glass-card strong {
-        font-size: 30px;
+        font-size: 26px;
     }
 
     .stats-admin-trigger {
@@ -1187,4 +1219,306 @@ td a:hover {
         width: auto;
     }
 
+}
+
+@media (max-width: 520px) {
+    .page-shell {
+        padding: 10px 10px 44px;
+    }
+
+    .backdrop-glow {
+        opacity: 0.24;
+    }
+
+    .topbar {
+        gap: 7px;
+        padding: 8px 9px;
+        margin-bottom: 12px;
+        border-radius: 18px;
+    }
+
+    .brand-mark {
+        flex: 1 1 auto;
+        gap: 8px;
+        min-width: 0;
+        overflow: visible;
+    }
+
+    .brand-dot {
+        width: 7px;
+        height: 7px;
+        box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.1);
+    }
+
+    .brand-text {
+        max-width: clamp(136px, 40vw, 196px);
+        min-width: 0;
+        overflow: hidden;
+        font-size: 15px;
+        letter-spacing: 0;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .topbar-meta {
+        flex: 0 0 auto;
+        gap: 6px;
+        min-width: 0;
+    }
+
+    .icon-link {
+        flex: 0 0 32px;
+        width: 32px;
+        height: 32px;
+    }
+
+    .icon-link svg {
+        width: 16px;
+        height: 16px;
+    }
+
+    .topbar-pill {
+        max-width: 36vw;
+        min-height: 32px;
+        padding: 0 10px;
+        overflow: hidden;
+        font-size: 12px;
+        line-height: 1;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .hero {
+        padding: 12px 11px;
+        margin-bottom: 20px;
+        border-radius: 18px;
+    }
+
+    .eyebrow,
+    .card-kicker {
+        margin-bottom: 7px;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+    }
+
+    .hero h1 {
+        max-width: 9.6ch;
+        font-size: clamp(31px, 8.2vw, 38px);
+        line-height: 0.98;
+        letter-spacing: -0.045em;
+    }
+
+    .hero-controls {
+        display: grid;
+        gap: 8px;
+        margin-top: 15px;
+    }
+
+    .range-switch {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        width: 100%;
+        gap: 4px;
+        padding: 5px;
+    }
+
+    .range-switch button {
+        min-width: 0;
+        padding: 8px 0;
+        font-size: 12px;
+        line-height: 1;
+    }
+
+    .hero-status {
+        width: fit-content;
+        max-width: 100%;
+        gap: 8px;
+        padding: 7px 10px;
+        font-size: 12px;
+        line-height: 1.2;
+    }
+
+    .status-indicator {
+        width: 7px;
+        height: 7px;
+        box-shadow: 0 0 0 8px rgba(19, 185, 129, 0.12);
+    }
+
+    .link-builder {
+        margin-top: 14px;
+        padding: 12px 11px;
+        border-radius: 16px;
+    }
+
+    .link-builder-head {
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    .link-builder-kicker {
+        margin-bottom: 6px;
+        font-size: 10px;
+        letter-spacing: 0.16em;
+    }
+
+    .link-builder h2 {
+        font-size: 21px;
+        line-height: 1.04;
+        letter-spacing: -0.04em;
+    }
+
+    .link-builder-badge {
+        min-height: 28px;
+        padding: 0 9px;
+        font-size: 11px;
+    }
+
+    .link-builder-form {
+        gap: 8px;
+    }
+
+    .link-builder-field span {
+        margin-bottom: 6px;
+        font-size: 12px;
+    }
+
+    .link-builder-field input,
+    .link-builder-field select {
+        min-height: 40px;
+        border-radius: 14px;
+        padding: 9px 13px;
+        font-size: 13px;
+    }
+
+    .link-builder-field select {
+        background-position:
+            calc(100% - 17px) 52%,
+            calc(100% - 12px) 52%;
+        padding-right: 38px;
+    }
+
+    .link-builder-actions {
+        gap: 7px;
+        margin-top: 9px;
+    }
+
+    #link-builder-button {
+        min-height: 39px;
+        padding: 0 14px;
+        font-size: 13px;
+    }
+
+    #link-builder-feedback {
+        font-size: 12px;
+        line-height: 1.4;
+    }
+
+    .link-builder-output {
+        min-height: 42px;
+        margin-top: 9px;
+        padding: 9px 11px;
+        border-radius: 14px;
+        font-size: 11px;
+        line-height: 1.45;
+    }
+
+    .hero-stage-panel {
+        gap: 10px;
+        padding: 12px;
+        border-radius: 18px;
+    }
+
+    .floating-chip,
+    .glass-card,
+    .story-metric-card,
+    .content-card {
+        border-radius: 18px;
+    }
+
+    .floating-chip,
+    .glass-card {
+        padding: 13px 14px;
+    }
+
+    .floating-chip strong,
+    .glass-card strong,
+    .story-metric-card strong {
+        font-size: 24px;
+    }
+
+    .story-shell {
+        gap: 22px;
+    }
+
+    .story-row {
+        gap: 14px;
+    }
+
+    .story-index {
+        width: 36px;
+        height: 36px;
+        margin-bottom: 10px;
+        border-radius: 12px;
+    }
+
+    .story-aside h2 {
+        margin-bottom: 8px;
+        font-size: 28px;
+    }
+
+    .story-aside p {
+        font-size: 13px;
+        line-height: 1.6;
+    }
+
+    .content-card {
+        padding: 14px;
+    }
+
+    .card-head {
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .card-head h3 {
+        font-size: 22px;
+    }
+
+    .chart-large,
+    .chart-medium {
+        height: 260px;
+    }
+}
+
+@media (max-width: 380px) {
+    .page-shell {
+        padding: 8px 8px 40px;
+    }
+
+    .topbar {
+        padding: 7px 8px;
+        border-radius: 17px;
+    }
+
+    .brand-text {
+        max-width: clamp(128px, 40vw, 170px);
+        font-size: 15px;
+    }
+
+    .topbar-pill {
+        min-height: 30px;
+        padding: 0 8px;
+        font-size: 11px;
+    }
+
+    .hero,
+    .content-card,
+    .story-metric-card {
+        padding: 12px;
+        border-radius: 18px;
+    }
+
+    .hero h1 {
+        font-size: clamp(30px, 9vw, 36px);
+    }
 }

@@ -25,6 +25,8 @@ body {
     color: var(--text);
     font-family: "Avenir Next", "SF Pro Display", "PingFang SC", sans-serif;
     overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }
 
 body.modal-open {
@@ -2660,29 +2662,44 @@ fieldset,
         top: 10px;
         width: min(100vw - 20px, 1480px);
         margin-top: 10px;
-        border-radius: 26px;
-        padding: 12px 14px;
+        gap: 10px;
+        border-radius: 22px;
+        padding: 11px 12px;
     }
 
     .topbar-brand {
         gap: 10px;
+        min-width: 0;
     }
 
     .brand-dot {
-        width: 9px;
-        height: 9px;
+        width: 8px;
+        height: 8px;
         box-shadow: 0 0 0 7px rgba(10, 132, 255, 0.1);
+    }
+
+    .brand-text {
+        max-width: 42vw;
+        font-size: 18px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .topbar-actions {
+        gap: 8px;
     }
 
     .topbar-actions a:not(.icon-link),
     .topbar-actions button {
-        min-height: 36px;
-        padding: 0 11px;
+        min-height: 34px;
+        padding: 0 10px;
+        font-size: 13px;
     }
 
     .icon-link {
-        width: 36px;
-        height: 36px;
+        width: 34px;
+        height: 34px;
     }
 
     main.admin-main {
@@ -2693,15 +2710,15 @@ fieldset,
     .panel,
     .modal,
     .login-form {
-        border-radius: 26px;
+        border-radius: 22px;
     }
 
     .panel {
-        padding: 18px;
+        padding: 16px;
     }
 
     .panel h2 {
-        font-size: 24px;
+        font-size: 22px;
     }
 
     .preview-event-table tr,
@@ -2720,7 +2737,341 @@ fieldset,
         left: 10px;
         width: min(300px, calc(100vw - 20px));
         height: calc(100vh - 20px);
-        border-radius: 26px;
+        border-radius: 22px;
+    }
+}
+
+@media (max-width: 520px) {
+    .topbar {
+        width: min(100vw - 10px, 1480px);
+        margin-top: 6px;
+        padding: 7px 8px;
+        border-radius: 17px;
+        gap: 6px;
+    }
+
+    .topbar-brand {
+        flex: 1 1 auto;
+        gap: 8px;
+        overflow: hidden;
+    }
+
+    .topbar-actions {
+        flex: 0 0 auto;
+        gap: 5px;
+        min-width: 0;
+    }
+
+    .admin-menu-button,
+    .admin-drawer-close-button,
+    .icon-link {
+        width: 30px;
+        min-height: 30px;
+        height: 30px;
+        border-radius: 999px;
+    }
+
+    .admin-menu-icon,
+    .admin-menu-icon::before,
+    .admin-menu-icon::after,
+    .admin-close-icon::before,
+    .admin-close-icon::after {
+        width: 15px;
+    }
+
+    .brand-text {
+        max-width: clamp(118px, 38vw, 190px);
+        font-size: 16px;
+        letter-spacing: 0;
+    }
+
+    .brand-dot {
+        width: 7px;
+        height: 7px;
+        box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.1);
+    }
+
+    .topbar-actions a:not(.icon-link),
+    .topbar-actions button {
+        flex: 0 0 auto;
+        min-height: 30px;
+        padding: 0 7px;
+        font-size: 12px;
+        line-height: 1;
+        white-space: nowrap;
+        word-break: keep-all;
+    }
+
+    #logout-button {
+        min-width: 42px;
+    }
+
+    main,
+    main.admin-main,
+    .login-main {
+        width: min(100vw - 12px, 1480px);
+    }
+
+    .panel,
+    .modal,
+    .login-form {
+        border-radius: 20px;
+    }
+
+    .panel,
+    .login-form {
+        padding: 14px 12px;
+    }
+
+    .panel h2 {
+        font-size: 20px;
+    }
+
+    #share-summary {
+        padding-top: 14px;
+    }
+
+    #share-summary .panel-head {
+        margin-bottom: 10px;
+    }
+
+    #share-summary .panel-kicker {
+        margin-bottom: 3px;
+        font-size: 10px;
+        letter-spacing: 0.1em;
+    }
+
+    #share-summary .panel-action-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    #share-summary .panel-action-row button {
+        width: 100%;
+        min-width: 0;
+        min-height: 34px;
+        padding: 0 6px;
+        font-size: 12px;
+        white-space: nowrap;
+    }
+
+    .feedback {
+        min-height: 0;
+        margin-top: 6px;
+        font-size: 12px;
+    }
+
+    #share-summary .table-shell {
+        margin-top: 8px;
+        border: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .share-summary-task-table tr,
+    .share-summary-run-table tr {
+        border: 1px solid rgba(20, 20, 20, 0.07);
+        border-radius: 16px;
+        margin-bottom: 8px;
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.66);
+        box-shadow: 0 10px 22px rgba(16, 19, 23, 0.04);
+    }
+
+    .share-summary-task-table td,
+    .share-summary-run-table td {
+        padding: 0;
+    }
+
+    .share-summary-task-row {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 7px 10px;
+        align-items: start;
+    }
+
+    .share-summary-task-name-cell {
+        grid-column: 1 / 2;
+    }
+
+    .share-summary-task-name-cell strong {
+        display: block;
+        color: var(--text);
+        font-size: 16px;
+        line-height: 1.3;
+    }
+
+    .share-summary-status-cell {
+        grid-column: 2 / 3;
+        justify-self: end;
+    }
+
+    .share-summary-period-cell,
+    .share-summary-schedule-cell {
+        color: var(--muted);
+        font-size: 13px;
+    }
+
+    .share-summary-period-cell {
+        grid-column: 1 / 2;
+    }
+
+    .share-summary-schedule-cell {
+        grid-column: 2 / 3;
+        justify-self: end;
+        align-self: center;
+        color: var(--text);
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+    }
+
+    .share-summary-period-cell .period-window-trigger {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .share-summary-period-cell .keyline {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .share-summary-task-action-cell {
+        grid-column: 1 / 3;
+    }
+
+    .share-summary-task-actions {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+        margin-top: 1px;
+    }
+
+    .share-summary-task-actions button {
+        min-height: 32px;
+        font-size: 12px;
+    }
+
+    #share-summary .prompt-subsection {
+        margin-top: 14px;
+        padding-top: 14px;
+    }
+
+    #share-summary .subsection-head {
+        align-items: center;
+        gap: 8px;
+    }
+
+    #share-summary .subsection-head h3 {
+        font-size: 18px;
+    }
+
+    #share-summary-refresh-runs {
+        min-height: 32px;
+        padding: 0 10px;
+        font-size: 12px;
+    }
+
+    .share-summary-filter-form {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+    }
+
+    .share-summary-filter-form .share-summary-task-select {
+        grid-column: 1 / -1;
+    }
+
+    .share-summary-filter-form label {
+        gap: 5px;
+    }
+
+    .share-summary-filter-form label span {
+        font-size: 12px;
+    }
+
+    .share-summary-filter-form select {
+        min-height: 34px;
+        border-radius: 14px;
+        padding: 0 10px;
+        font-size: 13px;
+    }
+
+    .share-summary-run-row {
+        display: grid !important;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 7px 10px;
+    }
+
+    .share-summary-run-start-cell,
+    .share-summary-run-task-cell,
+    .summary-window-cell,
+    .share-summary-run-ai-cell,
+    .share-summary-run-image-cell,
+    .share-summary-run-action-cell {
+        grid-column: 1 / 3;
+    }
+
+    .share-summary-run-start-cell {
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .share-summary-run-task-cell {
+        color: var(--text);
+        font-size: 15px;
+        font-weight: 750;
+    }
+
+    .share-summary-run-status-cell {
+        grid-column: 2 / 3;
+        grid-row: 1 / 3;
+        justify-self: end;
+    }
+
+    .share-summary-run-count-cell {
+        grid-column: 1 / 2;
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    .share-summary-run-count-cell::before {
+        content: "链接 ";
+    }
+
+    .share-summary-run-table td .share-summary-run-actions {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .share-summary-run-table td .share-summary-run-actions button {
+        width: 100%;
+        min-height: 30px;
+        font-size: 12px;
+    }
+
+    .share-summary-image-cell {
+        grid-template-columns: 54px minmax(0, 1fr);
+        gap: 6px 8px;
+    }
+
+    .share-summary-thumb,
+    .share-summary-thumb-placeholder {
+        width: 54px;
+        height: 34px;
+        border-radius: 10px;
+    }
+
+    .pagination-bar {
+        margin-top: 10px;
+    }
+
+    .pagination-bar button {
+        min-height: 32px;
+        padding: 0 10px;
+        font-size: 12px;
     }
 }
 

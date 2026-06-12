@@ -102,7 +102,7 @@ public class ShareSummaryPublicController {
                     <meta name="twitter:description" content="%s">
                     <meta name="twitter:image" content="%s">
                     <link rel="icon" href="/favicon.ico">
-                    <link rel="stylesheet" href="/dashboard/styles.css">
+                    <link rel="stylesheet" href="/dashboard/styles.css?v=20260612-mobile-scale">
                     <style>
                         .report-shell { max-width: 1180px; padding-bottom: 72px; }
                         .report-topbar { margin-bottom: 24px; }
@@ -194,17 +194,43 @@ public class ShareSummaryPublicController {
                             .report-cover { height: auto; min-height: 0; }
                         }
                         @media (max-width: 520px) {
-                            .page-shell { padding: 18px 14px 48px; }
-                            .topbar { border-radius: 24px; align-items: center; }
-                            .brand-text { max-width: 56vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-                            .report-hero { padding: 16px; border-radius: 28px; gap: 18px; }
-                            .report-visual { border-radius: 24px; }
-                            .report-copy h1 { font-size: 32px; letter-spacing: -0.04em; }
-                            .report-description { font-size: 15px; }
-                            .report-content { padding: 18px; border-radius: 28px; }
-                            .reader { padding: 14px; }
+                            .page-shell { padding: 12px 10px 40px; }
+                            .report-shell { padding-bottom: 40px; }
+                            .topbar {
+                                flex-direction: row;
+                                border-radius: 20px;
+                                align-items: center;
+                                gap: 10px;
+                                padding: 12px 14px;
+                                margin-bottom: 14px;
+                            }
+                            .brand-mark { gap: 10px; min-width: 0; }
+                            .brand-dot { width: 8px; height: 8px; box-shadow: 0 0 0 7px rgba(10, 132, 255, 0.1); }
+                            .brand-text { max-width: 62vw; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                            .project-link { width: 40px; height: 40px; }
+                            .project-link svg { width: 18px; height: 18px; }
+                            .report-hero { padding: 12px; border-radius: 22px; gap: 14px; margin-bottom: 22px; }
+                            .report-visual { border-radius: 18px; }
+                            .report-copy h1 { font-size: 27px; line-height: 1.08; letter-spacing: -0.02em; }
+                            .report-description { margin-top: 12px; font-size: 14px; line-height: 1.65; }
+                            .report-content { padding: 14px; border-radius: 22px; font-size: 15px; line-height: 1.72; }
+                            .report-content h2 { margin: 24px 0 10px; font-size: 23px; letter-spacing: -0.02em; }
+                            .report-content h3 { margin: 20px 0 8px; font-size: 18px; letter-spacing: 0; }
+                            .report-content ul, .report-content ol { margin-left: 18px; }
+                            .reader { margin-top: 14px; padding: 12px; border-radius: 18px; }
+                            .reader-main { grid-template-columns: 40px minmax(0, 1fr); gap: 10px; }
+                            .reader-play { width: 40px; height: 40px; }
                             .reader-settings { grid-template-columns: 1fr; }
-                            .reader-control { grid-template-columns: 44px minmax(0, 1fr); }
+                            .reader-control { grid-template-columns: 40px minmax(0, 1fr); font-size: 12px; }
+                        }
+                        @media (max-width: 380px) {
+                            .page-shell { padding-inline: 8px; }
+                            .topbar { padding: 10px 12px; }
+                            .brand-text { font-size: 17px; max-width: 58vw; }
+                            .report-hero { padding: 10px; border-radius: 20px; }
+                            .report-copy h1 { font-size: 25px; }
+                            .report-description,
+                            .report-content { font-size: 14px; }
                         }
                     </style>
                 </head>
