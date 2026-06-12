@@ -39,7 +39,7 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
 4. 服务端根据 canonical URL 计算稳定的 `PreviewKey`。
 5. 对爬虫请求解析元数据；如果带有 `style` 且命中后台 Style Prompt，则尝试基于文本卡片内容生成 AI 标题。
 6. AI 标题会使用 `canonical URL + style + prompt hash` 生成独立的 styled `PreviewKey`，避免不同标题风格共用同一份元数据缓存。
-7. AI 请求按后台 AI Provider 列表的启用状态和排序 fallback；单个 Provider 有自己的请求超时。全局自动降级开启后，Provider 连续超时达到阈值会被移动到列表最后并写入明显 WARN 日志。
+7. AI 请求按后台 AI Provider 列表的启用状态和排序 fallback；单个 Provider 有自己的请求超时。全局失败阈值降级开启后，Provider 连续处理失败达到阈值会被移动到列表最后并写入明显 WARN 日志。
 8. AI 生成失败、返回空内容或目标 provider 不支持文本卡片时，回退到基础元数据和原标题。
 9. 返回 Open Graph HTML，同时记录创建事件和 AI 请求/成功标记。
 10. 对普通浏览器请求立即记录打开事件并跳转到原始链接，不在点击跳转分支同步生成 AI 标题。
@@ -60,7 +60,7 @@ client -> /preview?url=... -> server controller -> provider registry -> provider
 
 - 部署级配置来自环境变量，例如 `BASE_URL`、`CACHE_DIR`、`DOWNLOAD_TIMEOUT` 和日志路径。
 - 管理后台运行时配置写入 SQLite，包括 Style Prompt、论坛 Cookie、AI Provider 列表和 AI Provider 自动降级配置。
-- AI Provider 自动降级的开关与超时阈值是全局配置，保存在通用 `provider_config` 表；每个 Provider 只保存自身连接信息、启用状态、排序和请求超时。
+- AI Provider 自动降级的开关与失败阈值是全局配置，保存在通用 `provider_config` 表；每个 Provider 只保存自身连接信息、启用状态、排序和请求超时。
 - 详细表结构和逻辑关系见 [数据库表结构](./database-schema.md)。
 
 ## 统计设计

@@ -9,12 +9,14 @@ import io.github.shigella520.linkpeek.server.admin.persistence.ProviderConfigMap
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryLinkMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryMapper;
 import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
+import io.github.shigella520.linkpeek.server.ai.AiProviderAutoDowngradedEvent;
+import io.github.shigella520.linkpeek.server.ai.AiProviderRequestFailedEvent;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
 import org.junit.jupiter.api.Test;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.io.IOException;
-import java.net.http.HttpTimeoutException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -261,7 +263,7 @@ class ShareSummaryServiceTest {
     }
 
     @Test
-    void aiProviderTimeoutRecordsDowngradeAndFallsBackToNextProvider() {
+    void aiProviderFailureRecordsDowngradeAndFallsBackToNextProvider() {
         FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
         mapper.task = task("DAILY", "09:00", null);
         ShareSummaryLinkRow link = new ShareSummaryLinkRow();
@@ -270,14 +272,16 @@ class ShareSummaryServiceTest {
         FakeShareSummaryLinkMapper linkMapper = new FakeShareSummaryLinkMapper();
         linkMapper.summaryLinks = List.of(link);
         FakeAiProviderMapper providerMapper = new FakeAiProviderMapper();
-        AiProviderRecord timeoutProvider = provider(1L, "timeout-provider", 10);
+        AiProviderRecord failedProvider = provider(1L, "failed-provider", 10);
         AiProviderRecord fallbackProvider = provider(2L, "fallback-provider", 20);
-        providerMapper.providers = List.of(timeoutProvider, fallbackProvider);
-        FakeAiTitleClient aiTitleClient = new FakeAiTitleClient(timeoutProvider.getId());
+        providerMapper.providers = List.of(failedProvider, fallbackProvider);
+        FakeAiTitleClient aiTitleClient = new FakeAiTitleClient(failedProvider.getId());
+        CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
         AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
                 new EnabledAutoDowngradeConfigMapper(),
                 providerMapper,
-                Clock.fixed(Instant.parse("2026-06-04T02:00:00Z"), ZONE)
+                Clock.fixed(Instant.parse("2026-06-04T02:00:00Z"), ZONE),
+                eventPublisher
         );
         ShareSummaryService service = service(
                 mapper,
@@ -291,11 +295,25 @@ class ShareSummaryServiceTest {
         ShareSummaryRunRecord run = service.runTask(1L);
 
         assertEquals("SUCCESS", run.getStatus());
-        assertEquals("timeout-provider/fallback-provider", run.getAiProviderNames());
+        assertEquals("failed-provider/fallback-provider", run.getAiProviderNames());
         assertEquals("fallback summary", run.getReport());
-        assertEquals(List.of(fallbackProvider.getId(), timeoutProvider.getId()), providerMapper.selectAllProviders().stream()
+        assertEquals(List.of(fallbackProvider.getId(), failedProvider.getId()), providerMapper.selectAllProviders().stream()
                 .map(AiProviderRecord::getId)
                 .toList());
+        AiProviderRequestFailedEvent failure = eventPublisher.events.stream()
+                .filter(AiProviderRequestFailedEvent.class::isInstance)
+                .map(AiProviderRequestFailedEvent.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("SHARE_SUMMARY", failure.operation());
+        org.junit.jupiter.api.Assertions.assertTrue(failure.downgradeTriggered());
+        AiProviderAutoDowngradedEvent downgraded = eventPublisher.events.stream()
+                .filter(AiProviderAutoDowngradedEvent.class::isInstance)
+                .map(AiProviderAutoDowngradedEvent.class::cast)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("SHARE_SUMMARY", downgraded.operation());
+        assertEquals(1, downgraded.failureCount());
     }
 
     private ShareSummaryService service(FakeShareSummaryMapper mapper, String instant) {
@@ -546,17 +564,17 @@ class ShareSummaryServiceTest {
     }
 
     private static final class FakeAiTitleClient extends AiTitleClient {
-        private final Long timeoutProviderId;
+        private final Long failedProviderId;
 
-        private FakeAiTitleClient(Long timeoutProviderId) {
+        private FakeAiTitleClient(Long failedProviderId) {
             super(null, null);
-            this.timeoutProviderId = timeoutProviderId;
+            this.failedProviderId = failedProviderId;
         }
 
         @Override
         public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
-            if (provider.getId().equals(timeoutProviderId)) {
-                throw new HttpTimeoutException("request timed out");
+            if (provider.getId().equals(failedProviderId)) {
+                throw new IOException("provider failed");
             }
             return new AiTextResult(Optional.of("fallback summary"), 12);
         }
@@ -580,7 +598,7 @@ class ShareSummaryServiceTest {
             record.setConfigKey(configKey);
             if (AiProviderDowngradeService.AUTO_DOWNGRADE_ENABLED_KEY.equals(configKey)) {
                 record.setConfigValue("true");
-            } else if (AiProviderDowngradeService.AUTO_DOWNGRADE_TIMEOUT_THRESHOLD_KEY.equals(configKey)) {
+            } else if (AiProviderDowngradeService.AUTO_DOWNGRADE_FAILURE_THRESHOLD_KEY.equals(configKey)) {
                 record.setConfigValue("1");
             }
             return record;
@@ -588,6 +606,15 @@ class ShareSummaryServiceTest {
 
         @Override
         public void upsertConfig(io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord config) {
+        }
+    }
+
+    private static final class CapturingEventPublisher implements ApplicationEventPublisher {
+        private final List<Object> events = new ArrayList<>();
+
+        @Override
+        public void publishEvent(Object event) {
+            events.add(event);
         }
     }
 }

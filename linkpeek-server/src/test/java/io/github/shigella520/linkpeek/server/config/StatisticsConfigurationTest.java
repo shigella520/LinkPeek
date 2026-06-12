@@ -96,6 +96,31 @@ class StatisticsConfigurationTest {
                             Integer.class
                     )
             );
+            jdbcTemplate.update("""
+                    INSERT INTO provider_config (
+                        provider_id,
+                        config_key,
+                        config_value,
+                        updated_at
+                    )
+                    VALUES (?, ?, ?, ?)
+                    """, "ai_provider", "auto_downgrade_timeout_threshold", "2", 1L);
+
+            initializeSchema(dataSource);
+            initializeSchema(dataSource);
+
+            assertEquals(
+                    0,
+                    jdbcTemplate.queryForObject(
+                            """
+                                    SELECT COUNT(*)
+                                    FROM provider_config
+                                    WHERE provider_id = 'ai_provider'
+                                      AND config_key = 'auto_downgrade_timeout_threshold'
+                                    """,
+                            Integer.class
+                    )
+            );
         } finally {
             Files.walk(tempDir)
                     .sorted(Comparator.reverseOrder())

@@ -772,6 +772,59 @@ class PreviewControllerTest {
     }
 
     @Test
+    void upstreamCrawlFailurePublishesDataCrawlNotification() throws Exception {
+        long channelId = insertLoopbackNotificationChannel("Crawl");
+        insertNotificationTask(
+                "爬取失败通知",
+                "DATA_CRAWL_REQUEST_FAILED",
+                "爬取失败 {{preview.providerId}} {{preview.previewKey}} {{request.httpStatus}} {{error.code}} {{error.type}}",
+                channelId
+        );
+        testPreviewProvider.resolveFails.set(true);
+
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isBadGateway());
+
+        waitForNotificationDeliveryByEventType("DATA_CRAWL_REQUEST_FAILED");
+        String body = jdbcTemplate.queryForObject(
+                "SELECT request_body_snapshot FROM notification_delivery WHERE event_type = 'DATA_CRAWL_REQUEST_FAILED' ORDER BY id DESC LIMIT 1",
+                String.class
+        );
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("爬取失败 stub"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("502 UPSTREAM_ERROR UpstreamFetchException"));
+    }
+
+    @Test
+    void invalidAndUnsupportedPreviewDoNotPublishDataCrawlNotification() throws Exception {
+        long channelId = insertLoopbackNotificationChannel("Crawl");
+        insertNotificationTask(
+                "爬取失败通知",
+                "DATA_CRAWL_REQUEST_FAILED",
+                "爬取失败 {{preview.providerId}}",
+                channelId
+        );
+
+        mockMvc.perform(get("/preview")
+                        .param("url", "notaurl")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://unsupported.example.com/post/1")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isUnprocessableEntity());
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                0,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM notification_delivery WHERE event_type = 'DATA_CRAWL_REQUEST_FAILED'",
+                        Integer.class
+                )
+        );
+    }
+
+    @Test
     void previewSupportEndpointReturnsTrueForSupportedUrlWithoutPreparingPreview() throws Exception {
         mockMvc.perform(get("/api/preview/support")
                         .param("url", "https://video.example.com/watch/abc"))
@@ -1750,16 +1803,16 @@ class PreviewControllerTest {
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(false))
-                .andExpect(jsonPath("$.autoDowngradeTimeoutThreshold").value(3))
-                .andExpect(jsonPath("$.defaultAutoDowngradeTimeoutThreshold").value(3));
+                .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(3))
+                .andExpect(jsonPath("$.defaultAutoDowngradeFailureThreshold").value(3));
 
         mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeTimeoutThreshold\":2}"))
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(true))
-                .andExpect(jsonPath("$.autoDowngradeTimeoutThreshold").value(2));
+                .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(2));
 
         mockMvc.perform(put("/api/admin/provider-config/linuxdo")
                         .cookie(cookie)
@@ -2062,6 +2115,83 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.fail("Expected notification delivery to finish.");
     }
 
+    private void waitForNotificationDeliveryByEventType(String eventType) throws InterruptedException {
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM notification_delivery WHERE event_type = ?",
+                    Integer.class,
+                    eventType
+            );
+            if (count != null && count > 0) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected notification delivery for event type: " + eventType);
+    }
+
+    private long insertLoopbackNotificationChannel(String name) {
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                """
+                        INSERT INTO notification_channel (
+                            name,
+                            enabled,
+                            type,
+                            method,
+                            url,
+                            headers_json,
+                            body_template,
+                            secret,
+                            timeout_seconds,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                name,
+                1,
+                "WEBHOOK",
+                "POST",
+                "http://127.0.0.1/linkpeek",
+                null,
+                "{{message.body}}",
+                "",
+                1,
+                now,
+                now
+        );
+        return jdbcTemplate.queryForObject("SELECT id FROM notification_channel WHERE name = ?", Long.class, name);
+    }
+
+    private void insertNotificationTask(String name, String eventType, String templateJson, long channelId) {
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                """
+                        INSERT INTO notification_task (
+                            name,
+                            enabled,
+                            event_type,
+                            filters_json,
+                            template_json,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                name,
+                1,
+                eventType,
+                "{\"shareSummaryTaskIds\":[],\"periodTypes\":[],\"triggerTypes\":[]}",
+                templateJson,
+                now,
+                now
+        );
+        Long taskId = jdbcTemplate.queryForObject("SELECT id FROM notification_task WHERE name = ?", Long.class, name);
+        jdbcTemplate.update("INSERT INTO notification_task_channel (task_id, channel_id) VALUES (?, ?)", taskId, channelId);
+    }
+
     private static ExpectedWindow currentDailyManualWindow() {
         ZoneId zone = ZoneId.systemDefault();
         return new ExpectedWindow(
@@ -2205,6 +2335,7 @@ class PreviewControllerTest {
         private final AtomicInteger canonicalizations = new AtomicInteger();
         private final AtomicInteger resolutions = new AtomicInteger();
         private final java.util.concurrent.atomic.AtomicBoolean generatedTextCard = new java.util.concurrent.atomic.AtomicBoolean();
+        private final java.util.concurrent.atomic.AtomicBoolean resolveFails = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean thumbnailFails = new java.util.concurrent.atomic.AtomicBoolean();
 
         void reset() {
@@ -2212,6 +2343,7 @@ class PreviewControllerTest {
             canonicalizations.set(0);
             resolutions.set(0);
             generatedTextCard.set(false);
+            resolveFails.set(false);
             thumbnailFails.set(false);
         }
 
@@ -2234,6 +2366,9 @@ class PreviewControllerTest {
         @Override
         public PreviewMetadata resolve(URI sourceUrl) {
             resolutions.incrementAndGet();
+            if (resolveFails.get()) {
+                throw new UpstreamFetchException("Upstream crawl failed");
+            }
             boolean generated = generatedTextCard.get();
             return new PreviewMetadata(
                     sourceUrl.toString(),

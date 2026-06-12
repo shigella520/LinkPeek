@@ -3,6 +3,7 @@ package io.github.shigella520.linkpeek.server.admin.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationChannelRecord;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryStatus;
@@ -11,12 +12,17 @@ import io.github.shigella520.linkpeek.server.admin.model.NotificationTaskRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.persistence.NotificationMapper;
+import io.github.shigella520.linkpeek.server.ai.AiProviderAutoDowngradedEvent;
+import io.github.shigella520.linkpeek.server.ai.AiProviderRequestFailedEvent;
 import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
+import io.github.shigella520.linkpeek.server.notification.DataCrawlRequestFailedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.util.StringUtils;
 
 import javax.crypto.Mac;
@@ -42,6 +48,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Predicate;
 
 @Service
 public class NotificationService {
@@ -266,10 +273,70 @@ public class NotificationService {
         NotificationEventType eventType = NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS;
         long occurredAt = now();
         String eventKey = eventType.name() + ":" + image.getId();
-        Map<String, Object> values = shareSummaryImageValues(eventType, eventKey, occurredAt, run, image);
+        Map<String, Object> values = shareSummaryImageValues(run, image);
+        publishEvent(eventType, eventKey, occurredAt, values, task -> matches(task, run));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void publishAiProviderRequestFailed(AiProviderRequestFailedEvent event) {
+        if (event == null || event.provider() == null || event.provider().getId() == null) {
+            return;
+        }
+        NotificationEventType eventType = NotificationEventType.AI_PROVIDER_REQUEST_FAILED;
+        long occurredAt = now();
+        String eventKey = eventType.name() + ":" + event.provider().getId() + ":" + occurredAt;
+        publishEvent(eventType, eventKey, occurredAt, aiProviderRequestFailedValues(event));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void publishAiProviderAutoDowngraded(AiProviderAutoDowngradedEvent event) {
+        if (event == null || event.provider() == null || event.provider().getId() == null) {
+            return;
+        }
+        NotificationEventType eventType = NotificationEventType.AI_PROVIDER_AUTO_DOWNGRADED;
+        long occurredAt = now();
+        String eventKey = eventType.name() + ":" + event.provider().getId() + ":" + occurredAt;
+        publishEvent(eventType, eventKey, occurredAt, aiProviderAutoDowngradedValues(event));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void publishDataCrawlRequestFailed(DataCrawlRequestFailedEvent event) {
+        if (event == null || !StringUtils.hasText(event.previewKey())) {
+            return;
+        }
+        NotificationEventType eventType = NotificationEventType.DATA_CRAWL_REQUEST_FAILED;
+        long occurredAt = now();
+        String eventKey = eventType.name() + ":" + event.previewKey() + ":" + occurredAt;
+        publishEvent(eventType, eventKey, occurredAt, dataCrawlRequestFailedValues(event));
+    }
+
+    public void publishEvent(NotificationEventType eventType, String eventKey, Map<String, Object> values) {
+        publishEvent(eventType, eventKey, now(), values);
+    }
+
+    private void publishEvent(
+            NotificationEventType eventType,
+            String eventKey,
+            long occurredAt,
+            Map<String, Object> values
+    ) {
+        publishEvent(eventType, eventKey, occurredAt, values, ignored -> true);
+    }
+
+    private void publishEvent(
+            NotificationEventType eventType,
+            String eventKey,
+            long occurredAt,
+            Map<String, Object> eventValues,
+            Predicate<NotificationTaskRecord> taskFilter
+    ) {
+        Map<String, Object> values = eventValues(eventType, eventKey, occurredAt);
+        if (eventValues != null) {
+            values.putAll(eventValues);
+        }
         for (NotificationTaskRecord task : notificationMapper.selectEnabledTasksByEventType(eventType.name())) {
             try {
-                if (!matches(task, run)) {
+                if (!taskFilter.test(task)) {
                     continue;
                 }
                 publishTask(eventType, eventKey, occurredAt, values, task);
@@ -451,18 +518,19 @@ public class NotificationService {
         return allowed == null || allowed.isEmpty() || allowed.contains(value);
     }
 
-    private Map<String, Object> shareSummaryImageValues(
-            NotificationEventType eventType,
-            String eventKey,
-            long occurredAt,
-            ShareSummaryRunRecord run,
-            ShareSummaryImageRecord image
-    ) {
+    private Map<String, Object> eventValues(NotificationEventType eventType, String eventKey, long occurredAt) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("event.type", eventType.name());
         values.put("event.key", eventKey);
         values.put("event.occurredAt", occurredAt);
         values.put("event.occurredAtIso", Instant.ofEpochMilli(occurredAt).toString());
+        values.put("system.baseUrl", baseUrl());
+        values.put("system.appName", "LinkPeek");
+        return values;
+    }
+
+    private Map<String, Object> shareSummaryImageValues(ShareSummaryRunRecord run, ShareSummaryImageRecord image) {
+        Map<String, Object> values = new LinkedHashMap<>();
         values.put("run.id", run.getId());
         values.put("run.taskId", run.getTaskId());
         values.put("run.taskName", run.getTaskName());
@@ -498,8 +566,63 @@ public class NotificationService {
         values.put("image.createdAt", image.getCreatedAt());
         values.put("image.startedAt", image.getStartedAt());
         values.put("image.finishedAt", image.getFinishedAt());
-        values.put("system.baseUrl", baseUrl());
-        values.put("system.appName", "LinkPeek");
+        return values;
+    }
+
+    private Map<String, Object> aiProviderRequestFailedValues(AiProviderRequestFailedEvent event) {
+        Map<String, Object> values = aiProviderValues(event.provider());
+        values.put("request.operation", optionalStrip(event.operation()));
+        values.put("request.durationMs", event.durationMs());
+        values.put("error.type", optionalStrip(event.errorType()));
+        values.put("error.message", optionalStrip(event.errorMessage()));
+        values.put("downgrade.enabled", event.downgradeEnabled());
+        values.put("downgrade.failureCount", event.failureCount());
+        values.put("downgrade.failureThreshold", event.failureThreshold());
+        values.put("downgrade.triggered", event.downgradeTriggered());
+        return values;
+    }
+
+    private Map<String, Object> aiProviderAutoDowngradedValues(AiProviderAutoDowngradedEvent event) {
+        Map<String, Object> values = aiProviderValues(event.provider());
+        values.put("request.operation", optionalStrip(event.operation()));
+        values.put("request.durationMs", event.durationMs());
+        values.put("error.type", optionalStrip(event.errorType()));
+        values.put("error.message", optionalStrip(event.errorMessage()));
+        values.put("downgrade.failureCount", event.failureCount());
+        values.put("downgrade.failureThreshold", event.failureThreshold());
+        values.put("downgrade.oldSortOrder", event.oldSortOrder());
+        values.put("downgrade.newSortOrder", event.newSortOrder());
+        values.put("downgrade.alreadyLowest", event.alreadyLowest());
+        values.put("downgrade.providerCount", event.providerCount());
+        return values;
+    }
+
+    private Map<String, Object> aiProviderValues(AiProviderRecord provider) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("provider.id", provider.getId());
+        values.put("provider.name", provider.getName());
+        values.put("provider.enabled", provider.isEnabled());
+        values.put("provider.sortOrder", provider.getSortOrder());
+        values.put("provider.baseUrl", provider.getBaseUrl());
+        values.put("provider.apiKind", provider.getApiKind());
+        values.put("provider.model", provider.getModel());
+        values.put("provider.requestTimeoutSeconds", provider.getRequestTimeoutSeconds());
+        return values;
+    }
+
+    private Map<String, Object> dataCrawlRequestFailedValues(DataCrawlRequestFailedEvent event) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("preview.previewKey", event.previewKey());
+        values.put("preview.providerId", event.providerId());
+        values.put("preview.sourceUrl", event.sourceUrl());
+        values.put("preview.canonicalUrl", event.canonicalUrl());
+        values.put("request.clientType", event.clientType());
+        values.put("request.httpStatus", event.httpStatus());
+        values.put("request.durationMs", event.durationMs());
+        values.put("request.requestedStyle", event.requestedStyle());
+        values.put("error.code", event.errorCode());
+        values.put("error.type", event.errorType());
+        values.put("error.message", event.errorMessage());
         return values;
     }
 
@@ -534,7 +657,7 @@ public class NotificationService {
         task.setName(required(request.name(), "Task name"));
         task.setEnabled(request.enabled() == null ? existing == null || existing.isEnabled() : request.enabled());
         task.setEventType(eventType.name());
-        task.setFiltersJson(normalizeFilters(request.filters()));
+        task.setFiltersJson(normalizeFilters(eventType, request.filters()));
         task.setTemplateJson(templateService.normalizeTemplate(eventType, request.templateJson()));
         return new NormalizedTask(task, channelIds);
     }
@@ -630,6 +753,10 @@ public class NotificationService {
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Notification filters must be valid JSON.", exception);
         }
+    }
+
+    private String normalizeFilters(NotificationEventType eventType, JsonNode filters) {
+        return normalizeFilters(eventType == NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS ? filters : null);
     }
 
     private Filters filters(String filtersJson) {

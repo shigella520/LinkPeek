@@ -160,10 +160,10 @@
                             aria-pressed="false"
                             data-enabled="false"
                         ><strong id="ai-auto-downgrade-enabled-label">禁用</strong></button>
-                        <span>Provider 超时达到</span>
+                        <span>失败阈值降级：Provider 失败达到</span>
                         <label class="inline-threshold-field">
-                            <span class="sr-only">自动降级超时次数</span>
-                            <input id="ai-auto-downgrade-timeout-threshold" class="inline-threshold-input" type="number" min="1" max="100" value="3" required>
+                            <span class="sr-only">自动降级失败阈值</span>
+                            <input id="ai-auto-downgrade-failure-threshold" class="inline-threshold-input" type="number" min="1" max="100" value="3" required>
                         </label>
                         <span>次后自动移动到列表最后。</span>
                     </p>
@@ -979,7 +979,7 @@
                 <span>关联渠道</span>
                 <div id="notification-task-channel-options" class="checkbox-list"></div>
             </label>
-            <div class="wide notification-filter-panel">
+            <div class="wide notification-filter-panel" id="notification-task-filter-panel">
                 <div class="subsection-head">
                     <div>
                         <p class="panel-kicker">Filters</p>

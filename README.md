@@ -35,7 +35,7 @@ AI 标题生成是 LinkPeek 的核心增强能力：对 GapHub、V2EX、NGA、LI
 - `FREESTYLE`：系统保留风格，会从已配置的 Style Prompt 中随机选择一个；Dashboard 生成器默认使用它。
 - Title Format Prompt：控制输出格式，Raw Content 始终作为独立 user message 放在最后。
 - AI Provider：可配置多条上游服务，按启用状态和排序 fallback；每个 Provider 有独立请求超时。
-- 自动降级：全局开启后，Provider 连续超时达到阈值会被移动到列表最后，并写入明显运行日志。
+- 失败阈值降级：全局开启后，Provider 连续处理失败达到阈值会被移动到列表最后，并写入明显运行日志。
 - 缓存隔离：AI styled 预览使用 `canonical URL + style + prompt hash` 生成独立 `PreviewKey`，不同风格不会互相污染缓存。
 
 ## 分享总结
@@ -223,7 +223,7 @@ LinkPeek/
 文本卡片 + Style Prompt -> 调用 AI Provider 生成标题
         |
         v
-AI Provider 按启用和排序 fallback，单 Provider 有独立请求超时；连续超时达到阈值可自动降级到列表最后
+AI Provider 按启用和排序 fallback，单 Provider 有独立请求超时；连续处理失败达到阈值可自动降级到列表最后
         |
         v
 成功则缓存 styled 元数据；失败、空返回或真实图片卡片则回退基础元数据
@@ -279,7 +279,7 @@ AI Provider 按启用和排序 fallback，单 Provider 有独立请求超时；�
 后台包含五个功能区：
 
 - 提示词设置：维护 Title Format Prompt 和 `Style Key -> Style Prompt`。Style Key 保存和请求匹配都会统一转大写，`FREESTYLE` 是系统保留模式，会随机选择一个已配置 Style Prompt。
-- AI 服务配置：维护 AI Provider 列表、启用状态、拖拽排序、请求超时、连通性测试和全局自动降级。自动降级按连续超时次数触发，会把对应 Provider 移动到列表最后。
+- AI 服务配置：维护 AI Provider 列表、启用状态、拖拽排序、请求超时、连通性测试和全局失败阈值降级。自动降级按连续处理失败次数触发，会把对应 Provider 移动到列表最后。
 - Provider 配置：维护 LinuxDo Cookie key/value（`_t`、`cf_clearance`、`_forum_session`）和 NGA 登录态（`NGA_PASSPORT_UID`、`NGA_PASSPORT_CID`）。这些值是运行时唯一来源，不再读取对应论坛环境变量。
 - 服务日志：查看应用滚动文件日志，支持行数、级别、关键词筛选和自动刷新。
 - 清理统计数据：调用 `POST /api/admin/stats/purge-all` 删除统计事件和链接聚合记录。

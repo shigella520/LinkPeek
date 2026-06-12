@@ -172,13 +172,13 @@ Style Prompt 表，管理后台通过它维护 `style -> prompt`。
 | `nga` | `NGA_PASSPORT_CID` | 管理后台论坛配置，`PUT /api/admin/provider-config/nga`。 | NGA 登录态 CID。`ProviderConfigService.ngaPassportCid()` 读取，空字符串视为未配置。 |
 | `ai_title` | `title_format_prompt` | AI 标题格式配置，`PUT /api/admin/ai-title-config`。 | AI 标题输出格式提示词。`AiTitleConfigService.titleFormatPrompt()` 读取后作为 AI 标题生成的 system/instructions；没有记录时使用代码内置默认提示词。 |
 | `ai_provider` | `auto_downgrade_enabled` | AI Provider 自动降级配置，`PUT /api/admin/ai-provider-downgrade-config`。 | AI Provider 自动降级全局开关，字符串 `true`/`false`。`AiProviderDowngradeService.config()` 读取；没有记录或空值时默认为 `false`。 |
-| `ai_provider` | `auto_downgrade_timeout_threshold` | AI Provider 自动降级配置，`PUT /api/admin/ai-provider-downgrade-config`。 | AI Provider 自动降级全局连续超时阈值。`AiProviderDowngradeService.config()` 读取；默认 `3`，允许 `1..100`，非法数字读取时回退默认值，保存时越界会返回 400。 |
+| `ai_provider` | `auto_downgrade_failure_threshold` | AI Provider 自动降级配置，`PUT /api/admin/ai-provider-downgrade-config`。 | AI Provider 失败阈值降级的全局连续失败阈值。`AiProviderDowngradeService.config()` 读取；默认 `3`，允许 `1..100`，非法数字读取时回退默认值，保存时越界会返回 400。 |
 
 注意：
 
 - 通用接口 `PUT /api/admin/provider-config/{providerId}` 没有 key 白名单，传入的 `values` 会逐项 upsert 到 `provider_config`。当前后台 UI 固定写入上表中的 LinuxDo/NGA Cookie key；如果 API 额外写入 `linuxdo` 下的其他 key，`linuxDoCookieHeader()` 会把它们作为额外 Cookie 附加到 header。
-- `auto_downgrade_enabled` 和 `auto_downgrade_timeout_threshold` 是全局配置，不是 `ai_provider` 表字段。
-- 自动降级的连续超时计数保存在进程内存中，服务重启后会清空。
+- `auto_downgrade_enabled` 和 `auto_downgrade_failure_threshold` 是全局配置，不是 `ai_provider` 表字段。
+- 自动降级的连续处理失败计数保存在进程内存中，服务重启后会清空。
 - Cookie 和提示词以明文保存，应保护 SQLite 文件权限和后台访问权限。
 
 ## ai_provider
@@ -207,7 +207,7 @@ AI Provider 列表，用于 AI 标题生成。代码会按 `enabled=1`、`sort_o
 
 - 新建 Provider 默认追加到当前最大 `sort_order + 100`。
 - 手工拖拽排序和自动降级都会重写列表排序为 `100, 200, 300...`。
-- 自动降级触发时，对应 Provider 会被移动到列表最后；即使已经在最后，也会写入明显 WARN 日志。
+- 失败阈值降级触发时，对应 Provider 会被移动到列表最后；即使已经在最后，也会写入明显 WARN 日志。
 
 ## 逻辑关系
 
@@ -234,7 +234,7 @@ AI Provider 列表，用于 AI 标题生成。代码会按 `enabled=1`、`sort_o
 
 - `ai_provider` 不和 `stats_event.provider_id` 建立关系。
 - `stats_event.provider_id` 记录的是内容 provider；AI Provider 的使用情况目前通过运行日志观测。
-- AI Provider 自动降级只改 `ai_provider.sort_order`，不会禁用 Provider，也不会写统计事件。
+- AI Provider 失败阈值降级只改 `ai_provider.sort_order`，不会禁用 Provider，也不会写统计事件。
 
 ## 迁移策略
 
@@ -260,7 +260,7 @@ AI Provider 列表，用于 AI 标题生成。代码会按 `enabled=1`、`sort_o
 
 ## 维护注意事项
 
-- 不要把 AI Provider 自动降级开关和阈值加到 `ai_provider` 表；它们是全局策略，属于 `provider_config(provider_id='ai_provider')`。
+- 不要把 AI Provider 自动降级开关和失败阈值加到 `ai_provider` 表；它们是全局策略，属于 `provider_config(provider_id='ai_provider')`。
 - 不要把内容 provider ID 和 AI Provider ID 混用。前者是字符串平台标识，后者是 `ai_provider.id` 自增数字。
 - 新增统计事件类型或错误码时，要同步检查 Dashboard 聚合 SQL 和前端展示。
 - 新增后台运行配置时，优先复用 `provider_config`；只有需要列表、排序或复杂字段时再考虑新表。

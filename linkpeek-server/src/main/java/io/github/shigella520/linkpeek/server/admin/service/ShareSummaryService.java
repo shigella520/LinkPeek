@@ -22,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
-import java.net.http.HttpTimeoutException;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -51,6 +50,7 @@ public class ShareSummaryService {
     private static final int CATCH_UP_LIMIT = 7;
     private static final long RUNNING_TIMEOUT_MILLIS = 30 * 60 * 1000L;
     private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接分享列表，生成一份结构清晰、信息密度高的中文分享总结。";
+    private static final String OPERATION_SHARE_SUMMARY = "SHARE_SUMMARY";
     private static final DateTimeFormatter SUMMARY_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final ShareSummaryMapper shareSummaryMapper;
@@ -486,22 +486,30 @@ public class ShareSummaryService {
         long durationMs = 0;
         String lastError = "";
         for (AiProviderRecord provider : providers) {
+            long startedAt = System.nanoTime();
             try {
                 AiTitleClient.AiTextResult result = aiTitleClient.generateTextResult(provider, prompt);
-                durationMs += result.durationMs();
+                long attemptDurationMs = result.durationMs() > 0 ? result.durationMs() : elapsedMillis(startedAt);
+                durationMs += attemptDurationMs;
                 providerNames.add(provider.getName());
-                recordAiProviderSuccess(provider);
                 Optional<String> report = result.text()
                         .map(String::strip)
                         .filter(StringUtils::hasText);
                 if (report.isPresent()) {
+                    recordAiProviderSuccess(provider);
                     return new AiSummaryResult(report.get(), providerNames, durationMs);
                 }
                 lastError = "AI provider returned empty summary.";
+                recordAiProviderFailure(provider, attemptDurationMs, new IllegalStateException(lastError));
             } catch (InterruptedException exception) {
+                long attemptDurationMs = elapsedMillis(startedAt);
+                durationMs += attemptDurationMs;
+                recordAiProviderFailure(provider, attemptDurationMs, exception);
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("AI summary request was interrupted.", exception);
             } catch (IOException | RuntimeException exception) {
+                long attemptDurationMs = elapsedMillis(startedAt);
+                durationMs += attemptDurationMs;
                 providerNames.add(provider.getName());
                 lastError = exception.getMessage();
                 log.warn(
@@ -512,7 +520,7 @@ public class ShareSummaryService {
                         exception.getMessage(),
                         exception
                 );
-                recordAiProviderTimeout(provider, exception);
+                recordAiProviderFailure(provider, attemptDurationMs, exception);
             }
         }
         throw new IllegalStateException(StringUtils.hasText(lastError) ? lastError : "AI summary request failed.");
@@ -524,9 +532,9 @@ public class ShareSummaryService {
         }
     }
 
-    private void recordAiProviderTimeout(AiProviderRecord provider, Throwable exception) {
-        if (aiProviderDowngradeService != null && exception instanceof HttpTimeoutException) {
-            aiProviderDowngradeService.recordTimeout(provider, exception);
+    private void recordAiProviderFailure(AiProviderRecord provider, long durationMs, Throwable exception) {
+        if (aiProviderDowngradeService != null) {
+            aiProviderDowngradeService.recordFailure(provider, OPERATION_SHARE_SUMMARY, durationMs, exception);
         }
     }
 
@@ -678,6 +686,10 @@ public class ShareSummaryService {
 
     private long now() {
         return Instant.now(clock).toEpochMilli();
+    }
+
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     private ShareSummaryRunRecord withShareAssetSummaries(ShareSummaryRunRecord run) {

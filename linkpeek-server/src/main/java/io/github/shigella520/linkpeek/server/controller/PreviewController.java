@@ -5,6 +5,7 @@ import io.github.shigella520.linkpeek.core.error.PreviewException;
 import io.github.shigella520.linkpeek.core.error.UnsupportedPreviewUrlException;
 import io.github.shigella520.linkpeek.core.util.CrawlerMatcher;
 import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
+import io.github.shigella520.linkpeek.server.notification.DataCrawlRequestFailedEvent;
 import io.github.shigella520.linkpeek.server.render.HtmlPageRenderer;
 import io.github.shigella520.linkpeek.server.service.PreviewService;
 import io.github.shigella520.linkpeek.server.service.PreviewWarmupService;
@@ -21,6 +22,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -45,6 +47,7 @@ public class PreviewController {
     private final LinkPeekProperties properties;
     private final StatisticsRecorder statisticsRecorder;
     private final PreviewWarmupService previewWarmupService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public PreviewController(
             PreviewService previewService,
@@ -52,7 +55,8 @@ public class PreviewController {
             CrawlerMatcher crawlerMatcher,
             LinkPeekProperties properties,
             StatisticsRecorder statisticsRecorder,
-            PreviewWarmupService previewWarmupService
+            PreviewWarmupService previewWarmupService,
+            ApplicationEventPublisher eventPublisher
     ) {
         this.previewService = previewService;
         this.htmlPageRenderer = htmlPageRenderer;
@@ -60,6 +64,7 @@ public class PreviewController {
         this.properties = properties;
         this.statisticsRecorder = statisticsRecorder;
         this.previewWarmupService = previewWarmupService;
+        this.eventPublisher = eventPublisher;
     }
 
     @GetMapping(value = "/preview", produces = MediaType.TEXT_HTML_VALUE)
@@ -162,11 +167,22 @@ public class PreviewController {
             );
         } catch (PreviewException exception) {
             statisticsRecorder.releasePreviewCreatedClaim(previewCreatedClaim);
+            long durationMs = elapsedMillis(startedAt);
+            publishDataCrawlRequestFailed(
+                    resolvedPreview,
+                    clientType,
+                    HttpStatus.BAD_GATEWAY,
+                    durationMs,
+                    style,
+                    StatisticsErrorCode.UPSTREAM_ERROR,
+                    exception
+            );
             return errorResponse(
                     HttpStatus.BAD_GATEWAY,
                     "Preview Error",
                     exception.getMessage(),
                     startedAt,
+                    durationMs,
                     exception,
                     resolvedPreview,
                     clientType,
@@ -176,6 +192,33 @@ public class PreviewController {
             statisticsRecorder.releasePreviewCreatedClaim(previewCreatedClaim);
             throw exception;
         }
+    }
+
+    private void publishDataCrawlRequestFailed(
+            PreviewService.ResolvedPreview resolvedPreview,
+            StatisticsClientType clientType,
+            HttpStatus status,
+            long durationMs,
+            String requestedStyle,
+            StatisticsErrorCode errorCode,
+            Throwable exception
+    ) {
+        if (resolvedPreview == null) {
+            return;
+        }
+        eventPublisher.publishEvent(new DataCrawlRequestFailedEvent(
+                resolvedPreview.previewKey().value(),
+                resolvedPreview.provider().getId(),
+                resolvedPreview.sourceUrl().toString(),
+                resolvedPreview.canonicalUrl().toString(),
+                clientType.name(),
+                status.value(),
+                durationMs,
+                requestedStyle == null ? "" : requestedStyle.strip(),
+                errorCode.name(),
+                exception == null ? "" : exception.getClass().getSimpleName(),
+                exception == null ? "" : exception.getMessage()
+        ));
     }
 
     private boolean shouldRedirect(String userAgent, String renderModeHeader) {
@@ -217,7 +260,20 @@ public class PreviewController {
             StatisticsClientType clientType,
             StatisticsErrorCode errorCode
     ) {
-        long durationMs = elapsedMillis(startedAt);
+        return errorResponse(status, title, message, startedAt, elapsedMillis(startedAt), cause, resolvedPreview, clientType, errorCode);
+    }
+
+    private ResponseEntity<String> errorResponse(
+            HttpStatus status,
+            String title,
+            String message,
+            long startedAt,
+            long durationMs,
+            Throwable cause,
+            PreviewService.ResolvedPreview resolvedPreview,
+            StatisticsClientType clientType,
+            StatisticsErrorCode errorCode
+    ) {
         statisticsRecorder.recordPreviewFailed(resolvedPreview, clientType, status.value(), durationMs, errorCode);
         String previewKey = resolvedPreview == null ? "n/a" : resolvedPreview.previewKey().value();
         String providerId = resolvedPreview == null ? "n/a" : resolvedPreview.provider().getId();

@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -33,12 +34,17 @@ public class NotificationTemplateService {
     }
 
     public List<EventSchema> events() {
-        return List.of(schema(NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS));
+        return Arrays.stream(NotificationEventType.values())
+                .map(this::schema)
+                .toList();
     }
 
     public EventSchema schema(NotificationEventType eventType) {
         return switch (eventType) {
             case SHARE_SUMMARY_IMAGE_SUCCESS -> shareSummaryImageSuccessSchema();
+            case AI_PROVIDER_REQUEST_FAILED -> aiProviderRequestFailedSchema();
+            case AI_PROVIDER_AUTO_DOWNGRADED -> aiProviderAutoDowngradedSchema();
+            case DATA_CRAWL_REQUEST_FAILED -> dataCrawlRequestFailedSchema();
         };
     }
 
@@ -180,9 +186,7 @@ public class NotificationTemplateService {
 
     private EventSchema shareSummaryImageSuccessSchema() {
         List<Placeholder> placeholders = new ArrayList<>();
-        add(placeholders, "event", "event.type", "string", "事件类型", "固定为 SHARE_SUMMARY_IMAGE_SUCCESS。", "SHARE_SUMMARY_IMAGE_SUCCESS", true);
-        add(placeholders, "event", "event.occurredAt", "number", "事件时间", "事件发生时间，epoch milliseconds。", 1770000000000L, true);
-        add(placeholders, "event", "event.occurredAtIso", "string", "事件 ISO 时间", "事件发生时间，ISO-8601 字符串。", "2026-05-31T10:00:00Z", true);
+        addCommonEventPlaceholders(placeholders, NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS);
         add(placeholders, "run", "run.id", "number", "执行记录 ID", "分享总结执行记录 ID。", 12, true);
         add(placeholders, "run", "run.taskId", "number", "分享总结任务 ID", "分享总结任务 ID。", 3, true);
         add(placeholders, "run", "run.taskName", "string", "任务名称", "执行时任务名称快照。", "每周分享总结", true);
@@ -218,14 +222,109 @@ public class NotificationTemplateService {
         add(placeholders, "image", "image.createdAt", "number", "图片创建时间", "图片记录创建时间，epoch milliseconds。", 1770000000000L, true);
         add(placeholders, "image", "image.startedAt", "number", "生图开始时间", "生图开始时间，epoch milliseconds。", 1770000000000L, false);
         add(placeholders, "image", "image.finishedAt", "number", "生图结束时间", "生图结束时间，epoch milliseconds。", 1770000065000L, true);
-        add(placeholders, "system", "system.baseUrl", "string", "系统 Base URL", "LinkPeek 对外基础 URL。", "https://example.com", true);
-        add(placeholders, "system", "system.appName", "string", "应用名称", "应用名称。", "LinkPeek", true);
+        addSystemPlaceholders(placeholders);
         return new EventSchema(
                 NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS.name(),
                 "分享总结图片生成成功",
                 "分享总结 AI 图片与公开分享页生成成功后触发。",
                 placeholders
         );
+    }
+
+    private EventSchema aiProviderRequestFailedSchema() {
+        List<Placeholder> placeholders = new ArrayList<>();
+        addCommonEventPlaceholders(placeholders, NotificationEventType.AI_PROVIDER_REQUEST_FAILED);
+        addAiProviderPlaceholders(placeholders);
+        addAiRequestPlaceholders(placeholders);
+        addAiErrorPlaceholders(placeholders);
+        add(placeholders, "downgrade", "downgrade.enabled", "boolean", "自动降级启用", "AI Provider 失败阈值降级是否启用。", true, true);
+        add(placeholders, "downgrade", "downgrade.failureCount", "number", "失败计数", "当前 Provider 连续失败次数；自动降级关闭时为 0。", 2, true);
+        add(placeholders, "downgrade", "downgrade.failureThreshold", "number", "失败阈值", "触发失败阈值降级所需的连续失败次数。", 3, true);
+        add(placeholders, "downgrade", "downgrade.triggered", "boolean", "触发降级", "本次失败是否触发失败阈值降级。", false, true);
+        addSystemPlaceholders(placeholders);
+        return new EventSchema(
+                NotificationEventType.AI_PROVIDER_REQUEST_FAILED.name(),
+                "AI Provider 请求失败",
+                "每次 AI Provider 调用失败后触发，包括异常、中断、空标题、空总结。",
+                placeholders
+        );
+    }
+
+    private EventSchema aiProviderAutoDowngradedSchema() {
+        List<Placeholder> placeholders = new ArrayList<>();
+        addCommonEventPlaceholders(placeholders, NotificationEventType.AI_PROVIDER_AUTO_DOWNGRADED);
+        addAiProviderPlaceholders(placeholders);
+        addAiRequestPlaceholders(placeholders);
+        addAiErrorPlaceholders(placeholders);
+        add(placeholders, "downgrade", "downgrade.failureCount", "number", "失败计数", "触发失败阈值降级时的连续失败次数。", 3, true);
+        add(placeholders, "downgrade", "downgrade.failureThreshold", "number", "失败阈值", "触发失败阈值降级所需的连续失败次数。", 3, true);
+        add(placeholders, "downgrade", "downgrade.oldSortOrder", "number", "原排序值", "降级前的 Provider 排序值。", 100, true);
+        add(placeholders, "downgrade", "downgrade.newSortOrder", "number", "新排序值", "降级后的 Provider 排序值。", 300, true);
+        add(placeholders, "downgrade", "downgrade.alreadyLowest", "boolean", "已在末位", "触发时 Provider 是否已经位于列表最后。", false, true);
+        add(placeholders, "downgrade", "downgrade.providerCount", "number", "Provider 总数", "本次参与排序的 AI Provider 数量。", 3, true);
+        addSystemPlaceholders(placeholders);
+        return new EventSchema(
+                NotificationEventType.AI_PROVIDER_AUTO_DOWNGRADED.name(),
+                "AI Provider 失败阈值降级",
+                "AI Provider 连续失败达到阈值并执行自动降级后触发。",
+                placeholders
+        );
+    }
+
+    private EventSchema dataCrawlRequestFailedSchema() {
+        List<Placeholder> placeholders = new ArrayList<>();
+        addCommonEventPlaceholders(placeholders, NotificationEventType.DATA_CRAWL_REQUEST_FAILED);
+        add(placeholders, "preview", "preview.previewKey", "string", "预览 Key", "匹配内容 Provider 后解析得到的预览 Key。", "preview-key", true);
+        add(placeholders, "preview", "preview.providerId", "string", "内容 Provider", "处理本次预览的内容 Provider ID。", "bilibili", true);
+        add(placeholders, "preview", "preview.sourceUrl", "string", "原始 URL", "用户请求中的源 URL。", "https://www.bilibili.com/video/BV1xx411c7mD", true);
+        add(placeholders, "preview", "preview.canonicalUrl", "string", "规范 URL", "内容 Provider 规范化后的 URL。", "https://www.bilibili.com/video/BV1xx411c7mD", true);
+        add(placeholders, "request", "request.clientType", "string", "客户端类型", "CRAWLER 或 BROWSER。", "CRAWLER", true);
+        add(placeholders, "request", "request.httpStatus", "number", "HTTP 状态", "返回给客户端的 HTTP 状态码，当前为 502。", 502, true);
+        add(placeholders, "request", "request.durationMs", "number", "请求耗时", "本次 /preview 请求耗时。", 1200, true);
+        add(placeholders, "request", "request.requestedStyle", "string", "请求风格", "请求中的 AI 标题风格；未请求时为空。", "FUN", false);
+        add(placeholders, "error", "error.code", "string", "错误码", "统计错误码，当前为 UPSTREAM_ERROR。", "UPSTREAM_ERROR", true);
+        add(placeholders, "error", "error.type", "string", "错误类型", "异常类简单名称。", "UpstreamFetchException", true);
+        add(placeholders, "error", "error.message", "string", "错误信息", "异常消息。", "Upstream request failed.", true);
+        addSystemPlaceholders(placeholders);
+        return new EventSchema(
+                NotificationEventType.DATA_CRAWL_REQUEST_FAILED.name(),
+                "数据爬取请求失败",
+                "已匹配内容 Provider 后，上游数据爬取失败并返回 502 时触发。",
+                placeholders
+        );
+    }
+
+    private void addCommonEventPlaceholders(List<Placeholder> placeholders, NotificationEventType eventType) {
+        add(placeholders, "event", "event.type", "string", "事件类型", "固定为 " + eventType.name() + "。", eventType.name(), true);
+        add(placeholders, "event", "event.key", "string", "事件标识", "事件唯一标识，用于定位对应发送记录。", eventType.name() + ":example", true);
+        add(placeholders, "event", "event.occurredAt", "number", "事件时间", "事件发生时间，epoch milliseconds。", 1770000000000L, true);
+        add(placeholders, "event", "event.occurredAtIso", "string", "事件 ISO 时间", "事件发生时间，ISO-8601 字符串。", "2026-05-31T10:00:00Z", true);
+    }
+
+    private void addSystemPlaceholders(List<Placeholder> placeholders) {
+        add(placeholders, "system", "system.baseUrl", "string", "系统 Base URL", "LinkPeek 对外基础 URL。", "https://example.com", true);
+        add(placeholders, "system", "system.appName", "string", "应用名称", "应用名称。", "LinkPeek", true);
+    }
+
+    private void addAiProviderPlaceholders(List<Placeholder> placeholders) {
+        add(placeholders, "provider", "provider.id", "number", "Provider ID", "AI Provider ID。", 1, true);
+        add(placeholders, "provider", "provider.name", "string", "Provider 名称", "AI Provider 名称。", "OpenAI", true);
+        add(placeholders, "provider", "provider.enabled", "boolean", "启用状态", "AI Provider 是否启用。", true, true);
+        add(placeholders, "provider", "provider.sortOrder", "number", "排序值", "AI Provider 当前排序值。", 100, true);
+        add(placeholders, "provider", "provider.baseUrl", "string", "Base URL", "AI Provider 请求 Base URL。", "https://api.openai.com/v1", true);
+        add(placeholders, "provider", "provider.apiKind", "string", "API 类型", "AI Provider API 类型。", "CHAT_COMPLETIONS", true);
+        add(placeholders, "provider", "provider.model", "string", "模型", "AI Provider 模型名称。", "gpt-4.1-mini", true);
+        add(placeholders, "provider", "provider.requestTimeoutSeconds", "number", "请求超时", "AI Provider 请求超时时间，单位秒。", 45, true);
+    }
+
+    private void addAiRequestPlaceholders(List<Placeholder> placeholders) {
+        add(placeholders, "request", "request.operation", "string", "请求操作", "AI 调用场景，AI_TITLE 或 SHARE_SUMMARY。", "AI_TITLE", true);
+        add(placeholders, "request", "request.durationMs", "number", "请求耗时", "本次 Provider 调用耗时。", 1500, true);
+    }
+
+    private void addAiErrorPlaceholders(List<Placeholder> placeholders) {
+        add(placeholders, "error", "error.type", "string", "错误类型", "异常类简单名称。", "IOException", true);
+        add(placeholders, "error", "error.message", "string", "错误信息", "异常消息或业务失败原因。", "AI provider returned empty title.", true);
     }
 
     private void add(

@@ -353,7 +353,7 @@
     function bindAiProviderDowngradeConfig() {
         const form = document.getElementById("ai-downgrade-config-form");
         const enabledToggle = document.getElementById("ai-auto-downgrade-enabled-toggle");
-        const thresholdInput = document.getElementById("ai-auto-downgrade-timeout-threshold");
+        const thresholdInput = document.getElementById("ai-auto-downgrade-failure-threshold");
         form.addEventListener("submit", (event) => {
             event.preventDefault();
             scheduleAiProviderDowngradeSave();
@@ -489,7 +489,9 @@
         document.getElementById("notification-channel-add-header").addEventListener("click", () => addNotificationHeaderRow());
         document.getElementById("notification-channel-form").addEventListener("submit", saveNotificationChannel);
         document.getElementById("notification-task-form").addEventListener("submit", saveNotificationTask);
-        document.getElementById("notification-task-event-type").addEventListener("change", renderNotificationPlaceholders);
+        document.getElementById("notification-task-event-type").addEventListener("change", () => {
+            updateNotificationTaskEventTypeState(true);
+        });
         document.getElementById("notification-template-validate-button").addEventListener("click", validateNotificationTemplate);
         document.getElementById("notification-refresh-deliveries").addEventListener("click", loadNotificationDeliveries);
         document.getElementById("notification-delivery-filter-form").addEventListener("change", async () => {
@@ -832,7 +834,7 @@
 
         const payload = readAiProviderDowngradePayload();
         if (!payload) {
-            setFeedback("ai-downgrade-config-feedback", "自动降级超时次数必须是 1-100 之间的整数。", "is-error");
+            setFeedback("ai-downgrade-config-feedback", "失败阈值降级次数必须是 1-100 之间的整数。", "is-error");
             return;
         }
 
@@ -845,11 +847,11 @@
 
     function readAiProviderDowngradePayload() {
         const autoDowngradeEnabled = document.getElementById("ai-auto-downgrade-enabled-toggle").dataset.enabled === "true";
-        const autoDowngradeTimeoutThreshold = Number(document.getElementById("ai-auto-downgrade-timeout-threshold").value || 0);
-        if (!Number.isInteger(autoDowngradeTimeoutThreshold) || autoDowngradeTimeoutThreshold < 1 || autoDowngradeTimeoutThreshold > 100) {
+        const autoDowngradeFailureThreshold = Number(document.getElementById("ai-auto-downgrade-failure-threshold").value || 0);
+        if (!Number.isInteger(autoDowngradeFailureThreshold) || autoDowngradeFailureThreshold < 1 || autoDowngradeFailureThreshold > 100) {
             return null;
         }
-        return {autoDowngradeEnabled, autoDowngradeTimeoutThreshold};
+        return {autoDowngradeEnabled, autoDowngradeFailureThreshold};
     }
 
     async function saveAiProviderDowngradeConfig(payload, saveVersion) {
@@ -1008,7 +1010,7 @@
     function renderAiProviderDowngradeConfig() {
         const config = state.aiProviderDowngradeConfig || {};
         setAiProviderDowngradeEnabled(Boolean(config.autoDowngradeEnabled));
-        document.getElementById("ai-auto-downgrade-timeout-threshold").value = config.autoDowngradeTimeoutThreshold || 3;
+        document.getElementById("ai-auto-downgrade-failure-threshold").value = config.autoDowngradeFailureThreshold || 3;
     }
 
     function renderPreviewEvents() {
@@ -1251,7 +1253,7 @@
     function renderNotificationEventOptions() {
         const options = state.notificationEvents.map((event) => `<option value="${escapeAttribute(event.eventType)}">${escapeHtml(event.label || event.eventType)}</option>`).join("");
         document.getElementById("notification-task-event-type").innerHTML = options;
-        renderNotificationPlaceholders();
+        updateNotificationTaskEventTypeState(false);
     }
 
     function renderNotificationChannels() {
@@ -1368,7 +1370,7 @@
         }
         body.innerHTML = state.notificationTasks.map((task) => `
             <tr>
-                <td><strong>${escapeHtml(task.name)}</strong><div class="keyline">${escapeHtml(notificationFilterPreview(task.filters))}</div></td>
+                <td><strong>${escapeHtml(task.name)}</strong><div class="keyline">${escapeHtml(notificationFilterPreview(task.eventType, task.filters))}</div></td>
                 <td>${escapeHtml(task.eventType)}</td>
                 <td>${escapeHtml(notificationChannelNames(task.channelIds).join(" / ") || "-")}</td>
                 <td>${task.enabled ? `<span class="status-pill is-success">启用</span>` : `<span class="status-pill">停用</span>`}</td>
@@ -1521,7 +1523,10 @@
 
     function notificationEventTypeFallbackLabel(eventType) {
         return {
-            SHARE_SUMMARY_IMAGE_SUCCESS: "分享总结图片生成成功"
+            SHARE_SUMMARY_IMAGE_SUCCESS: "分享总结图片生成成功",
+            AI_PROVIDER_REQUEST_FAILED: "AI Provider 请求失败",
+            AI_PROVIDER_AUTO_DOWNGRADED: "AI Provider 失败阈值降级",
+            DATA_CRAWL_REQUEST_FAILED: "数据爬取请求失败"
         }[eventType] || eventType;
     }
 
@@ -1529,6 +1534,15 @@
         const targetId = eventKeyTargetId(eventType, eventKey);
         if (eventType === "SHARE_SUMMARY_IMAGE_SUCCESS" && targetId) {
             return `分享图记录 #${targetId}`;
+        }
+        if (eventType === "AI_PROVIDER_REQUEST_FAILED" && targetId) {
+            return `AI Provider #${targetId}`;
+        }
+        if (eventType === "AI_PROVIDER_AUTO_DOWNGRADED" && targetId) {
+            return `AI Provider #${targetId}`;
+        }
+        if (eventType === "DATA_CRAWL_REQUEST_FAILED" && targetId) {
+            return `预览 ${shortPreviewKey(targetId)}`;
         }
         return eventKey || "";
     }
@@ -1739,6 +1753,19 @@
         });
     }
 
+    function updateNotificationTaskEventTypeState(resetTemplate) {
+        const eventType = document.getElementById("notification-task-event-type").value || "SHARE_SUMMARY_IMAGE_SUCCESS";
+        const filterPanel = document.getElementById("notification-task-filter-panel");
+        if (filterPanel) {
+            filterPanel.hidden = eventType !== "SHARE_SUMMARY_IMAGE_SUCCESS";
+        }
+        if (resetTemplate) {
+            document.getElementById("notification-task-template").value = defaultNotificationTemplate(eventType);
+        }
+        renderNotificationPlaceholders();
+        updateNotificationFilterSummaries();
+    }
+
     function insertNotificationPlaceholder(name) {
         const textarea = document.getElementById("notification-task-template");
         insertTextAtCursor(textarea, `{{${name}}}`);
@@ -1795,6 +1822,11 @@
             event: "事件信息",
             run: "分享总结",
             image: "分享图",
+            provider: "AI Provider",
+            request: "请求信息",
+            error: "错误信息",
+            downgrade: "降级信息",
+            preview: "预览信息",
             message: "消息正文",
             system: "系统信息"
         }[group] || group;
@@ -1970,13 +2002,24 @@
             name: document.getElementById("notification-task-name").value.trim(),
             enabled: document.getElementById("notification-task-enabled").checked,
             eventType: document.getElementById("notification-task-event-type").value,
-            filters: {
-                shareSummaryTaskIds: checkedNumberValues("[data-notification-filter-share-task]:checked"),
-                periodTypes: checkedValues("[data-notification-filter-period]:checked"),
-                triggerTypes: checkedValues("[data-notification-filter-trigger]:checked")
-            },
+            filters: notificationTaskFiltersPayload(document.getElementById("notification-task-event-type").value),
             templateJson: document.getElementById("notification-task-template").value.trim(),
             channelIds
+        };
+    }
+
+    function notificationTaskFiltersPayload(eventType) {
+        if (eventType !== "SHARE_SUMMARY_IMAGE_SUCCESS") {
+            return {
+                shareSummaryTaskIds: [],
+                periodTypes: [],
+                triggerTypes: []
+            };
+        }
+        return {
+            shareSummaryTaskIds: checkedNumberValues("[data-notification-filter-share-task]:checked"),
+            periodTypes: checkedValues("[data-notification-filter-period]:checked"),
+            triggerTypes: checkedValues("[data-notification-filter-trigger]:checked")
         };
     }
 
@@ -2697,11 +2740,11 @@
     function openNotificationTaskModalForCreate() {
         resetNotificationTaskForm();
         document.getElementById("notification-task-modal-title").textContent = "新建通知任务";
-        document.getElementById("notification-task-template").value = defaultNotificationTemplate();
         openModal("notification-task-modal");
         renderNotificationChannelOptions();
         renderNotificationFilterOptions();
         renderNotificationEventOptions();
+        document.getElementById("notification-task-template").value = defaultNotificationTemplate(document.getElementById("notification-task-event-type").value);
         setFeedback("notification-task-modal-feedback", "", "");
         document.getElementById("notification-task-name").focus();
     }
@@ -2716,7 +2759,7 @@
         document.getElementById("notification-task-name").value = task.name || "";
         document.getElementById("notification-task-event-type").value = task.eventType || "SHARE_SUMMARY_IMAGE_SUCCESS";
         document.getElementById("notification-task-enabled").checked = Boolean(task.enabled);
-        document.getElementById("notification-task-template").value = task.templateJson || defaultNotificationTemplate();
+        document.getElementById("notification-task-template").value = task.templateJson || defaultNotificationTemplate(task.eventType);
         setCheckedValues("[data-notification-filter-share-task]", task.filters?.shareSummaryTaskIds || []);
         setCheckedValues("[data-notification-filter-period]", task.filters?.periodTypes || []);
         setCheckedValues("[data-notification-filter-trigger]", task.filters?.triggerTypes || []);
@@ -2726,7 +2769,7 @@
                 input.checked = true;
             }
         });
-        renderNotificationPlaceholders();
+        updateNotificationTaskEventTypeState(false);
         updateNotificationFilterSummaries();
         openModal("notification-task-modal");
         setFeedback("notification-task-modal-feedback", "", "");
@@ -3157,7 +3200,10 @@
                 .map((channel) => channel.name);
     }
 
-    function notificationFilterPreview(filters) {
+    function notificationFilterPreview(eventType, filters) {
+        if (eventType !== "SHARE_SUMMARY_IMAGE_SUCCESS") {
+            return "匹配全部同类事件";
+        }
         const parts = [];
         if (filters?.shareSummaryTaskIds?.length) {
             parts.push(`任务 ${filters.shareSummaryTaskIds.join(",")}`);
@@ -3171,15 +3217,46 @@
         return parts.join(" · ") || "匹配全部分享图成功事件";
     }
 
-    function defaultNotificationTemplate() {
-        return `{{run.taskName}} 已生成分享图
+    function defaultNotificationTemplate(eventType = "SHARE_SUMMARY_IMAGE_SUCCESS") {
+        const templates = {
+            SHARE_SUMMARY_IMAGE_SUCCESS: `{{run.taskName}} 已生成分享图
 
 周期：{{run.periodType}}
 范围：{{run.windowStartLabel}} 至 {{run.windowEndLabel}}
 链接：{{run.inputLinkCount}} 条
 
 标题：{{image.ogTitle}}
-链接：{{image.ogShareUrl}}`;
+链接：{{image.ogShareUrl}}`,
+            AI_PROVIDER_REQUEST_FAILED: `AI Provider 请求失败
+
+Provider：{{provider.name}} (#{{provider.id}})
+操作：{{request.operation}}
+耗时：{{request.durationMs}} ms
+错误：{{error.type}} - {{error.message}}
+
+失败计数：{{downgrade.failureCount}} / {{downgrade.failureThreshold}}
+触发降级：{{downgrade.triggered}}`,
+            AI_PROVIDER_AUTO_DOWNGRADED: `AI Provider 触发失败阈值降级
+
+Provider：{{provider.name}} (#{{provider.id}})
+操作：{{request.operation}}
+失败计数：{{downgrade.failureCount}} / {{downgrade.failureThreshold}}
+排序：{{downgrade.oldSortOrder}} -> {{downgrade.newSortOrder}}
+已在末位：{{downgrade.alreadyLowest}}
+
+错误：{{error.type}} - {{error.message}}`,
+            DATA_CRAWL_REQUEST_FAILED: `数据爬取请求失败
+
+Provider：{{preview.providerId}}
+Preview：{{preview.previewKey}}
+URL：{{preview.canonicalUrl}}
+客户端：{{request.clientType}}
+状态：{{request.httpStatus}}
+耗时：{{request.durationMs}} ms
+
+错误：{{error.code}} / {{error.type}} - {{error.message}}`
+        };
+        return templates[eventType] || templates.SHARE_SUMMARY_IMAGE_SUCCESS;
     }
 
     function defaultNotificationChannelBodyTemplate() {

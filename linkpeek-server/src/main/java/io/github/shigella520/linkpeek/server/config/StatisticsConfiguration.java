@@ -81,6 +81,7 @@ public class StatisticsConfiguration {
             ensureColumn(jdbcTemplate, "stats_event", "ai_duration_ms", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "stats_event", "crawl_duration_ms", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "ai_provider", "request_timeout_seconds", "INTEGER NOT NULL DEFAULT 45");
+            deleteLegacyAiProviderTimeoutDowngradeConfig(jdbcTemplate);
             rebuildShareSummaryTablesWithoutDayOfMonth(jdbcTemplate);
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted_at", "INTEGER");
@@ -260,6 +261,14 @@ public class StatisticsConfiguration {
             if (!tableExists(jdbcTemplate, tableName)) {
                 jdbcTemplate.execute(createSql);
             }
+        }
+
+        private void deleteLegacyAiProviderTimeoutDowngradeConfig(JdbcTemplate jdbcTemplate) {
+            jdbcTemplate.update("""
+                    DELETE FROM provider_config
+                    WHERE provider_id = 'ai_provider'
+                      AND config_key = 'auto_downgrade_timeout_threshold'
+                    """);
         }
 
         private void rebuildShareSummaryTablesWithoutDayOfMonth(JdbcTemplate jdbcTemplate) {

@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.net.URI;
-import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -36,6 +35,7 @@ public class AiTitleService {
 
     public static final String FREESTYLE_STYLE = "FREESTYLE";
     public static final String DEFAULT_TITLE_FORMAT_PROMPT = AiTitleConfigService.DEFAULT_TITLE_FORMAT_PROMPT;
+    private static final String OPERATION_AI_TITLE = "AI_TITLE";
     private static final long FREESTYLE_STABLE_WINDOW_MILLIS = 30_000;
     // FreeStyle 标题生成成功前不启动 30 秒窗口；该哨兵值表示风格选择仍在生成中。
     private static final long FREESTYLE_PENDING_EXPIRES_AT_MILLIS = Long.MAX_VALUE;
@@ -241,17 +241,21 @@ public class AiTitleService {
                 Optional<String> generated = result.title()
                         .map(this::cleanTitle)
                         .filter(StringUtils::hasText);
-                recordAiProviderSuccess(provider);
                 if (generated.isPresent()) {
+                    recordAiProviderSuccess(provider);
                     return attemptStats.result(Optional.of(withTitle(metadata, generated.get())));
                 }
+                recordAiProviderFailure(provider, durationMs, new IllegalStateException("AI provider returned empty title."));
             } catch (InterruptedException exception) {
-                attemptStats.record(provider, elapsedMillis(startedAt));
-                Thread.currentThread().interrupt();
+                long durationMs = elapsedMillis(startedAt);
+                attemptStats.record(provider, durationMs);
                 log.warn("ai_title_request_interrupted providerId={} style={}", provider.getId(), stylePrompt.style(), exception);
+                recordAiProviderFailure(provider, durationMs, exception);
+                Thread.currentThread().interrupt();
                 return attemptStats.result(Optional.empty());
             } catch (RuntimeException | java.io.IOException exception) {
-                attemptStats.record(provider, elapsedMillis(startedAt));
+                long durationMs = elapsedMillis(startedAt);
+                attemptStats.record(provider, durationMs);
                 log.warn(
                         "ai_title_request_failed providerId={} style={} baseUrl={} message={}",
                         provider.getId(),
@@ -259,9 +263,7 @@ public class AiTitleService {
                         provider.getBaseUrl(),
                         exception.getMessage()
                 );
-                if (exception instanceof HttpTimeoutException) {
-                    recordAiProviderTimeout(provider, exception);
-                }
+                recordAiProviderFailure(provider, durationMs, exception);
             }
         }
         return attemptStats.result(Optional.empty());
@@ -368,9 +370,9 @@ public class AiTitleService {
         }
     }
 
-    private void recordAiProviderTimeout(AiProviderRecord provider, Throwable exception) {
+    private void recordAiProviderFailure(AiProviderRecord provider, long durationMs, Throwable exception) {
         if (aiProviderDowngradeService != null) {
-            aiProviderDowngradeService.recordTimeout(provider, exception);
+            aiProviderDowngradeService.recordFailure(provider, OPERATION_AI_TITLE, durationMs, exception);
         }
     }
 
