@@ -3251,7 +3251,7 @@ Provider：{{image.providerType}}
 格式：{{image.outputFormat}}
 耗时：{{image.durationMs}} ms
 
-失败原因：{{error.message}}`,
+错误：{{error.type}} - {{error.message}}`,
             SHARE_SUMMARY_AUDIO_FAILED: `分享总结音频生成记录失败
 
 任务：{{run.taskName}} (#{{run.taskId}})
@@ -3271,7 +3271,7 @@ Provider：{{audio.providerType}}
 格式：{{audio.outputFormat}}
 耗时：{{audio.durationMs}} ms
 
-失败原因：{{error.message}}`,
+错误：{{error.type}} - {{error.message}}`,
             AI_PROVIDER_REQUEST_FAILED: `AI Provider 请求失败
 
 Provider：{{provider.name}} (#{{provider.id}})
@@ -3288,7 +3288,6 @@ Provider：{{provider.name}} (#{{provider.id}})
 操作：{{request.operation}}
 触发失败计数：{{downgrade.failureCount}} / {{downgrade.failureThreshold}}
 排序调整：{{downgrade.oldSortOrder}} -> {{downgrade.newSortOrder}}
-触发前已在末位：{{downgrade.alreadyLowest}}
 Provider 总数：{{downgrade.providerCount}}
 
 错误：{{error.type}} - {{error.message}}`,

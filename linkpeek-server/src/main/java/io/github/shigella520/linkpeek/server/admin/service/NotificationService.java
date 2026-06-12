@@ -281,6 +281,10 @@ public class NotificationService {
     }
 
     public void publishShareSummaryImageFailed(ShareSummaryRunRecord run, ShareSummaryImageRecord image) {
+        publishShareSummaryImageFailed(run, image, "", image == null ? "" : image.getErrorMessage());
+    }
+
+    public void publishShareSummaryImageFailed(ShareSummaryRunRecord run, ShareSummaryImageRecord image, String errorType, String errorMessage) {
         if (run == null || image == null || image.getId() == null) {
             return;
         }
@@ -288,11 +292,16 @@ public class NotificationService {
         long occurredAt = now();
         String eventKey = eventType.name() + ":" + image.getId();
         Map<String, Object> values = shareSummaryImageValues(run, image);
-        values.put("error.message", optionalStrip(image.getErrorMessage()));
+        values.put("error.type", errorValue(errorType, "ImageGenerationException"));
+        values.put("error.message", errorValue(errorMessage, "Image generation failed."));
         publishEvent(eventType, eventKey, occurredAt, values);
     }
 
     public void publishShareSummaryAudioFailed(ShareSummaryRunRecord run, ShareSummaryAudioRecord audio) {
+        publishShareSummaryAudioFailed(run, audio, "", audio == null ? "" : audio.getErrorMessage());
+    }
+
+    public void publishShareSummaryAudioFailed(ShareSummaryRunRecord run, ShareSummaryAudioRecord audio, String errorType, String errorMessage) {
         if (run == null || audio == null || audio.getId() == null) {
             return;
         }
@@ -301,7 +310,8 @@ public class NotificationService {
         String eventKey = eventType.name() + ":" + audio.getId();
         Map<String, Object> values = shareSummaryRunValues(run);
         values.putAll(shareSummaryAudioValues(audio));
-        values.put("error.message", optionalStrip(audio.getErrorMessage()));
+        values.put("error.type", errorValue(errorType, "AudioGenerationException"));
+        values.put("error.message", errorValue(errorMessage, "Audio generation failed."));
         publishEvent(eventType, eventKey, occurredAt, values);
     }
 
@@ -687,8 +697,8 @@ public class NotificationService {
         Map<String, Object> values = aiProviderValues(event.provider());
         values.put("request.operation", optionalStrip(event.operation()));
         values.put("request.durationMs", event.durationMs());
-        values.put("error.type", optionalStrip(event.errorType()));
-        values.put("error.message", optionalStrip(event.errorMessage()));
+        values.put("error.type", errorValue(event.errorType(), "AiProviderException"));
+        values.put("error.message", errorValue(event.errorMessage(), "AI Provider request failed."));
         values.put("downgrade.enabled", event.downgradeEnabled());
         values.put("downgrade.failureCount", event.failureCount());
         values.put("downgrade.failureThreshold", event.failureThreshold());
@@ -700,8 +710,8 @@ public class NotificationService {
         Map<String, Object> values = aiProviderValues(event.provider());
         values.put("request.operation", optionalStrip(event.operation()));
         values.put("request.durationMs", event.durationMs());
-        values.put("error.type", optionalStrip(event.errorType()));
-        values.put("error.message", optionalStrip(event.errorMessage()));
+        values.put("error.type", errorValue(event.errorType(), "AiProviderException"));
+        values.put("error.message", errorValue(event.errorMessage(), "AI Provider request failed."));
         values.put("downgrade.failureCount", event.failureCount());
         values.put("downgrade.failureThreshold", event.failureThreshold());
         values.put("downgrade.oldSortOrder", event.oldSortOrder());
@@ -735,8 +745,8 @@ public class NotificationService {
         values.put("request.durationMs", event.durationMs());
         values.put("request.requestedStyle", event.requestedStyle());
         values.put("error.code", event.errorCode());
-        values.put("error.type", event.errorType());
-        values.put("error.message", event.errorMessage());
+        values.put("error.type", errorValue(event.errorType(), "DataCrawlException"));
+        values.put("error.message", errorValue(event.errorMessage(), "Data crawl request failed."));
         return values;
     }
 
@@ -982,6 +992,10 @@ public class NotificationService {
 
     private String optionalStrip(String value) {
         return StringUtils.hasText(value) ? value.strip() : "";
+    }
+
+    private String errorValue(String value, String fallback) {
+        return StringUtils.hasText(value) ? value.strip() : fallback;
     }
 
     private String dateLabel(long millis) {

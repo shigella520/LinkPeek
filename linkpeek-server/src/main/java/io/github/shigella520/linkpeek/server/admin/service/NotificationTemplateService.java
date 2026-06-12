@@ -205,6 +205,7 @@ public class NotificationTemplateService {
         addCommonEventPlaceholders(placeholders, NotificationEventType.SHARE_SUMMARY_IMAGE_FAILED);
         addShareSummaryRunPlaceholders(placeholders);
         addShareSummaryImagePlaceholders(placeholders, true);
+        add(placeholders, "error", "error.type", "string", "错误类型", "异常类简单名称；无异常对象时使用业务错误类型。", "IOException", true);
         add(placeholders, "error", "error.message", "string", "错误信息", "图片生成记录进入失败状态时保存的错误信息。", "Image provider returned HTTP 500 body=failed", true);
         addSystemPlaceholders(placeholders);
         return new EventSchema(
@@ -220,6 +221,7 @@ public class NotificationTemplateService {
         addCommonEventPlaceholders(placeholders, NotificationEventType.SHARE_SUMMARY_AUDIO_FAILED);
         addShareSummaryRunPlaceholders(placeholders);
         addShareSummaryAudioPlaceholders(placeholders);
+        add(placeholders, "error", "error.type", "string", "错误类型", "异常类简单名称；无异常对象时使用业务错误类型。", "IOException", true);
         add(placeholders, "error", "error.message", "string", "错误信息", "音频生成记录进入失败状态时保存的错误信息。", "Audio provider returned HTTP 500 body=failed", true);
         addSystemPlaceholders(placeholders);
         return new EventSchema(

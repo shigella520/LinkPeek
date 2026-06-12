@@ -149,11 +149,12 @@ class NotificationTemplateServiceTest {
         String rendered = service.render(
                 NotificationEventType.SHARE_SUMMARY_IMAGE_FAILED,
                 """
-                        {"run":"{{run.taskName}}","image":{{image.id}},"error":"{{error.message}}"}
+                        {"run":"{{run.taskName}}","image":{{image.id}},"error":"{{error.type}} - {{error.message}}"}
                         """,
                 Map.of(
                         "run.taskName", "每周分享总结",
                         "image.id", 99,
+                        "error.type", "RejectedExecutionException",
                         "error.message", "IMAGE_QUEUE_FULL"
                 )
         );
@@ -161,7 +162,7 @@ class NotificationTemplateServiceTest {
         JsonNode json = objectMapper.readTree(rendered);
         assertEquals("每周分享总结", json.path("run").asText());
         assertEquals(99, json.path("image").asInt());
-        assertEquals("IMAGE_QUEUE_FULL", json.path("error").asText());
+        assertEquals("RejectedExecutionException - IMAGE_QUEUE_FULL", json.path("error").asText());
     }
 
     @Test
@@ -169,12 +170,13 @@ class NotificationTemplateServiceTest {
         String rendered = service.render(
                 NotificationEventType.SHARE_SUMMARY_AUDIO_FAILED,
                 """
-                        {"run":"{{run.taskName}}","audio":{{audio.id}},"voice":"{{audio.voice}}","error":"{{error.message}}"}
+                        {"run":"{{run.taskName}}","audio":{{audio.id}},"voice":"{{audio.voice}}","error":"{{error.type}} - {{error.message}}"}
                         """,
                 Map.of(
                         "run.taskName", "每周分享总结",
                         "audio.id", 88,
                         "audio.voice", "zh-CN-YunhaoNeural",
+                        "error.type", "RejectedExecutionException",
                         "error.message", "AUDIO_QUEUE_FULL"
                 )
         );
@@ -183,7 +185,7 @@ class NotificationTemplateServiceTest {
         assertEquals("每周分享总结", json.path("run").asText());
         assertEquals(88, json.path("audio").asInt());
         assertEquals("zh-CN-YunhaoNeural", json.path("voice").asText());
-        assertEquals("AUDIO_QUEUE_FULL", json.path("error").asText());
+        assertEquals("RejectedExecutionException - AUDIO_QUEUE_FULL", json.path("error").asText());
     }
 
     @Test

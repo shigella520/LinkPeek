@@ -46,8 +46,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ShareSummaryImageServiceTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
@@ -90,7 +92,12 @@ class ShareSummaryImageServiceTest {
         assertTrue(imageMapper.latestImage().getErrorMessage().contains("Image URL host is not allowed"));
         assertEquals(successful.getOgImageUrl(), summary.ogImageUrl());
         assertEquals(ShareSummaryImageStatus.FAILED.name(), summary.imageStatus());
-        verify(notificationService).publishShareSummaryImageFailed(any(ShareSummaryRunRecord.class), any(ShareSummaryImageRecord.class));
+        verify(notificationService).publishShareSummaryImageFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryImageRecord.class),
+                eq("IOException"),
+                org.mockito.ArgumentMatchers.contains("Image URL host is not allowed")
+        );
     }
 
     @Test
@@ -113,7 +120,46 @@ class ShareSummaryImageServiceTest {
 
         assertEquals(ShareSummaryImageStatus.FAILED.name(), imageMapper.latestImage().getStatus());
         assertEquals("IMAGE_QUEUE_FULL", imageMapper.latestImage().getErrorMessage());
-        verify(notificationService).publishShareSummaryImageFailed(any(ShareSummaryRunRecord.class), any(ShareSummaryImageRecord.class));
+        verify(notificationService).publishShareSummaryImageFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryImageRecord.class),
+                eq("RejectedExecutionException"),
+                eq("IMAGE_QUEUE_FULL")
+        );
+    }
+
+    @Test
+    void imageFailureNotificationIncludesErrorTypeAndFallbackMessage() {
+        FakeImageMapper imageMapper = new FakeImageMapper(config());
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        NotificationService notificationService = mock(NotificationService.class);
+        ShareSummaryImageClient imageClient = mock(ShareSummaryImageClient.class);
+        try {
+            when(imageClient.generate(any(ShareSummaryImageConfigRecord.class), any(String.class)))
+                    .thenThrow(new IOException());
+        } catch (InterruptedException | IOException exception) {
+            throw new IllegalStateException(exception);
+        }
+        ShareSummaryImageService service = new ShareSummaryImageService(
+                imageMapper,
+                shareSummaryMapper,
+                imageClient,
+                new RedirectingImageHttpClient(),
+                new DirectExecutorService(),
+                notificationService,
+                new LinkPeekProperties(),
+                Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
+        );
+
+        service.generateImage(1, true);
+
+        assertEquals("Image generation failed.", imageMapper.latestImage().getErrorMessage());
+        verify(notificationService).publishShareSummaryImageFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryImageRecord.class),
+                eq("IOException"),
+                eq("Image generation failed.")
+        );
     }
 
     @Test

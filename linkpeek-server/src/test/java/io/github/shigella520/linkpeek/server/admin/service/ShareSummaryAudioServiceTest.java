@@ -28,6 +28,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,7 +50,12 @@ class ShareSummaryAudioServiceTest {
 
         assertEquals(ShareSummaryAudioStatus.FAILED.name(), audioMapper.latestAudio().getStatus());
         assertTrue(audioMapper.latestAudio().getErrorMessage().contains("provider failed"));
-        verify(notificationService).publishShareSummaryAudioFailed(any(ShareSummaryRunRecord.class), any(ShareSummaryAudioRecord.class));
+        verify(notificationService).publishShareSummaryAudioFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryAudioRecord.class),
+                eq("IOException"),
+                eq("provider failed")
+        );
     }
 
     @Test
@@ -69,7 +75,33 @@ class ShareSummaryAudioServiceTest {
 
         assertEquals(ShareSummaryAudioStatus.FAILED.name(), audioMapper.latestAudio().getStatus());
         assertEquals("AUDIO_QUEUE_FULL", audioMapper.latestAudio().getErrorMessage());
-        verify(notificationService).publishShareSummaryAudioFailed(any(ShareSummaryRunRecord.class), any(ShareSummaryAudioRecord.class));
+        verify(notificationService).publishShareSummaryAudioFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryAudioRecord.class),
+                eq("RejectedExecutionException"),
+                eq("AUDIO_QUEUE_FULL")
+        );
+    }
+
+    @Test
+    void audioFailureNotificationIncludesErrorTypeAndFallbackMessage() throws Exception {
+        FakeAudioMapper audioMapper = new FakeAudioMapper(config());
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
+                .thenThrow(new IOException());
+        NotificationService notificationService = mock(NotificationService.class);
+        ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), notificationService);
+
+        service.generateAudio(1, true);
+
+        assertEquals("Audio generation failed.", audioMapper.latestAudio().getErrorMessage());
+        verify(notificationService).publishShareSummaryAudioFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryAudioRecord.class),
+                eq("IOException"),
+                eq("Audio generation failed.")
+        );
     }
 
     private ShareSummaryAudioService service(

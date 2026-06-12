@@ -277,7 +277,14 @@ public class AiProviderDowngradeService {
     }
 
     private String errorMessage(Throwable exception) {
-        return exception == null ? "" : exception.getMessage();
+        Throwable current = exception;
+        while (current != null) {
+            if (StringUtils.hasText(current.getMessage())) {
+                return current.getMessage();
+            }
+            current = current.getCause();
+        }
+        return "AI Provider request failed.";
     }
 
     private void updateProviderSortOrder(Long providerId, int sortOrder, long updatedAt) {

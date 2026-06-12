@@ -210,7 +210,7 @@ public class ShareSummaryAudioService {
                 audio.setErrorMessage("AUDIO_QUEUE_FULL");
                 audio.setFinishedAt(now());
                 audioMapper.updateAudio(audio);
-                publishAudioFailed(audio);
+                publishAudioFailed(audio, RejectedExecutionException.class.getSimpleName(), "AUDIO_QUEUE_FULL");
             }
         }
     }
@@ -242,9 +242,9 @@ public class ShareSummaryAudioService {
             audioMapper.updateAudio(audio);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            failAudio(audio, "Audio generation was interrupted.");
+            failAudio(audio, exception, "Audio generation was interrupted.");
         } catch (RuntimeException | IOException exception) {
-            failAudio(audio, limitError(exception.getMessage()));
+            failAudio(audio, exception, null);
         }
     }
 
@@ -403,21 +403,21 @@ public class ShareSummaryAudioService {
         return storageKey;
     }
 
-    private void failAudio(ShareSummaryAudioRecord audio, String message) {
+    private void failAudio(ShareSummaryAudioRecord audio, Throwable exception, String fallbackMessage) {
         audio.setStatus(ShareSummaryAudioStatus.FAILED.name());
-        audio.setErrorMessage(StringUtils.hasText(message) ? message : "Audio generation failed.");
+        audio.setErrorMessage(errorMessage(exception, fallbackMessage, "Audio generation failed."));
         audio.setFinishedAt(now());
         audioMapper.updateAudio(audio);
-        publishAudioFailed(audio);
+        publishAudioFailed(audio, errorType(exception, "AudioGenerationException"), audio.getErrorMessage());
     }
 
-    private void publishAudioFailed(ShareSummaryAudioRecord audio) {
+    private void publishAudioFailed(ShareSummaryAudioRecord audio, String errorType, String errorMessage) {
         if (notificationService == null) {
             return;
         }
         try {
             ShareSummaryRunRecord run = shareSummaryMapper.selectRun(audio.getRunId());
-            notificationService.publishShareSummaryAudioFailed(run, audio);
+            notificationService.publishShareSummaryAudioFailed(run, audio, errorType, errorMessage);
         } catch (RuntimeException exception) {
             log.warn("share_summary_audio_failed_notification_failed audioId={} runId={} message={}", audio.getId(), audio.getRunId(), exception.getMessage(), exception);
         }
@@ -527,12 +527,31 @@ public class ShareSummaryAudioService {
         return StringUtils.hasText(value) ? value.strip() : "";
     }
 
-    private String limitError(String message) {
+    private String errorType(Throwable exception, String fallbackType) {
+        return exception == null ? fallbackType : exception.getClass().getSimpleName();
+    }
+
+    private String errorMessage(Throwable exception, String fallbackMessage, String defaultMessage) {
+        String message = firstErrorMessage(exception);
         if (!StringUtils.hasText(message)) {
-            return "Audio generation failed.";
+            message = fallbackMessage;
+        }
+        if (!StringUtils.hasText(message)) {
+            message = defaultMessage;
         }
         String stripped = message.strip();
         return stripped.length() <= 500 ? stripped : stripped.substring(0, 500);
+    }
+
+    private String firstErrorMessage(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (StringUtils.hasText(current.getMessage())) {
+                return current.getMessage();
+            }
+            current = current.getCause();
+        }
+        return "";
     }
 
     private long now() {

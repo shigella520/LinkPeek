@@ -40,32 +40,58 @@ class NotificationServiceTest {
     void publishesShareSummaryImageFailedDelivery() {
         NotificationMapper mapper = mapperForPublish(
                 NotificationEventType.SHARE_SUMMARY_IMAGE_FAILED,
-                "Image {{run.taskName}} #{{image.id}} {{image.status}} {{error.message}}"
+                "Image {{run.taskName}} #{{image.id}} {{image.status}} {{error.type}} {{error.message}}"
         );
         NotificationService service = service(mapper);
 
-        service.publishShareSummaryImageFailed(shareSummaryRun(), failedImage());
+        service.publishShareSummaryImageFailed(shareSummaryRun(), failedImage(), "RejectedExecutionException", "IMAGE_QUEUE_FULL");
 
         NotificationDeliveryRecord delivery = insertedDelivery(mapper);
         assertEquals("SHARE_SUMMARY_IMAGE_FAILED", delivery.getEventType());
         assertEquals("SHARE_SUMMARY_IMAGE_FAILED:99", delivery.getEventKey());
-        assertTrue(delivery.getRequestBody().contains("Image 每周分享总结 #99 FAILED IMAGE_QUEUE_FULL"));
+        assertTrue(delivery.getRequestBody().contains("Image 每周分享总结 #99 FAILED RejectedExecutionException IMAGE_QUEUE_FULL"));
     }
 
     @Test
     void publishesShareSummaryAudioFailedDelivery() {
         NotificationMapper mapper = mapperForPublish(
                 NotificationEventType.SHARE_SUMMARY_AUDIO_FAILED,
-                "Audio {{run.taskName}} #{{audio.id}} {{audio.voice}} {{audio.status}} {{error.message}}"
+                "Audio {{run.taskName}} #{{audio.id}} {{audio.voice}} {{audio.status}} {{error.type}} {{error.message}}"
         );
         NotificationService service = service(mapper);
 
-        service.publishShareSummaryAudioFailed(shareSummaryRun(), failedAudio());
+        service.publishShareSummaryAudioFailed(shareSummaryRun(), failedAudio(), "RejectedExecutionException", "AUDIO_QUEUE_FULL");
 
         NotificationDeliveryRecord delivery = insertedDelivery(mapper);
         assertEquals("SHARE_SUMMARY_AUDIO_FAILED", delivery.getEventType());
         assertEquals("SHARE_SUMMARY_AUDIO_FAILED:88", delivery.getEventKey());
-        assertTrue(delivery.getRequestBody().contains("Audio 每周分享总结 #88 zh-CN-YunhaoNeural FAILED AUDIO_QUEUE_FULL"));
+        assertTrue(delivery.getRequestBody().contains("Audio 每周分享总结 #88 zh-CN-YunhaoNeural FAILED RejectedExecutionException AUDIO_QUEUE_FULL"));
+    }
+
+    @Test
+    void fallsBackEmptyErrorMessages() {
+        NotificationMapper mapper = mapperForPublish(
+                NotificationEventType.DATA_CRAWL_REQUEST_FAILED,
+                "{{error.type}} {{error.message}}"
+        );
+        NotificationService service = service(mapper);
+
+        service.publishDataCrawlRequestFailed(new DataCrawlRequestFailedEvent(
+                "preview-key",
+                "bilibili",
+                "https://example.com/source",
+                "https://example.com/canonical",
+                "CRAWLER",
+                502,
+                789,
+                "FUN",
+                "UPSTREAM_ERROR",
+                "",
+                ""
+        ));
+
+        NotificationDeliveryRecord delivery = insertedDelivery(mapper);
+        assertTrue(delivery.getRequestBody().contains("DataCrawlException Data crawl request failed."));
     }
 
     @Test
