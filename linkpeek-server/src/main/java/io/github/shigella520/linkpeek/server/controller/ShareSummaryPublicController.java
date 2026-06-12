@@ -102,7 +102,7 @@ public class ShareSummaryPublicController {
                     <meta name="twitter:description" content="%s">
                     <meta name="twitter:image" content="%s">
                     <link rel="icon" href="/favicon.ico">
-                    <link rel="stylesheet" href="/dashboard/styles.css?v=20260612-mobile-scale">
+                    <link rel="stylesheet" href="/dashboard/styles.css?v=20260612-report-topbar-polish">
                     <style>
                         .report-shell { max-width: 1180px; padding-bottom: 72px; }
                         .report-topbar { margin-bottom: 24px; }
@@ -198,17 +198,18 @@ public class ShareSummaryPublicController {
                             .report-shell { padding-bottom: 40px; }
                             .topbar {
                                 flex-direction: row;
-                                border-radius: 20px;
                                 align-items: center;
-                                gap: 10px;
-                                padding: 12px 14px;
+                                gap: 8px;
+                                padding: 8px 10px;
+                                border-radius: 18px;
                                 margin-bottom: 14px;
                             }
-                            .brand-mark { gap: 10px; min-width: 0; }
-                            .brand-dot { width: 8px; height: 8px; box-shadow: 0 0 0 7px rgba(10, 132, 255, 0.1); }
-                            .brand-text { max-width: 62vw; font-size: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-                            .project-link { width: 40px; height: 40px; }
-                            .project-link svg { width: 18px; height: 18px; }
+                            .report-topbar .brand-mark { flex: 1 1 auto; gap: 8px; min-width: 0; overflow: visible; }
+                            .report-topbar .topbar-meta { flex: 0 0 auto; min-width: 0; }
+                            .report-topbar .brand-dot { flex: 0 0 7px; width: 7px; height: 7px; box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.1); }
+                            .report-topbar .brand-text { max-width: clamp(206px, 62vw, 320px); min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                            .project-link { flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; aspect-ratio: 1; padding: 0; }
+                            .project-link svg { width: 17px; height: 17px; }
                             .report-hero { padding: 12px; border-radius: 22px; gap: 14px; margin-bottom: 22px; }
                             .report-visual { border-radius: 18px; }
                             .report-copy h1 { font-size: 27px; line-height: 1.08; letter-spacing: -0.02em; }
@@ -225,8 +226,9 @@ public class ShareSummaryPublicController {
                         }
                         @media (max-width: 380px) {
                             .page-shell { padding-inline: 8px; }
-                            .topbar { padding: 10px 12px; }
-                            .brand-text { font-size: 17px; max-width: 58vw; }
+                            .topbar { padding: 7px 8px; }
+                            .report-topbar .brand-text { font-size: 15px; max-width: clamp(176px, 58vw, 260px); }
+                            .project-link { flex-basis: 34px; width: 34px; min-width: 34px; height: 34px; }
                             .report-hero { padding: 10px; border-radius: 20px; }
                             .report-copy h1 { font-size: 25px; }
                             .report-description,

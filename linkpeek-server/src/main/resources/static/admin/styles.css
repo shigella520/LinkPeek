@@ -2812,6 +2812,57 @@ fieldset,
         width: min(100vw - 12px, 1480px);
     }
 
+    .login-page {
+        min-height: 100svh;
+    }
+
+    .login-main {
+        width: min(100vw - 16px, 420px);
+        min-height: 100svh;
+        place-items: start stretch;
+        padding: max(72px, calc(env(safe-area-inset-top, 0px) + 56px)) 0 88px;
+    }
+
+    .login-card {
+        gap: 14px;
+    }
+
+    .login-head {
+        justify-content: center;
+        margin-bottom: 0;
+    }
+
+    .login-head .brand-text {
+        max-width: min(70vw, 260px);
+        font-size: 32px;
+    }
+
+    .login-form {
+        gap: 14px;
+        padding: 20px 16px;
+        border-radius: 22px;
+    }
+
+    .login-form h2 {
+        font-size: 24px;
+    }
+
+    .login-form input {
+        min-height: 44px;
+        border-radius: 16px;
+        padding: 10px 12px;
+    }
+
+    .login-form button {
+        min-height: 44px;
+    }
+
+    .login-dashboard-link {
+        min-height: 38px;
+        padding: 0 14px;
+        font-size: 14px;
+    }
+
     .panel,
     .modal,
     .login-form {
