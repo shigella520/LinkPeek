@@ -50,7 +50,10 @@
         activeDangerButton: null,
         adminReady: false,
         loadedPanels: new Set(),
-        loadingPanels: new Map()
+        loadingPanels: new Map(),
+        adminNavHoverOpen: false,
+        adminNavHoverCloseTimer: null,
+        adminNavLastPointer: null
     };
 
     function init() {
@@ -72,11 +75,16 @@
 
     function bindAdminNavigation() {
         const menuButton = document.getElementById("admin-menu-button");
+        const drawer = document.getElementById("admin-nav-drawer");
         const closeButton = document.getElementById("admin-drawer-close-button");
         const backdrop = document.getElementById("admin-drawer-backdrop");
         const pinButton = document.getElementById("admin-pin-sidebar-button");
 
-        menuButton.addEventListener("click", openAdminNavigation);
+        menuButton.addEventListener("click", () => openAdminNavigation({source: "click"}));
+        menuButton.addEventListener("mouseenter", openAdminNavigationFromHover);
+        menuButton.addEventListener("mouseleave", scheduleCloseAdminNavigationFromHover);
+        drawer.addEventListener("mouseenter", cancelAdminNavigationHoverClose);
+        drawer.addEventListener("mouseleave", scheduleCloseAdminNavigationFromHover);
         closeButton.addEventListener("click", closeAdminNavigation);
         backdrop.addEventListener("click", closeAdminNavigation);
         pinButton.addEventListener("click", () => {
@@ -103,22 +111,29 @@
         activateAdminPanel(panelIdFromLocation(), false);
     }
 
-    function openAdminNavigation() {
+    function openAdminNavigation(options = {}) {
         const drawer = document.getElementById("admin-nav-drawer");
         const menuButton = document.getElementById("admin-menu-button");
         const backdrop = document.getElementById("admin-drawer-backdrop");
+        const hoverOpen = options.source === "hover";
+        cancelAdminNavigationHoverClose();
+        state.adminNavHoverOpen = hoverOpen;
         document.body.classList.add("admin-nav-open");
+        document.body.classList.toggle("admin-nav-hover-open", hoverOpen);
         drawer.setAttribute("aria-hidden", "false");
         drawer.removeAttribute("inert");
         menuButton.setAttribute("aria-expanded", "true");
-        backdrop.hidden = isAdminSidebarPinnedActive();
+        backdrop.hidden = hoverOpen || isAdminSidebarPinnedActive();
     }
 
     function closeAdminNavigation() {
         const drawer = document.getElementById("admin-nav-drawer");
         const menuButton = document.getElementById("admin-menu-button");
         const backdrop = document.getElementById("admin-drawer-backdrop");
+        cancelAdminNavigationHoverClose();
+        state.adminNavHoverOpen = false;
         document.body.classList.remove("admin-nav-open");
+        document.body.classList.remove("admin-nav-hover-open");
         if (isAdminSidebarPinnedActive()) {
             drawer.setAttribute("aria-hidden", "false");
             drawer.removeAttribute("inert");
@@ -128,6 +143,68 @@
         }
         menuButton.setAttribute("aria-expanded", "false");
         backdrop.hidden = true;
+    }
+
+    function openAdminNavigationFromHover(event) {
+        rememberAdminNavigationPointer(event);
+        if (!canHoverAdminNavigation() || isAdminSidebarPinnedActive()) {
+            return;
+        }
+        openAdminNavigation({source: "hover"});
+    }
+
+    function scheduleCloseAdminNavigationFromHover(event) {
+        rememberAdminNavigationPointer(event);
+        if (!state.adminNavHoverOpen || isAdminSidebarPinnedActive()) {
+            return;
+        }
+        cancelAdminNavigationHoverClose();
+        state.adminNavHoverCloseTimer = window.setTimeout(() => {
+            state.adminNavHoverCloseTimer = null;
+            if (state.adminNavHoverOpen && !isAdminNavigationPointerInside()) {
+                closeAdminNavigation();
+            }
+        }, 160);
+    }
+
+    function cancelAdminNavigationHoverClose() {
+        if (state.adminNavHoverCloseTimer) {
+            window.clearTimeout(state.adminNavHoverCloseTimer);
+            state.adminNavHoverCloseTimer = null;
+        }
+    }
+
+    function canHoverAdminNavigation() {
+        return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    }
+
+    function rememberAdminNavigationPointer(event) {
+        if (!event || !Number.isFinite(event.clientX) || !Number.isFinite(event.clientY)) {
+            return;
+        }
+        state.adminNavLastPointer = {
+            x: event.clientX,
+            y: event.clientY
+        };
+    }
+
+    function isAdminNavigationPointerInside() {
+        if (!state.adminNavLastPointer) {
+            return false;
+        }
+        return isPointInsideElement(state.adminNavLastPointer, document.getElementById("admin-menu-button"))
+                || isPointInsideElement(state.adminNavLastPointer, document.getElementById("admin-nav-drawer"));
+    }
+
+    function isPointInsideElement(point, element) {
+        if (!element || element.hidden) {
+            return false;
+        }
+        const rect = element.getBoundingClientRect();
+        return point.x >= rect.left
+                && point.x <= rect.right
+                && point.y >= rect.top
+                && point.y <= rect.bottom;
     }
 
     function setAdminSidebarPinned(pinned, persist) {
@@ -159,7 +236,10 @@
         const backdrop = document.getElementById("admin-drawer-backdrop");
         const pinnedActive = isAdminSidebarPinnedActive();
         if (pinnedActive) {
+            cancelAdminNavigationHoverClose();
+            state.adminNavHoverOpen = false;
             document.body.classList.remove("admin-nav-open");
+            document.body.classList.remove("admin-nav-hover-open");
             drawer.setAttribute("aria-hidden", "false");
             drawer.removeAttribute("inert");
             menuButton.setAttribute("aria-expanded", "false");
@@ -168,10 +248,14 @@
         }
 
         const drawerOpen = document.body.classList.contains("admin-nav-open");
+        if (!drawerOpen) {
+            state.adminNavHoverOpen = false;
+            document.body.classList.remove("admin-nav-hover-open");
+        }
         drawer.setAttribute("aria-hidden", drawerOpen ? "false" : "true");
         drawer.toggleAttribute("inert", !drawerOpen);
         menuButton.setAttribute("aria-expanded", drawerOpen ? "true" : "false");
-        backdrop.hidden = !drawerOpen;
+        backdrop.hidden = !drawerOpen || state.adminNavHoverOpen;
     }
 
     function activateAdminPanel(panelId, updateHash) {

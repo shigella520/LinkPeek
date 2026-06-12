@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260608-share-summary-task-list">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260612-admin-opaque-nav">
 </head>
 <body>
 <header class="topbar">
-    <div class="topbar-brand">
+    <div class="topbar-brand brand-mark">
         <button
             type="button"
             id="admin-menu-button"
@@ -21,12 +21,22 @@
         >
             <span class="admin-menu-icon" aria-hidden="true"></span>
         </button>
-        <div>
-            <p class="eyebrow">Management</p>
-            <h1>LinkPeek Admin</h1>
-        </div>
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span class="brand-text">LinkPeek Admin</span>
     </div>
     <nav class="topbar-actions">
+        <a
+            class="icon-link github-link"
+            href="https://github.com/shigella520/LinkPeek"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open LinkPeek on GitHub"
+            title="GitHub"
+        >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 1.5C6.2 1.5 1.5 6.3 1.5 12.2c0 4.7 3 8.7 7.2 10.1.5.1.7-.2.7-.5v-1.9c-2.9.7-3.5-1.2-3.5-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1 1.6 1 .9 1.5 2.3 1 2.8.8.1-.7.4-1 .6-1.3-2.3-.3-4.8-1.2-4.8-5.3 0-1.2.4-2.2 1-3-.1-.2-.4-1.3.1-2.8 0 0 .9-.3 3 .9a10.2 10.2 0 0 1 5.5 0c2.1-1.2 3-.9 3-.9.6 1.5.2 2.6.1 2.8.7.8 1 1.8 1 3 0 4.1-2.5 5-4.8 5.3.4.3.7.9.7 1.9v2.7c0 .3.2.7.7.5a10.7 10.7 0 0 0 7.2-10C22.5 6.3 17.8 1.5 12 1.5Z"/>
+            </svg>
+        </a>
         <a href="/dashboard">Dashboard</a>
         <button type="button" id="logout-button" hidden>退出</button>
     </nav>
@@ -1034,6 +1044,6 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260608-share-summary-task-list"></script>
+<script src="/admin/app.js?v=20260612-admin-hover-nav"></script>
 </body>
 </html>

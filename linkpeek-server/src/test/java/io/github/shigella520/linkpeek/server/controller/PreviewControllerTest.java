@@ -266,7 +266,9 @@ class PreviewControllerTest {
 
         mockMvc.perform(get("/dashboard/styles.css"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/css"));
+                .andExpect(content().contentTypeCompatibleWith("text/css"))
+                .andExpect(content().string(containsString("gap: 14px")))
+                .andExpect(content().string(containsString("font-size: 24px")));
 
         mockMvc.perform(get("/dashboard/app.js"))
                 .andExpect(status().isOk())
@@ -287,6 +289,11 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("LinkPeek Admin")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20260612-admin-opaque-nav")))
+                .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
+                .andExpect(content().string(containsString("brand-text")))
+                .andExpect(content().string(containsString("/admin/app.js?v=20260612-admin-hover-nav")))
+                .andExpect(content().string(not(containsString("brand-copy"))))
                 .andExpect(content().string(containsString("provider-config")))
                 .andExpect(content().string(containsString("service-logs")))
                 .andExpect(content().string(containsString("ai-providers")))
@@ -336,16 +343,38 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("login-form")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20260612-admin-opaque-nav")))
+                .andExpect(content().string(containsString("class=\"login-head brand-mark\"")))
+                .andExpect(content().string(containsString("class=\"brand-text\"")))
+                .andExpect(content().string(not(containsString(">Management<"))))
                 .andExpect(content().string(containsString("/admin/login.js")));
 
         mockMvc.perform(get("/admin/styles.css"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/css"));
+                .andExpect(content().contentTypeCompatibleWith("text/css"))
+                .andExpect(content().string(containsString("--shadow-soft")))
+                .andExpect(content().string(containsString("backdrop-filter: blur(26px)")))
+                .andExpect(content().string(containsString("linear-gradient(180deg, #f8f7f3 0%")))
+                .andExpect(content().string(containsString(".brand-text")))
+                .andExpect(content().string(containsString(".icon-link svg")))
+                .andExpect(content().string(containsString("gap: 14px")))
+                .andExpect(content().string(containsString("font-size: 24px")))
+                .andExpect(content().string(not(containsString(".brand-copy"))))
+                .andExpect(content().string(containsString("body.admin-sidebar-pinned.admin-nav-open .admin-sidebar")))
+                .andExpect(content().string(containsString("background: #ffffff")))
+                .andExpect(content().string(containsString("body.admin-nav-hover-open .admin-drawer-backdrop")))
+                .andExpect(content().string(containsString("backdrop-filter: none")))
+                .andExpect(content().string(containsString(".checkbox-row > input[type=\"checkbox\"] + span::before")))
+                .andExpect(content().string(containsString(".inline-threshold-input:focus")));
 
         mockMvc.perform(get("/admin/app.js"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("application/javascript")))
                 .andExpect(content().string(containsString("/api/admin/logs")))
+                .andExpect(content().string(containsString("openAdminNavigationFromHover")))
+                .andExpect(content().string(containsString("adminNavHoverOpen")))
+                .andExpect(content().string(containsString("isAdminNavigationPointerInside")))
+                .andExpect(content().string(containsString("admin-nav-hover-open")))
                 .andExpect(content().string(containsString("/api/admin/ai-title-config")))
                 .andExpect(content().string(containsString("/api/admin/preview-events")))
                 .andExpect(content().string(containsString("/api/admin/share-summary")))

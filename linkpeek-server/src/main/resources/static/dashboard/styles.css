@@ -123,7 +123,12 @@ body::before {
     box-shadow: var(--shadow-soft);
 }
 
-.brand-mark,
+.brand-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 14px;
+}
+
 .topbar-meta {
     display: inline-flex;
     align-items: center;
@@ -136,6 +141,8 @@ body::before {
 }
 
 .brand-text {
+    font-size: 24px;
+    line-height: 1;
     background:
         linear-gradient(125deg,
             rgba(24, 24, 24, 0.98) 0%,
