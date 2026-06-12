@@ -1524,6 +1524,8 @@
     function notificationEventTypeFallbackLabel(eventType) {
         return {
             SHARE_SUMMARY_IMAGE_SUCCESS: "分享总结图片生成成功",
+            SHARE_SUMMARY_IMAGE_FAILED: "分享总结图片生成失败",
+            SHARE_SUMMARY_AUDIO_FAILED: "分享总结音频生成失败",
             AI_PROVIDER_REQUEST_FAILED: "AI Provider 请求失败",
             AI_PROVIDER_AUTO_DOWNGRADED: "AI Provider 失败阈值降级",
             DATA_CRAWL_REQUEST_FAILED: "数据爬取请求失败"
@@ -1534,6 +1536,12 @@
         const targetId = eventKeyTargetId(eventType, eventKey);
         if (eventType === "SHARE_SUMMARY_IMAGE_SUCCESS" && targetId) {
             return `分享图记录 #${targetId}`;
+        }
+        if (eventType === "SHARE_SUMMARY_IMAGE_FAILED" && targetId) {
+            return `分享图记录 #${targetId}`;
+        }
+        if (eventType === "SHARE_SUMMARY_AUDIO_FAILED" && targetId) {
+            return `音频记录 #${targetId}`;
         }
         if (eventType === "AI_PROVIDER_REQUEST_FAILED" && targetId) {
             return `AI Provider #${targetId}`;
@@ -3227,6 +3235,43 @@
 
 标题：{{image.ogTitle}}
 链接：{{image.ogShareUrl}}`,
+            SHARE_SUMMARY_IMAGE_FAILED: `分享总结图片生成记录失败
+
+任务：{{run.taskName}} (#{{run.taskId}})
+执行：#{{run.id}}
+周期：{{run.periodType}}
+范围：{{run.windowStartLabel}} 至 {{run.windowEndLabel}}
+
+图片记录：#{{image.id}}
+第几次生成：{{image.attemptNo}}
+状态：{{image.status}}
+Provider：{{image.providerType}}
+模型：{{image.model}}
+尺寸：{{image.imageSize}}
+格式：{{image.outputFormat}}
+耗时：{{image.durationMs}} ms
+
+失败原因：{{error.message}}`,
+            SHARE_SUMMARY_AUDIO_FAILED: `分享总结音频生成记录失败
+
+任务：{{run.taskName}} (#{{run.taskId}})
+执行：#{{run.id}}
+周期：{{run.periodType}}
+范围：{{run.windowStartLabel}} 至 {{run.windowEndLabel}}
+
+音频记录：#{{audio.id}}
+第几次生成：{{audio.attemptNo}}
+状态：{{audio.status}}
+Provider：{{audio.providerType}}
+模型：{{audio.model}}
+声音：{{audio.voice}}
+语速：{{audio.speed}}
+音调：{{audio.pitch}}
+风格：{{audio.style}}
+格式：{{audio.outputFormat}}
+耗时：{{audio.durationMs}} ms
+
+失败原因：{{error.message}}`,
             AI_PROVIDER_REQUEST_FAILED: `AI Provider 请求失败
 
 Provider：{{provider.name}} (#{{provider.id}})
@@ -3234,24 +3279,27 @@ Provider：{{provider.name}} (#{{provider.id}})
 耗时：{{request.durationMs}} ms
 错误：{{error.type}} - {{error.message}}
 
-失败计数：{{downgrade.failureCount}} / {{downgrade.failureThreshold}}
-触发降级：{{downgrade.triggered}}`,
-            AI_PROVIDER_AUTO_DOWNGRADED: `AI Provider 触发失败阈值降级
+自动降级启用：{{downgrade.enabled}}
+本次失败计数：{{downgrade.failureCount}} / {{downgrade.failureThreshold}}
+本次触发自动降级：{{downgrade.triggered}}`,
+            AI_PROVIDER_AUTO_DOWNGRADED: `AI Provider 已触发自动降级
 
 Provider：{{provider.name}} (#{{provider.id}})
 操作：{{request.operation}}
-失败计数：{{downgrade.failureCount}} / {{downgrade.failureThreshold}}
-排序：{{downgrade.oldSortOrder}} -> {{downgrade.newSortOrder}}
-已在末位：{{downgrade.alreadyLowest}}
+触发失败计数：{{downgrade.failureCount}} / {{downgrade.failureThreshold}}
+排序调整：{{downgrade.oldSortOrder}} -> {{downgrade.newSortOrder}}
+触发前已在末位：{{downgrade.alreadyLowest}}
+Provider 总数：{{downgrade.providerCount}}
 
 错误：{{error.type}} - {{error.message}}`,
             DATA_CRAWL_REQUEST_FAILED: `数据爬取请求失败
 
 Provider：{{preview.providerId}}
 Preview：{{preview.previewKey}}
-URL：{{preview.canonicalUrl}}
-客户端：{{request.clientType}}
-状态：{{request.httpStatus}}
+来源 URL：{{preview.sourceUrl}}
+规范 URL：{{preview.canonicalUrl}}
+请求客户端：{{request.clientType}}
+响应状态：{{request.httpStatus}}
 耗时：{{request.durationMs}} ms
 
 错误：{{error.code}} / {{error.type}} - {{error.message}}`

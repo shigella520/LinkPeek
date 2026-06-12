@@ -39,11 +39,15 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 class ShareSummaryImageServiceTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
@@ -55,6 +59,7 @@ class ShareSummaryImageServiceTest {
     void preservesExistingSuccessfulImageWhenRegenerationRedirectsToPrivateAddress() {
         FakeImageMapper imageMapper = new FakeImageMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        NotificationService notificationService = mock(NotificationService.class);
         ShareSummaryImageClient imageClient = new ShareSummaryImageClient(
                 new ImageProviderHttpClient(200, """
                         {"data":[{"url":"http://93.184.216.34/image.png"}]}
@@ -70,7 +75,7 @@ class ShareSummaryImageServiceTest {
                 imageClient,
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
-                null,
+                notificationService,
                 properties,
                 Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
         );
@@ -85,6 +90,30 @@ class ShareSummaryImageServiceTest {
         assertTrue(imageMapper.latestImage().getErrorMessage().contains("Image URL host is not allowed"));
         assertEquals(successful.getOgImageUrl(), summary.ogImageUrl());
         assertEquals(ShareSummaryImageStatus.FAILED.name(), summary.imageStatus());
+        verify(notificationService).publishShareSummaryImageFailed(any(ShareSummaryRunRecord.class), any(ShareSummaryImageRecord.class));
+    }
+
+    @Test
+    void publishesImageFailedNotificationWhenQueueRejectsGeneration() {
+        FakeImageMapper imageMapper = new FakeImageMapper(config());
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        NotificationService notificationService = mock(NotificationService.class);
+        ShareSummaryImageService service = new ShareSummaryImageService(
+                imageMapper,
+                shareSummaryMapper,
+                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new RedirectingImageHttpClient(),
+                new RejectingExecutorService(),
+                notificationService,
+                new LinkPeekProperties(),
+                Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
+        );
+
+        service.generateImage(1, true);
+
+        assertEquals(ShareSummaryImageStatus.FAILED.name(), imageMapper.latestImage().getStatus());
+        assertEquals("IMAGE_QUEUE_FULL", imageMapper.latestImage().getErrorMessage());
+        verify(notificationService).publishShareSummaryImageFailed(any(ShareSummaryRunRecord.class), any(ShareSummaryImageRecord.class));
     }
 
     @Test
@@ -579,7 +608,7 @@ class ShareSummaryImageServiceTest {
         }
     }
 
-    private static final class DirectExecutorService implements ExecutorService {
+    private static class DirectExecutorService implements ExecutorService {
         @Override
         public void shutdown() {
         }
@@ -650,6 +679,13 @@ class ShareSummaryImageServiceTest {
         @Override
         public void execute(Runnable command) {
             command.run();
+        }
+    }
+
+    private static final class RejectingExecutorService extends DirectExecutorService {
+        @Override
+        public void execute(Runnable command) {
+            throw new RejectedExecutionException("queue full");
         }
     }
 }

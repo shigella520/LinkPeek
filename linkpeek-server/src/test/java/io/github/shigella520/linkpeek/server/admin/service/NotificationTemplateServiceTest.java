@@ -104,6 +104,8 @@ class NotificationTemplateServiceTest {
         assertTrue(eventTypes.contains("AI_PROVIDER_REQUEST_FAILED"));
         assertTrue(eventTypes.contains("AI_PROVIDER_AUTO_DOWNGRADED"));
         assertTrue(eventTypes.contains("DATA_CRAWL_REQUEST_FAILED"));
+        assertTrue(eventTypes.contains("SHARE_SUMMARY_IMAGE_FAILED"));
+        assertTrue(eventTypes.contains("SHARE_SUMMARY_AUDIO_FAILED"));
         assertTrue(service.schema(NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS).placeholderNames().contains("event.key"));
     }
 
@@ -140,5 +142,60 @@ class NotificationTemplateServiceTest {
         );
 
         assertEquals("provider.name", exception.placeholders().get(0));
+    }
+
+    @Test
+    void rendersImageFailedPlaceholders() throws Exception {
+        String rendered = service.render(
+                NotificationEventType.SHARE_SUMMARY_IMAGE_FAILED,
+                """
+                        {"run":"{{run.taskName}}","image":{{image.id}},"error":"{{error.message}}"}
+                        """,
+                Map.of(
+                        "run.taskName", "每周分享总结",
+                        "image.id", 99,
+                        "error.message", "IMAGE_QUEUE_FULL"
+                )
+        );
+
+        JsonNode json = objectMapper.readTree(rendered);
+        assertEquals("每周分享总结", json.path("run").asText());
+        assertEquals(99, json.path("image").asInt());
+        assertEquals("IMAGE_QUEUE_FULL", json.path("error").asText());
+    }
+
+    @Test
+    void rendersAudioFailedPlaceholders() throws Exception {
+        String rendered = service.render(
+                NotificationEventType.SHARE_SUMMARY_AUDIO_FAILED,
+                """
+                        {"run":"{{run.taskName}}","audio":{{audio.id}},"voice":"{{audio.voice}}","error":"{{error.message}}"}
+                        """,
+                Map.of(
+                        "run.taskName", "每周分享总结",
+                        "audio.id", 88,
+                        "audio.voice", "zh-CN-YunhaoNeural",
+                        "error.message", "AUDIO_QUEUE_FULL"
+                )
+        );
+
+        JsonNode json = objectMapper.readTree(rendered);
+        assertEquals("每周分享总结", json.path("run").asText());
+        assertEquals(88, json.path("audio").asInt());
+        assertEquals("zh-CN-YunhaoNeural", json.path("voice").asText());
+        assertEquals("AUDIO_QUEUE_FULL", json.path("error").asText());
+    }
+
+    @Test
+    void rejectsImagePlaceholdersForAudioFailedEvent() {
+        NotificationTemplateService.TemplateValidationException exception = assertThrows(
+                NotificationTemplateService.TemplateValidationException.class,
+                () -> service.validateTemplate(
+                        NotificationEventType.SHARE_SUMMARY_AUDIO_FAILED,
+                        "{\"bad\":\"{{image.id}}\"}"
+                )
+        );
+
+        assertEquals("image.id", exception.placeholders().get(0));
     }
 }

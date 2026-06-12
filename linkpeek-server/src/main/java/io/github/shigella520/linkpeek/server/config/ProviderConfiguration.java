@@ -100,7 +100,7 @@ public class ProviderConfiguration {
         AtomicInteger threadIndex = new AtomicInteger();
         return new ThreadPoolExecutor(
                 1,
-                2,
+                1,
                 30L,
                 TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(128),

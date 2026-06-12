@@ -32,6 +32,7 @@ public class AiProviderDowngradeService {
     public static final int MAX_AUTO_DOWNGRADE_FAILURE_THRESHOLD = 100;
 
     private static final int SORT_STEP = 100;
+    private static final int DATABASE_WRITE_ATTEMPTS = 5;
 
     private final ProviderConfigMapper providerConfigMapper;
     private final AiProviderMapper aiProviderMapper;
@@ -93,12 +94,10 @@ public class AiProviderDowngradeService {
         }
     }
 
-    @Transactional
     public synchronized void recordFailure(AiProviderRecord provider, Throwable exception) {
         recordFailure(provider, "UNKNOWN", 0, exception);
     }
 
-    @Transactional
     public synchronized void recordFailure(AiProviderRecord provider, String operation, long durationMs, Throwable exception) {
         if (provider == null || provider.getId() == null) {
             return;
@@ -169,7 +168,7 @@ public class AiProviderDowngradeService {
         int sortOrder = SORT_STEP;
         int newSortOrder = sortOrder;
         for (Long providerId : reorderedIds) {
-            aiProviderMapper.updateProviderSortOrder(providerId, sortOrder, updatedAt);
+            updateProviderSortOrder(providerId, sortOrder, updatedAt);
             if (provider.getId().equals(providerId)) {
                 newSortOrder = sortOrder;
             }
@@ -279,6 +278,46 @@ public class AiProviderDowngradeService {
 
     private String errorMessage(Throwable exception) {
         return exception == null ? "" : exception.getMessage();
+    }
+
+    private void updateProviderSortOrder(Long providerId, int sortOrder, long updatedAt) {
+        RuntimeException lastException = null;
+        for (int attempt = 1; attempt <= DATABASE_WRITE_ATTEMPTS; attempt++) {
+            try {
+                aiProviderMapper.updateProviderSortOrder(providerId, sortOrder, updatedAt);
+                return;
+            } catch (RuntimeException exception) {
+                if (!isDatabaseBusy(exception) || attempt == DATABASE_WRITE_ATTEMPTS) {
+                    throw exception;
+                }
+                lastException = exception;
+                sleepBeforeDatabaseRetry(attempt);
+            }
+        }
+        if (lastException != null) {
+            throw lastException;
+        }
+    }
+
+    private boolean isDatabaseBusy(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (message.contains("SQLITE_BUSY") || message.contains("database is locked"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private void sleepBeforeDatabaseRetry(int attempt) {
+        try {
+            Thread.sleep(25L * attempt);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while retrying provider sort update.", exception);
+        }
     }
 
     private void upsert(String configKey, String configValue, long updatedAt) {

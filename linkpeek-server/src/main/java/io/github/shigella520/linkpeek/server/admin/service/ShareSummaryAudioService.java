@@ -57,6 +57,7 @@ public class ShareSummaryAudioService {
     private final ShareSummaryImageMapper imageMapper;
     private final ShareSummaryAudioClient audioClient;
     private final ExecutorService executor;
+    private final NotificationService notificationService;
     private final LinkPeekProperties properties;
     private final Clock clock;
 
@@ -66,6 +67,7 @@ public class ShareSummaryAudioService {
             ShareSummaryImageMapper imageMapper,
             ShareSummaryAudioClient audioClient,
             @Qualifier("shareSummaryAudioExecutor") ExecutorService executor,
+            NotificationService notificationService,
             LinkPeekProperties properties,
             Clock clock
     ) {
@@ -74,6 +76,7 @@ public class ShareSummaryAudioService {
         this.imageMapper = imageMapper;
         this.audioClient = audioClient;
         this.executor = executor;
+        this.notificationService = notificationService;
         this.properties = properties;
         this.clock = clock;
     }
@@ -207,6 +210,7 @@ public class ShareSummaryAudioService {
                 audio.setErrorMessage("AUDIO_QUEUE_FULL");
                 audio.setFinishedAt(now());
                 audioMapper.updateAudio(audio);
+                publishAudioFailed(audio);
             }
         }
     }
@@ -404,6 +408,19 @@ public class ShareSummaryAudioService {
         audio.setErrorMessage(StringUtils.hasText(message) ? message : "Audio generation failed.");
         audio.setFinishedAt(now());
         audioMapper.updateAudio(audio);
+        publishAudioFailed(audio);
+    }
+
+    private void publishAudioFailed(ShareSummaryAudioRecord audio) {
+        if (notificationService == null) {
+            return;
+        }
+        try {
+            ShareSummaryRunRecord run = shareSummaryMapper.selectRun(audio.getRunId());
+            notificationService.publishShareSummaryAudioFailed(run, audio);
+        } catch (RuntimeException exception) {
+            log.warn("share_summary_audio_failed_notification_failed audioId={} runId={} message={}", audio.getId(), audio.getRunId(), exception.getMessage(), exception);
+        }
     }
 
     private void deleteStoredAudio(ShareSummaryAudioRecord audio) {

@@ -6,6 +6,9 @@ import io.github.shigella520.linkpeek.server.admin.model.NotificationChannelReco
 import io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationEventType;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationTaskRecord;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.persistence.NotificationMapper;
 import io.github.shigella520.linkpeek.server.ai.AiProviderAutoDowngradedEvent;
 import io.github.shigella520.linkpeek.server.ai.AiProviderRequestFailedEvent;
@@ -33,6 +36,38 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class NotificationServiceTest {
+    @Test
+    void publishesShareSummaryImageFailedDelivery() {
+        NotificationMapper mapper = mapperForPublish(
+                NotificationEventType.SHARE_SUMMARY_IMAGE_FAILED,
+                "Image {{run.taskName}} #{{image.id}} {{image.status}} {{error.message}}"
+        );
+        NotificationService service = service(mapper);
+
+        service.publishShareSummaryImageFailed(shareSummaryRun(), failedImage());
+
+        NotificationDeliveryRecord delivery = insertedDelivery(mapper);
+        assertEquals("SHARE_SUMMARY_IMAGE_FAILED", delivery.getEventType());
+        assertEquals("SHARE_SUMMARY_IMAGE_FAILED:99", delivery.getEventKey());
+        assertTrue(delivery.getRequestBody().contains("Image 每周分享总结 #99 FAILED IMAGE_QUEUE_FULL"));
+    }
+
+    @Test
+    void publishesShareSummaryAudioFailedDelivery() {
+        NotificationMapper mapper = mapperForPublish(
+                NotificationEventType.SHARE_SUMMARY_AUDIO_FAILED,
+                "Audio {{run.taskName}} #{{audio.id}} {{audio.voice}} {{audio.status}} {{error.message}}"
+        );
+        NotificationService service = service(mapper);
+
+        service.publishShareSummaryAudioFailed(shareSummaryRun(), failedAudio());
+
+        NotificationDeliveryRecord delivery = insertedDelivery(mapper);
+        assertEquals("SHARE_SUMMARY_AUDIO_FAILED", delivery.getEventType());
+        assertEquals("SHARE_SUMMARY_AUDIO_FAILED:88", delivery.getEventKey());
+        assertTrue(delivery.getRequestBody().contains("Audio 每周分享总结 #88 zh-CN-YunhaoNeural FAILED AUDIO_QUEUE_FULL"));
+    }
+
     @Test
     void publishesAiProviderRequestFailedDelivery() {
         NotificationMapper mapper = mapperForPublish(
@@ -203,7 +238,7 @@ class NotificationServiceTest {
     }
 
     private NotificationService service(NotificationMapper mapper) {
-        return service(mapper, mock(ExecutorService.class));
+        return service(mapper, directExecutor());
     }
 
     private NotificationService service(NotificationMapper mapper, ExecutorService executor) {
@@ -217,6 +252,16 @@ class NotificationServiceTest {
                 new LinkPeekProperties(),
                 Clock.fixed(Instant.parse("2026-06-04T02:00:00Z"), ZoneId.of("Asia/Shanghai"))
         );
+    }
+
+    private ExecutorService directExecutor() {
+        ExecutorService executor = mock(ExecutorService.class);
+        doAnswer(invocation -> {
+            Runnable runnable = invocation.getArgument(0);
+            runnable.run();
+            return null;
+        }).when(executor).execute(any(Runnable.class));
+        return executor;
     }
 
     private NotificationDeliveryRecord failedDelivery() {
@@ -281,5 +326,62 @@ class NotificationServiceTest {
         provider.setModel("gpt-test");
         provider.setRequestTimeoutSeconds(45);
         return provider;
+    }
+
+    private ShareSummaryRunRecord shareSummaryRun() {
+        ShareSummaryRunRecord run = new ShareSummaryRunRecord();
+        run.setId(12L);
+        run.setTaskId(3L);
+        run.setTaskName("每周分享总结");
+        run.setTriggerType("SCHEDULED");
+        run.setPeriodType("WEEKLY");
+        run.setWindowStart(1769400000000L);
+        run.setWindowEnd(1770000000000L);
+        run.setStatus("SUCCESS");
+        run.setLinkCount(42);
+        run.setUniqueLinkCount(30);
+        run.setInputLinkCount(30);
+        run.setAiProviderNames("OpenAI");
+        run.setAiDurationMs(18000);
+        run.setReport("报告内容");
+        return run;
+    }
+
+    private ShareSummaryImageRecord failedImage() {
+        ShareSummaryImageRecord image = new ShareSummaryImageRecord();
+        image.setId(99L);
+        image.setRunId(12L);
+        image.setAttemptNo(1);
+        image.setStatus("FAILED");
+        image.setProviderType("OPENAI_COMPATIBLE");
+        image.setModel("gpt-image-2");
+        image.setImageSize("auto");
+        image.setOutputFormat("png");
+        image.setQuality("auto");
+        image.setOgTitle("LinkPeek - 2026年第22周周报");
+        image.setOgDescription("描述");
+        image.setErrorMessage("IMAGE_QUEUE_FULL");
+        image.setCreatedAt(1770000000000L);
+        image.setFinishedAt(1770000001000L);
+        return image;
+    }
+
+    private ShareSummaryAudioRecord failedAudio() {
+        ShareSummaryAudioRecord audio = new ShareSummaryAudioRecord();
+        audio.setId(88L);
+        audio.setRunId(12L);
+        audio.setAttemptNo(1);
+        audio.setStatus("FAILED");
+        audio.setProviderType("OPENAI_COMPATIBLE");
+        audio.setModel("tts-1");
+        audio.setVoice("zh-CN-YunhaoNeural");
+        audio.setSpeed(1.2);
+        audio.setPitch(0);
+        audio.setStyle("newscast");
+        audio.setOutputFormat("mp3");
+        audio.setErrorMessage("AUDIO_QUEUE_FULL");
+        audio.setCreatedAt(1770000000000L);
+        audio.setFinishedAt(1770000001000L);
+        return audio;
     }
 }

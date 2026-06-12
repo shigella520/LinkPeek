@@ -224,6 +224,7 @@ public class ShareSummaryImageService {
                 image.setErrorMessage("IMAGE_QUEUE_FULL");
                 image.setFinishedAt(now());
                 imageMapper.updateImage(image);
+                publishImageFailed(image);
             }
         }
     }
@@ -533,6 +534,9 @@ public class ShareSummaryImageService {
         image.setErrorMessage(StringUtils.hasText(message) ? message : "Image generation failed.");
         image.setFinishedAt(now());
         imageMapper.updateImage(image);
+        if (status == ShareSummaryImageStatus.FAILED) {
+            publishImageFailed(image);
+        }
     }
 
     private void publishImageSuccess(ShareSummaryImageRecord image) {
@@ -544,6 +548,18 @@ public class ShareSummaryImageService {
             notificationService.publishShareSummaryImageSuccess(run, image);
         } catch (RuntimeException exception) {
             log.warn("share_summary_image_notification_failed imageId={} runId={} message={}", image.getId(), image.getRunId(), exception.getMessage(), exception);
+        }
+    }
+
+    private void publishImageFailed(ShareSummaryImageRecord image) {
+        if (notificationService == null) {
+            return;
+        }
+        try {
+            ShareSummaryRunRecord run = shareSummaryMapper.selectRun(image.getRunId());
+            notificationService.publishShareSummaryImageFailed(run, image);
+        } catch (RuntimeException exception) {
+            log.warn("share_summary_image_failed_notification_failed imageId={} runId={} message={}", image.getId(), image.getRunId(), exception.getMessage(), exception);
         }
     }
 

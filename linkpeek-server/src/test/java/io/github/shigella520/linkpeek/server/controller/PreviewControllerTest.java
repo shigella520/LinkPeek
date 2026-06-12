@@ -14,6 +14,7 @@ import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioClient;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClient;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
+import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
 import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
 import io.github.shigella520.linkpeek.server.ai.AiTitlePrompt;
 import io.github.shigella520.linkpeek.server.service.PreviewService;
@@ -25,6 +26,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,6 +41,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.ConnectException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,6 +56,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -113,6 +117,9 @@ class PreviewControllerTest {
     private ProviderConfigService providerConfigService;
 
     @Autowired
+    private AiProviderDowngradeService aiProviderDowngradeService;
+
+    @Autowired
     private TestPreviewProvider testPreviewProvider;
 
     @Autowired
@@ -128,6 +135,10 @@ class PreviewControllerTest {
     private NotificationService notificationService;
 
     @Autowired
+    @Qualifier("notificationWebhookExecutor")
+    private ExecutorService notificationWebhookExecutor;
+
+    @Autowired
     private StatisticsEventDeduplicator statisticsEventDeduplicator;
 
     @Autowired
@@ -135,6 +146,7 @@ class PreviewControllerTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        waitForNotificationQueueToDrain();
         Files.walk(TEST_CACHE_DIR)
                 .filter(path -> !path.equals(TEST_CACHE_DIR))
                 .sorted(Comparator.reverseOrder())
@@ -822,6 +834,63 @@ class PreviewControllerTest {
                         Integer.class
                 )
         );
+    }
+
+    @Test
+    void aiProviderDowngradeCreatesFailureDeliveryBeforeAutoDowngradeDelivery() throws Exception {
+        long channelId = insertLoopbackNotificationChannel("AI Provider");
+        insertNotificationTask(
+                "AI Provider 失败通知",
+                "AI_PROVIDER_REQUEST_FAILED",
+                "失败 {{provider.name}} {{request.operation}} {{downgrade.failureCount}}/{{downgrade.failureThreshold}} triggered={{downgrade.triggered}}",
+                channelId
+        );
+        insertNotificationTask(
+                "AI Provider 自动降级通知",
+                "AI_PROVIDER_AUTO_DOWNGRADED",
+                "降级 {{provider.name}} {{request.operation}} {{downgrade.failureCount}}/{{downgrade.failureThreshold}} {{downgrade.oldSortOrder}} -> {{downgrade.newSortOrder}}",
+                channelId
+        );
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, request_timeout_seconds, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "primary", 1, 100, "https://primary.example.com/v1", "CHAT_COMPLETIONS", "gpt-primary", "low", 45, "test-key", now
+        );
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, request_timeout_seconds, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "backup", 1, 200, "https://backup.example.com/v1", "CHAT_COMPLETIONS", "gpt-backup", "low", 45, "test-key", now
+        );
+        Long providerId = jdbcTemplate.queryForObject("SELECT id FROM ai_provider WHERE name = ?", Long.class, "primary");
+        AiProviderRecord provider = new AiProviderRecord();
+        provider.setId(providerId);
+        provider.setName("primary");
+        provider.setEnabled(true);
+        provider.setSortOrder(100);
+        provider.setBaseUrl("https://primary.example.com/v1");
+        provider.setApiKind("CHAT_COMPLETIONS");
+        provider.setModel("gpt-primary");
+        provider.setEffort("low");
+        provider.setRequestTimeoutSeconds(45);
+
+        aiProviderDowngradeService.saveConfig(false, 2);
+        aiProviderDowngradeService.saveConfig(true, 2);
+        aiProviderDowngradeService.recordFailure(provider, "AI_TITLE", 123, new ConnectException("connection refused"));
+        aiProviderDowngradeService.recordFailure(provider, "AI_TITLE", 456, new ConnectException("connection refused"));
+
+        waitForNotificationDeliveryCount("AI_PROVIDER_REQUEST_FAILED", 2);
+        waitForNotificationDeliveryCount("AI_PROVIDER_AUTO_DOWNGRADED", 1);
+        List<String> failureBodies = jdbcTemplate.queryForList(
+                "SELECT request_body_snapshot FROM notification_delivery WHERE event_type = 'AI_PROVIDER_REQUEST_FAILED' ORDER BY id ASC",
+                String.class
+        );
+        org.junit.jupiter.api.Assertions.assertEquals(2, failureBodies.size());
+        org.junit.jupiter.api.Assertions.assertTrue(failureBodies.get(0).contains("失败 primary AI_TITLE 1/2 triggered=false"));
+        org.junit.jupiter.api.Assertions.assertTrue(failureBodies.get(1).contains("失败 primary AI_TITLE 2/2 triggered=true"));
+        String downgradedBody = jdbcTemplate.queryForObject(
+                "SELECT request_body_snapshot FROM notification_delivery WHERE event_type = 'AI_PROVIDER_AUTO_DOWNGRADED' ORDER BY id ASC LIMIT 1",
+                String.class
+        );
+        org.junit.jupiter.api.Assertions.assertTrue(downgradedBody.contains("降级 primary AI_TITLE 2/2 100 -> 200"));
     }
 
     @Test
@@ -2129,6 +2198,28 @@ class PreviewControllerTest {
             Thread.sleep(25);
         }
         org.junit.jupiter.api.Assertions.fail("Expected notification delivery for event type: " + eventType);
+    }
+
+    private void waitForNotificationDeliveryCount(String eventType, int expectedCount) throws InterruptedException {
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM notification_delivery WHERE event_type = ?",
+                    Integer.class,
+                    eventType
+            );
+            if (count != null && count >= expectedCount) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected " + expectedCount + " notification deliveries for event type: " + eventType);
+    }
+
+    private void waitForNotificationQueueToDrain() {
+        CompletableFuture<Void> drained = new CompletableFuture<>();
+        notificationWebhookExecutor.execute(() -> drained.complete(null));
+        drained.orTimeout(3, TimeUnit.SECONDS).join();
     }
 
     private long insertLoopbackNotificationChannel(String name) {
