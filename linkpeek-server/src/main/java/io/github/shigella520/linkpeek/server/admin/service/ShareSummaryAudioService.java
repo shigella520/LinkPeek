@@ -54,7 +54,7 @@ public class ShareSummaryAudioService {
     private static final String MIMO_VOICE_DESIGN_MODEL = "mimo-v2.5-tts-voicedesign";
     private static final String MIMO_DEFAULT_MODEL = MIMO_PRESET_MODEL;
     private static final String MIMO_DEFAULT_VOICE = "苏打";
-    private static final String MIMO_DEFAULT_STYLE = "使用预置音色朗读，并按孙悟空角色扮演风格演绎：机灵、有气势、节奏明快，但保持内容清晰可懂。";
+    private static final String MIMO_DEFAULT_STYLE = "孙悟空";
     private static final String MIMO_DEFAULT_OUTPUT_FORMAT = "wav";
     private static final double DEFAULT_SPEED = 1.2;
     private static final int DEFAULT_PITCH = 0;
@@ -603,7 +603,9 @@ public class ShareSummaryAudioService {
 
     private boolean isLegacyMimoSunWukongStyle(String style) {
         return StringUtils.hasText(style)
-                && (style.strip().contains("请用孙悟空式的角色语气朗读") || style.strip().contains("神似孙悟空"));
+                && (style.strip().contains("请用孙悟空式的角色语气朗读")
+                || style.strip().contains("使用预置音色朗读")
+                || style.strip().contains("神似孙悟空"));
     }
 
     private MediaType mediaTypeFor(String outputFormat) {

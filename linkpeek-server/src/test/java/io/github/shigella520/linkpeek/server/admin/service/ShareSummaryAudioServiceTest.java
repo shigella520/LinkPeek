@@ -128,7 +128,7 @@ class ShareSummaryAudioServiceTest {
 
         assertEquals("mimo-v2.5-tts", response.model());
         assertEquals("苏打", response.voice());
-        assertTrue(response.style().contains("孙悟空角色扮演"));
+        assertEquals("孙悟空", response.style());
         assertEquals("wav", response.outputFormat());
     }
 
@@ -152,7 +152,7 @@ class ShareSummaryAudioServiceTest {
 
         assertEquals("mimo-v2.5-tts", response.model());
         assertEquals("苏打", response.voice());
-        assertTrue(response.style().contains("孙悟空角色扮演"));
+        assertEquals("孙悟空", response.style());
         assertEquals("wav", response.outputFormat());
     }
 

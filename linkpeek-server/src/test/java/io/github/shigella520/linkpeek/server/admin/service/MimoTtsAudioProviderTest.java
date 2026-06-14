@@ -56,10 +56,9 @@ class MimoTtsAudioProviderTest {
         assertEquals("/v1/chat/completions", httpClient.lastRequestUri.getPath());
         assertEquals("sk-mimo", httpClient.lastApiKey);
         assertEquals("mimo-v2.5-tts", body.path("model").asText());
-        assertEquals("user", body.path("messages").path(0).path("role").asText());
-        assertTrue(body.path("messages").path(0).path("content").asText().contains("孙悟空"));
-        assertEquals("assistant", body.path("messages").path(1).path("role").asText());
-        assertEquals("(孙悟空)报告正文", body.path("messages").path(1).path("content").asText());
+        assertEquals(1, body.path("messages").size());
+        assertEquals("assistant", body.path("messages").path(0).path("role").asText());
+        assertEquals("(孙悟空 活泼 凌厉 兴奋)报告正文", body.path("messages").path(0).path("content").asText());
         assertEquals("wav", body.path("audio").path("format").asText());
         assertEquals("苏打", body.path("audio").path("voice").asText());
         assertTrue(body.path("audio").path("optimize_text_preview").isMissingNode());
@@ -105,7 +104,7 @@ class MimoTtsAudioProviderTest {
         config.setVoice("苏打");
         config.setSpeed(1.2);
         config.setPitch(0);
-        config.setStyle("请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。");
+        config.setStyle("孙悟空");
         config.setOutputFormat("wav");
         config.setRequestTimeoutSeconds(7);
         return config;

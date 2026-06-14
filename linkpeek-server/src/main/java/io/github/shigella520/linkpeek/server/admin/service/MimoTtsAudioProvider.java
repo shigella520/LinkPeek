@@ -27,7 +27,7 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
     private static final int MAX_BODY_LOG_CHARS = 2_000;
     private static final String PRESET_TTS_MODEL = "mimo-v2.5-tts";
     private static final String VOICE_DESIGN_TTS_MODEL = "mimo-v2.5-tts-voicedesign";
-    private static final String SUN_WUKONG_STYLE = "使用预置音色朗读，并按孙悟空角色扮演风格演绎：机灵、有气势、节奏明快，但保持内容清晰可懂。";
+    private static final String SUN_WUKONG_TAG = "孙悟空 活泼 凌厉 兴奋";
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -166,18 +166,28 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
             return "";
         }
         String value = style.strip();
-        if ("孙悟空".equals(value) || "SUN_WUKONG".equalsIgnoreCase(value) || value.contains("神似孙悟空")) {
-            return SUN_WUKONG_STYLE;
+        if (isSunWukongStyle(value)) {
+            return "";
         }
         return value;
     }
 
     private String assistantContent(String style, String input, boolean voiceDesign) {
         String text = input == null ? "" : input;
-        if (!voiceDesign && isSunWukongStyle(style) && !text.startsWith("(孙悟空)") && !text.startsWith("（孙悟空）")) {
-            return "(孙悟空)" + text;
+        if (!voiceDesign && isSunWukongStyle(style) && !hasLeadingSunWukongTag(text)) {
+            return "(" + SUN_WUKONG_TAG + ")" + text;
         }
         return text;
+    }
+
+    private boolean hasLeadingSunWukongTag(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        String value = text.stripLeading();
+        return value.startsWith("(孙悟空")
+                || value.startsWith("（孙悟空")
+                || value.startsWith("[孙悟空");
     }
 
     private boolean isSunWukongStyle(String style) {

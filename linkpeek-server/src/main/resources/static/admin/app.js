@@ -12,7 +12,7 @@
     ];
     const MIMO_TTS_PRESET_MODEL = "mimo-v2.5-tts";
     const MIMO_TTS_DEFAULT_VOICE = "苏打";
-    const MIMO_TTS_DEFAULT_STYLE = "使用预置音色朗读，并按孙悟空角色扮演风格演绎：机灵、有气势、节奏明快，但保持内容清晰可懂。";
+    const MIMO_TTS_DEFAULT_STYLE = "孙悟空";
     const MIMO_TTS_STYLE_PRESETS = {
         SUN_WUKONG: MIMO_TTS_DEFAULT_STYLE,
         "林黛玉": "请用林黛玉式的角色语气朗读，语气细腻含蓄、柔婉、有古典气质，但保持内容清晰可懂。",
@@ -2719,7 +2719,19 @@
         }
         const value = document.getElementById("share-summary-audio-style").value.trim();
         const preset = Object.entries(MIMO_TTS_STYLE_PRESETS).find((entry) => entry[1] === value);
-        document.getElementById("share-summary-audio-style-preset").value = preset ? preset[0] : (value ? "CUSTOM" : "");
+        document.getElementById("share-summary-audio-style-preset").value = preset ? preset[0] : mimoStylePresetFromText(value);
+    }
+
+    function mimoStylePresetFromText(value) {
+        if (!value) {
+            return "";
+        }
+        if (value.includes("孙悟空")) {
+            return "SUN_WUKONG";
+        }
+        const preset = Object.keys(MIMO_TTS_STYLE_PRESETS)
+                .find((key) => key !== "SUN_WUKONG" && value.includes(key));
+        return preset || "CUSTOM";
     }
 
     async function saveShareSummaryAudioConfig(event) {
@@ -3328,7 +3340,7 @@
             <tr>
                 <td>${escapeHtml(audio.attemptNo || "-")}</td>
                 <td>${renderAudioStatus(audio.status)}</td>
-                <td>${escapeHtml(audio.voice || "-")}<div class="keyline">${escapeHtml(audio.model || "无 model")} · ${escapeHtml(String(audio.speed || "-"))}x · pitch ${escapeHtml(String(audio.pitch ?? "-"))} · ${escapeHtml(audio.style || "-")}</div></td>
+                <td>${escapeHtml(audio.voice || "-")}<div class="keyline">${escapeHtml(audioMetaLine(audio))}</div></td>
                 <td>${escapeHtml(formatDuration(audio.durationMs))}</td>
                 <td>${escapeHtml(formatTimestamp(audio.createdAt))}</td>
                 <td>${escapeHtml(audio.errorMessage || "-")}</td>
@@ -3355,6 +3367,15 @@
                 </table>
             </div>
         `;
+    }
+
+    function audioMetaLine(audio) {
+        const model = audio.model || "无 model";
+        const style = audio.style || "-";
+        if ((audio.providerType || "").toUpperCase() === "MIMO_TTS") {
+            return `${model} · ${style}`;
+        }
+        return `${model} · ${audio.speed || "-"}x · pitch ${audio.pitch ?? "-"} · ${style}`;
     }
 
     function shareSummaryOgShareUrl(run) {
