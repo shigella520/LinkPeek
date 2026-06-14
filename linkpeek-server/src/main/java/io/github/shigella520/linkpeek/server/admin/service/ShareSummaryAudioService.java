@@ -51,10 +51,9 @@ public class ShareSummaryAudioService {
     private static final String MIMO_DEFAULT_BASE_URL = "https://api.xiaomimimo.com";
     private static final String MIMO_DEFAULT_ENDPOINT_PATH = "/v1/chat/completions";
     private static final String MIMO_PRESET_MODEL = "mimo-v2.5-tts";
-    private static final String MIMO_VOICE_DESIGN_MODEL = "mimo-v2.5-tts-voicedesign";
     private static final String MIMO_DEFAULT_MODEL = MIMO_PRESET_MODEL;
     private static final String MIMO_DEFAULT_VOICE = "苏打";
-    private static final String MIMO_DEFAULT_STYLE = "孙悟空";
+    private static final String MIMO_DEFAULT_STYLE = "孙悟空 活泼 凌厉 兴奋";
     private static final String MIMO_DEFAULT_OUTPUT_FORMAT = "wav";
     private static final double DEFAULT_SPEED = 1.2;
     private static final int DEFAULT_PITCH = 0;
@@ -304,13 +303,16 @@ public class ShareSummaryAudioService {
         config.setApiKey(apiKey);
         config.setModel(StringUtils.hasText(request.model()) ? request.model().strip() : defaultModel(providerType));
         config.setVoice(StringUtils.hasText(request.voice()) ? request.voice().strip() : defaultVoice(providerType));
-        config.setSpeed(normalizeSpeed(request.speed()));
-        config.setPitch(request.pitch() == null ? DEFAULT_PITCH : request.pitch());
-        config.setStyle(StringUtils.hasText(request.style()) ? request.style().strip() : defaultStyle(providerType));
+        config.setSpeed(MIMO_PROVIDER_TYPE.equals(providerType) ? DEFAULT_SPEED : normalizeSpeed(request.speed()));
+        config.setPitch(MIMO_PROVIDER_TYPE.equals(providerType) || request.pitch() == null ? DEFAULT_PITCH : request.pitch());
         if (MIMO_PROVIDER_TYPE.equals(providerType)) {
+            config.setStyle(request.style() == null ? defaultStyle(providerType) : request.style().strip());
             normalizeMimoRoleConfig(config);
+            config.setOutputFormat(MIMO_DEFAULT_OUTPUT_FORMAT);
+        } else {
+            config.setStyle(StringUtils.hasText(request.style()) ? request.style().strip() : defaultStyle(providerType));
+            config.setOutputFormat(normalizeOutputFormat(request.outputFormat(), providerType));
         }
-        config.setOutputFormat(normalizeOutputFormat(request.outputFormat(), providerType));
         int timeout = request.requestTimeoutSeconds() == null ? DEFAULT_REQUEST_TIMEOUT_SECONDS : request.requestTimeoutSeconds();
         if (timeout < 1 || timeout > MAX_REQUEST_TIMEOUT_SECONDS) {
             throw new IllegalArgumentException("Audio request timeout must be between 1 and 1800 seconds.");
@@ -363,17 +365,82 @@ public class ShareSummaryAudioService {
         if (config == null || !MIMO_PROVIDER_TYPE.equals(normalizeProviderType(config.getProviderType()))) {
             return;
         }
-        if (isMimoSunWukongVoice(config.getVoice()) || isMimoSunWukongStyle(config.getStyle())) {
-            config.setModel(MIMO_PRESET_MODEL);
+        config.setModel(MIMO_PRESET_MODEL);
+        if (isMimoSunWukongVoice(config.getVoice())) {
             config.setVoice(MIMO_DEFAULT_VOICE);
-            if (!StringUtils.hasText(config.getStyle()) || isLegacyMimoSunWukongStyle(config.getStyle())) {
-                config.setStyle(MIMO_DEFAULT_STYLE);
-            }
-            return;
         }
-        if (!StringUtils.hasText(config.getModel()) || MIMO_VOICE_DESIGN_MODEL.equalsIgnoreCase(config.getModel().strip())) {
-            config.setModel(MIMO_PRESET_MODEL);
+        if (!StringUtils.hasText(config.getVoice())) {
+            config.setVoice(MIMO_DEFAULT_VOICE);
         }
+        String audioTag = config.getStyle() == null ? MIMO_DEFAULT_STYLE : mimoAudioTag(config.getStyle());
+        config.setStyle(audioTag);
+        config.setOutputFormat(MIMO_DEFAULT_OUTPUT_FORMAT);
+        config.setSpeed(DEFAULT_SPEED);
+        config.setPitch(DEFAULT_PITCH);
+    }
+
+    private String mimoAudioTag(String style) {
+        if (!StringUtils.hasText(style)) {
+            return "";
+        }
+        String value = stripMimoTagBrackets(style.strip());
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        if ("SUN_WUKONG".equalsIgnoreCase(value) || value.contains("孙悟空") || value.contains("神似孙悟空")) {
+            return MIMO_DEFAULT_STYLE;
+        }
+        if (isLegacyMimoStyleInstruction(value)) {
+            String mapped = legacyMimoStyleTag(value);
+            return StringUtils.hasText(mapped) ? mapped : "";
+        }
+        return value;
+    }
+
+    private String stripMimoTagBrackets(String value) {
+        String result = value;
+        if ((result.startsWith("(") && result.endsWith(")"))
+                || (result.startsWith("（") && result.endsWith("）"))
+                || (result.startsWith("[") && result.endsWith("]"))) {
+            result = result.substring(1, result.length() - 1).strip();
+        }
+        return result;
+    }
+
+    private boolean isLegacyMimoStyleInstruction(String value) {
+        return value.startsWith("请用")
+                || value.contains("朗读")
+                || value.contains("演绎")
+                || value.contains("角色语气")
+                || value.contains("风格");
+    }
+
+    private String legacyMimoStyleTag(String value) {
+        if (value.contains("林黛玉")) {
+            return "林黛玉";
+        }
+        if (value.contains("粤语")) {
+            return "粤语";
+        }
+        if (value.contains("四川话")) {
+            return "四川话";
+        }
+        if (value.contains("东北话")) {
+            return "东北话";
+        }
+        if (value.contains("唱歌") || value.contains("sing")) {
+            return "唱歌";
+        }
+        if (value.contains("磁性")) {
+            return "磁性";
+        }
+        if (value.contains("严肃")) {
+            return "严肃";
+        }
+        if (value.contains("活泼")) {
+            return "活泼";
+        }
+        return "";
     }
 
     private String audioText(ShareSummaryRunRecord run) {
@@ -595,17 +662,6 @@ public class ShareSummaryAudioService {
         }
         String value = voice.strip();
         return "孙悟空".equals(value) || "SUN_WUKONG".equalsIgnoreCase(value);
-    }
-
-    private boolean isMimoSunWukongStyle(String style) {
-        return StringUtils.hasText(style) && style.strip().contains("孙悟空");
-    }
-
-    private boolean isLegacyMimoSunWukongStyle(String style) {
-        return StringUtils.hasText(style)
-                && (style.strip().contains("请用孙悟空式的角色语气朗读")
-                || style.strip().contains("使用预置音色朗读")
-                || style.strip().contains("神似孙悟空"));
     }
 
     private MediaType mediaTypeFor(String outputFormat) {

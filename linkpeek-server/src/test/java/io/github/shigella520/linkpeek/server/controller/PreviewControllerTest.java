@@ -293,7 +293,7 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("/admin/styles.css?v=20260612-admin-login-polish")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
                 .andExpect(content().string(containsString("brand-text")))
-                .andExpect(content().string(containsString("/admin/app.js?v=20260614-mimo-tts-preset-fix")))
+                .andExpect(content().string(containsString("/admin/app.js?v=20260614-mimo-audio-tags-timeout")))
                 .andExpect(content().string(not(containsString("brand-copy"))))
                 .andExpect(content().string(containsString("provider-config")))
                 .andExpect(content().string(containsString("service-logs")))
@@ -1595,7 +1595,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.endpointPath").value("/v1/chat/completions"))
                 .andExpect(jsonPath("$.model").value("mimo-v2.5-tts"))
                 .andExpect(jsonPath("$.voice").value("苏打"))
-                .andExpect(jsonPath("$.style").value("孙悟空"))
+                .andExpect(jsonPath("$.style").value("孙悟空 活泼 凌厉 兴奋"))
                 .andExpect(jsonPath("$.outputFormat").value("wav"));
 
         long now = System.currentTimeMillis();

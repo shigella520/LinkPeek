@@ -12,17 +12,17 @@
     ];
     const MIMO_TTS_PRESET_MODEL = "mimo-v2.5-tts";
     const MIMO_TTS_DEFAULT_VOICE = "苏打";
-    const MIMO_TTS_DEFAULT_STYLE = "孙悟空";
+    const MIMO_TTS_DEFAULT_STYLE = "孙悟空 活泼 凌厉 兴奋";
     const MIMO_TTS_STYLE_PRESETS = {
         SUN_WUKONG: MIMO_TTS_DEFAULT_STYLE,
-        "林黛玉": "请用林黛玉式的角色语气朗读，语气细腻含蓄、柔婉、有古典气质，但保持内容清晰可懂。",
-        "粤语": "请用粤语风格朗读，语气自然、有生活感，但保持内容清晰可懂。",
-        "四川话": "请用四川话风格朗读，语气亲切、生动，但保持内容清晰可懂。",
-        "东北话": "请用东北话风格朗读，语气爽朗、有感染力，但保持内容清晰可懂。",
-        "磁性": "请用磁性、沉稳、有播客感的语气朗读，节奏自然，保持内容清晰可懂。",
-        "严肃": "请用严肃、清晰、适合新闻播报的语气朗读。",
-        "活泼": "请用活泼、明亮、节奏轻快的语气朗读，但保持内容清晰可懂。",
-        "唱歌": "请用唱歌风格演绎文本，旋律自然，咬字清楚。"
+        "林黛玉": "林黛玉",
+        "粤语": "粤语",
+        "四川话": "四川话",
+        "东北话": "东北话",
+        "磁性": "磁性",
+        "严肃": "严肃",
+        "活泼": "活泼",
+        "唱歌": "唱歌"
     };
 
     const state = {
@@ -2683,7 +2683,7 @@
         document.getElementById("share-summary-audio-style-preset-row").hidden = !mimo;
         document.getElementById("share-summary-audio-speed-row").hidden = mimo;
         document.getElementById("share-summary-audio-pitch-row").hidden = mimo;
-        document.getElementById("share-summary-audio-style-label").textContent = mimo ? "风格指令" : "Style";
+        document.getElementById("share-summary-audio-style-label").textContent = mimo ? "音频标签" : "Style";
         document.getElementById("share-summary-audio-model").placeholder = mimo ? MIMO_TTS_PRESET_MODEL : "可选，例如 tts-1";
         if (!applyDefaults) {
             return;
@@ -2745,8 +2745,8 @@
             apiKey: document.getElementById("share-summary-audio-api-key").value.trim(),
             model: document.getElementById("share-summary-audio-model").value.trim(),
             voice: shareSummaryAudioVoiceValue(),
-            speed: Number(document.getElementById("share-summary-audio-speed").value || 1.2),
-            pitch: Number(document.getElementById("share-summary-audio-pitch").value || 0),
+            speed: isMimoTtsAudioProvider() ? 1.2 : Number(document.getElementById("share-summary-audio-speed").value || 1.2),
+            pitch: isMimoTtsAudioProvider() ? 0 : Number(document.getElementById("share-summary-audio-pitch").value || 0),
             style: document.getElementById("share-summary-audio-style").value.trim(),
             outputFormat: isMimoTtsAudioProvider() ? "wav" : "mp3",
             requestTimeoutSeconds: Number(document.getElementById("share-summary-audio-timeout").value || 120)
@@ -3372,10 +3372,16 @@
     function audioMetaLine(audio) {
         const model = audio.model || "无 model";
         const style = audio.style || "-";
-        if ((audio.providerType || "").toUpperCase() === "MIMO_TTS") {
+        if (isMimoAudioRecord(audio)) {
             return `${model} · ${style}`;
         }
         return `${model} · ${audio.speed || "-"}x · pitch ${audio.pitch ?? "-"} · ${style}`;
+    }
+
+    function isMimoAudioRecord(audio) {
+        const providerType = (audio.providerType || "").toUpperCase();
+        const model = (audio.model || "").toLowerCase();
+        return providerType === "MIMO_TTS" || model.startsWith("mimo-");
     }
 
     function shareSummaryOgShareUrl(run) {
@@ -3448,7 +3454,7 @@ Provider：{{audio.providerType}}
 声音：{{audio.voice}}
 语速：{{audio.speed}}
 音调：{{audio.pitch}}
-风格：{{audio.style}}
+标签：{{audio.style}}
 格式：{{audio.outputFormat}}
 耗时：{{audio.durationMs}} ms
 

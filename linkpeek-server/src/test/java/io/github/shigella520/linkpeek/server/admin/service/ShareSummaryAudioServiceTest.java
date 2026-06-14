@@ -128,7 +128,7 @@ class ShareSummaryAudioServiceTest {
 
         assertEquals("mimo-v2.5-tts", response.model());
         assertEquals("苏打", response.voice());
-        assertEquals("孙悟空", response.style());
+        assertEquals("孙悟空 活泼 凌厉 兴奋", response.style());
         assertEquals("wav", response.outputFormat());
     }
 
@@ -152,7 +152,31 @@ class ShareSummaryAudioServiceTest {
 
         assertEquals("mimo-v2.5-tts", response.model());
         assertEquals("苏打", response.voice());
-        assertEquals("孙悟空", response.style());
+        assertEquals("孙悟空 活泼 凌厉 兴奋", response.style());
+        assertEquals("wav", response.outputFormat());
+    }
+
+    @Test
+    void keepsExplicitEmptyMimoAudioTag() {
+        ShareSummaryAudioConfigRecord config = config();
+        config.setProviderType("MIMO_TTS");
+        config.setBaseUrl("https://api.xiaomimimo.com");
+        config.setEndpointPath("/v1/chat/completions");
+        config.setModel("mimo-v2.5-tts");
+        config.setVoice("苏打");
+        config.setStyle("");
+        config.setOutputFormat("wav");
+        FakeAudioMapper audioMapper = new FakeAudioMapper(config);
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
+        ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
+
+        ShareSummaryAudioService.ConfigResponse response = service.config();
+
+        assertEquals("mimo-v2.5-tts", response.model());
+        assertEquals("苏打", response.voice());
+        assertEquals("", response.style());
         assertEquals("wav", response.outputFormat());
     }
 

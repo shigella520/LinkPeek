@@ -20,6 +20,10 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Component
 public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
@@ -73,9 +77,10 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
         if (StringUtils.hasText(config.getApiKey())) {
             builder.header("api-key", config.getApiKey().strip());
         }
+        HttpRequest request = builder.build();
 
         long startedAt = System.nanoTime();
-        HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+        HttpResponse<byte[]> response = sendWithTotalTimeout(request, timeout, model, voice, endpoint, startedAt);
         long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
         String contentType = response.headers().firstValue("Content-Type").orElse("");
         String responseBody = bodySnippet(response.body());
@@ -110,30 +115,20 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
         String model = effectiveModel(config);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", model);
-        body.put("messages", messages(config, input, isVoiceDesignModel(model)));
+        body.put("messages", messages(config, input));
         Map<String, Object> audio = new LinkedHashMap<>();
         audio.put("format", providerOutputFormat(config.getOutputFormat()));
-        if (isVoiceDesignModel(model)) {
-            audio.put("optimize_text_preview", true);
-        } else {
-            audio.put("voice", effectiveVoice(config));
-        }
+        audio.put("voice", effectiveVoice(config));
         body.put("audio", audio);
         return objectMapper.writeValueAsBytes(body);
     }
 
     private String effectiveModel(ShareSummaryAudioConfigRecord config) {
         String configured = StringUtils.hasText(config.getModel()) ? config.getModel().strip() : PRESET_TTS_MODEL;
-        if (isVoiceDesignModel(configured) && !isSunWukongStyle(config.getStyle())) {
-            return VOICE_DESIGN_TTS_MODEL;
-        }
-        return isSunWukongStyle(config.getStyle()) ? PRESET_TTS_MODEL : configured;
+        return isVoiceDesignModel(configured) ? PRESET_TTS_MODEL : configured;
     }
 
     private String effectiveVoice(ShareSummaryAudioConfigRecord config) {
-        if (isVoiceDesignModel(effectiveModel(config))) {
-            return StringUtils.hasText(config.getVoice()) ? config.getVoice().strip() : "声音设计";
-        }
         return StringUtils.hasText(config.getVoice()) ? config.getVoice().strip() : "mimo_default";
     }
 
@@ -141,63 +136,149 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
         return VOICE_DESIGN_TTS_MODEL.equalsIgnoreCase(model);
     }
 
-    private boolean isVoiceDesignVoice(String voice) {
-        if (!StringUtils.hasText(voice)) {
-            return false;
-        }
-        String value = voice.strip();
-        return "孙悟空".equals(value) || "SUN_WUKONG".equalsIgnoreCase(value);
-    }
-
-    private List<Map<String, String>> messages(ShareSummaryAudioConfigRecord config, String input, boolean voiceDesign) {
-        String style = styleInstruction(config.getStyle());
-        String assistantContent = assistantContent(config.getStyle(), input, voiceDesign);
-        if (StringUtils.hasText(style)) {
-            return List.of(
-                    Map.of("role", "user", "content", style),
-                    Map.of("role", "assistant", "content", assistantContent)
-            );
-        }
+    private List<Map<String, String>> messages(ShareSummaryAudioConfigRecord config, String input) {
+        String assistantContent = assistantContent(config.getStyle(), input);
         return List.of(Map.of("role", "assistant", "content", assistantContent));
     }
 
-    private String styleInstruction(String style) {
-        if (!StringUtils.hasText(style)) {
-            return "";
-        }
-        String value = style.strip();
-        if (isSunWukongStyle(value)) {
-            return "";
-        }
-        return value;
-    }
-
-    private String assistantContent(String style, String input, boolean voiceDesign) {
+    private String assistantContent(String style, String input) {
         String text = input == null ? "" : input;
-        if (!voiceDesign && isSunWukongStyle(style) && !hasLeadingSunWukongTag(text)) {
-            return "(" + SUN_WUKONG_TAG + ")" + text;
+        String audioTag = presetAudioTag(style);
+        if (StringUtils.hasText(audioTag) && !hasLeadingAudioTag(text)) {
+            return "(" + audioTag + ")" + text;
         }
         return text;
     }
 
-    private boolean hasLeadingSunWukongTag(String text) {
+    private boolean hasLeadingAudioTag(String text) {
         if (!StringUtils.hasText(text)) {
             return false;
         }
         String value = text.stripLeading();
-        return value.startsWith("(孙悟空")
-                || value.startsWith("（孙悟空")
-                || value.startsWith("[孙悟空");
+        return value.startsWith("(")
+                || value.startsWith("（")
+                || value.startsWith("[");
     }
 
-    private boolean isSunWukongStyle(String style) {
+    private String presetAudioTag(String style) {
         if (!StringUtils.hasText(style)) {
-            return false;
+            return "";
         }
-        String value = style.strip();
-        return "孙悟空".equals(value)
-                || "SUN_WUKONG".equalsIgnoreCase(value)
-                || value.contains("孙悟空");
+        String value = stripTagBrackets(style.strip());
+        if (!StringUtils.hasText(value)) {
+            return "";
+        }
+        if ("SUN_WUKONG".equalsIgnoreCase(value) || value.contains("孙悟空") || value.contains("神似孙悟空")) {
+            return SUN_WUKONG_TAG;
+        }
+        if (isLegacyInstruction(value)) {
+            String mapped = legacyInstructionTag(value);
+            return StringUtils.hasText(mapped) ? mapped : "";
+        }
+        return value;
+    }
+
+    private String stripTagBrackets(String value) {
+        String result = value;
+        if ((result.startsWith("(") && result.endsWith(")"))
+                || (result.startsWith("（") && result.endsWith("）"))
+                || (result.startsWith("[") && result.endsWith("]"))) {
+            result = result.substring(1, result.length() - 1).strip();
+        }
+        return result;
+    }
+
+    private boolean isLegacyInstruction(String value) {
+        return value.startsWith("请用")
+                || value.contains("朗读")
+                || value.contains("演绎")
+                || value.contains("角色语气")
+                || value.contains("风格");
+    }
+
+    private String legacyInstructionTag(String value) {
+        if (value.contains("林黛玉")) {
+            return "林黛玉";
+        }
+        if (value.contains("粤语")) {
+            return "粤语";
+        }
+        if (value.contains("四川话")) {
+            return "四川话";
+        }
+        if (value.contains("东北话")) {
+            return "东北话";
+        }
+        if (value.contains("唱歌") || value.contains("sing")) {
+            return "唱歌";
+        }
+        if (value.contains("磁性")) {
+            return "磁性";
+        }
+        if (value.contains("严肃")) {
+            return "严肃";
+        }
+        if (value.contains("活泼")) {
+            return "活泼";
+        }
+        return "";
+    }
+
+    private HttpResponse<byte[]> sendWithTotalTimeout(
+            HttpRequest request,
+            Duration timeout,
+            String model,
+            String voice,
+            URI endpoint,
+            long startedAt
+    ) throws IOException, InterruptedException {
+        CompletableFuture<HttpResponse<byte[]>> future;
+        try {
+            future = httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray());
+        } catch (RuntimeException exception) {
+            logRequestFailure(model, voice, endpoint, startedAt, exception);
+            throw new IOException("MiMo TTS provider request failed.", exception);
+        }
+        try {
+            return future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (TimeoutException exception) {
+            future.cancel(true);
+            logRequestFailure(model, voice, endpoint, startedAt, exception, "MiMo TTS provider timed out after " + timeout.toMillis() + " ms");
+            throw new IOException("MiMo TTS provider timed out after " + timeout.toMillis() + " ms.", exception);
+        } catch (ExecutionException exception) {
+            Throwable cause = exception.getCause() == null ? exception : exception.getCause();
+            logRequestFailure(model, voice, endpoint, startedAt, cause);
+            if (cause instanceof IOException ioException) {
+                throw ioException;
+            }
+            if (cause instanceof InterruptedException interruptedException) {
+                Thread.currentThread().interrupt();
+                throw interruptedException;
+            }
+            throw new IOException("MiMo TTS provider request failed.", cause);
+        } catch (InterruptedException exception) {
+            future.cancel(true);
+            logRequestFailure(model, voice, endpoint, startedAt, exception);
+            Thread.currentThread().interrupt();
+            throw exception;
+        }
+    }
+
+    private void logRequestFailure(String model, String voice, URI endpoint, long startedAt, Throwable exception) {
+        logRequestFailure(model, voice, endpoint, startedAt, exception, exception.getMessage());
+    }
+
+    private void logRequestFailure(String model, String voice, URI endpoint, long startedAt, Throwable exception, String message) {
+        long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
+        log.warn(
+                "share_summary_mimo_audio_request_failed model={} voice={} endpoint={} durationMs={} errorType={} message={}",
+                model,
+                voice,
+                endpoint,
+                durationMs,
+                exception.getClass().getSimpleName(),
+                message
+        );
     }
 
     private String providerOutputFormat(String outputFormat) {
