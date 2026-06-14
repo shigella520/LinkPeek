@@ -10,6 +10,18 @@
         {value: "SCHEDULED", label: "定时"},
         {value: "MANUAL", label: "手动"}
     ];
+    const MIMO_TTS_DEFAULT_STYLE = "请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。";
+    const MIMO_TTS_STYLE_PRESETS = {
+        SUN_WUKONG: MIMO_TTS_DEFAULT_STYLE,
+        "林黛玉": "请用林黛玉式的角色语气朗读，语气细腻含蓄、柔婉、有古典气质，但保持内容清晰可懂。",
+        "粤语": "请用粤语风格朗读，语气自然、有生活感，但保持内容清晰可懂。",
+        "四川话": "请用四川话风格朗读，语气亲切、生动，但保持内容清晰可懂。",
+        "东北话": "请用东北话风格朗读，语气爽朗、有感染力，但保持内容清晰可懂。",
+        "磁性": "请用磁性、沉稳、有播客感的语气朗读，节奏自然，保持内容清晰可懂。",
+        "严肃": "请用严肃、清晰、适合新闻播报的语气朗读。",
+        "活泼": "请用活泼、明亮、节奏轻快的语气朗读，但保持内容清晰可懂。",
+        "唱歌": "请用唱歌风格演绎文本，旋律自然，咬字清楚。"
+    };
 
     const state = {
         prompts: [],
@@ -535,6 +547,8 @@
         document.getElementById("share-summary-audio-config-button").addEventListener("click", openShareSummaryAudioConfigModal);
         document.getElementById("share-summary-audio-config-cancel-button").addEventListener("click", closeShareSummaryAudioConfigModal);
         document.getElementById("share-summary-audio-config-form").addEventListener("submit", saveShareSummaryAudioConfig);
+        document.getElementById("share-summary-audio-provider-type").addEventListener("change", () => updateShareSummaryAudioProviderFields(true));
+        document.getElementById("share-summary-audio-style-preset").addEventListener("change", updateShareSummaryAudioStyleFromPreset);
         document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
         document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
         document.getElementById("share-summary-task-period").addEventListener("change", updateShareSummaryPeriodFields);
@@ -2631,19 +2645,79 @@
     }
 
     function fillShareSummaryAudioConfigForm(config) {
+        const providerType = config.providerType || "OPENAI_COMPATIBLE";
         document.getElementById("share-summary-audio-enabled").checked = Boolean(config.enabled);
         document.getElementById("share-summary-audio-auto-generate").checked = Boolean(config.autoGenerate);
-        document.getElementById("share-summary-audio-provider-type").value = config.providerType || "OPENAI_COMPATIBLE";
-        document.getElementById("share-summary-audio-base-url").value = config.baseUrl || "https://tts.wangwangit.com";
-        document.getElementById("share-summary-audio-endpoint-path").value = config.endpointPath || "/v1/audio/speech";
+        document.getElementById("share-summary-audio-provider-type").value = providerType;
+        document.getElementById("share-summary-audio-base-url").value = config.baseUrl || (providerType === "MIMO_TTS" ? "https://api.xiaomimimo.com" : "https://tts.wangwangit.com");
+        document.getElementById("share-summary-audio-endpoint-path").value = config.endpointPath || (providerType === "MIMO_TTS" ? "/v1/chat/completions" : "/v1/audio/speech");
         document.getElementById("share-summary-audio-api-key").value = "";
         document.getElementById("share-summary-audio-api-key").placeholder = config.apiKeyConfigured ? "已配置，留空表示不修改" : "可选";
-        document.getElementById("share-summary-audio-model").value = config.model || "";
-        document.getElementById("share-summary-audio-voice").value = config.voice || "zh-CN-YunhaoNeural";
+        document.getElementById("share-summary-audio-model").value = config.model || (providerType === "MIMO_TTS" ? "mimo-v2.5-tts" : "");
+        document.getElementById("share-summary-audio-voice").value = config.voice || (providerType === "MIMO_TTS" ? "苏打" : "zh-CN-YunhaoNeural");
+        document.getElementById("share-summary-audio-voice-select").value = config.voice || "苏打";
         document.getElementById("share-summary-audio-speed").value = config.speed || 1.2;
         document.getElementById("share-summary-audio-pitch").value = config.pitch ?? 0;
-        document.getElementById("share-summary-audio-style").value = config.style || "newscast";
+        document.getElementById("share-summary-audio-style").value = config.style || (providerType === "MIMO_TTS" ? MIMO_TTS_DEFAULT_STYLE : "newscast");
         document.getElementById("share-summary-audio-timeout").value = config.requestTimeoutSeconds || 120;
+        updateShareSummaryAudioProviderFields(false);
+        updateShareSummaryAudioStylePresetFromValue();
+    }
+
+    function isMimoTtsAudioProvider() {
+        return document.getElementById("share-summary-audio-provider-type").value === "MIMO_TTS";
+    }
+
+    function shareSummaryAudioVoiceValue() {
+        return isMimoTtsAudioProvider()
+                ? document.getElementById("share-summary-audio-voice-select").value.trim()
+                : document.getElementById("share-summary-audio-voice").value.trim();
+    }
+
+    function updateShareSummaryAudioProviderFields(applyDefaults) {
+        const mimo = isMimoTtsAudioProvider();
+        document.getElementById("share-summary-audio-voice-text-row").hidden = mimo;
+        document.getElementById("share-summary-audio-voice-select-row").hidden = !mimo;
+        document.getElementById("share-summary-audio-style-preset-row").hidden = !mimo;
+        document.getElementById("share-summary-audio-speed-row").hidden = mimo;
+        document.getElementById("share-summary-audio-pitch-row").hidden = mimo;
+        document.getElementById("share-summary-audio-style-label").textContent = mimo ? "风格指令" : "Style";
+        document.getElementById("share-summary-audio-model").placeholder = mimo ? "mimo-v2.5-tts" : "可选，例如 tts-1";
+        if (!applyDefaults) {
+            return;
+        }
+        if (mimo) {
+            document.getElementById("share-summary-audio-base-url").value = "https://api.xiaomimimo.com";
+            document.getElementById("share-summary-audio-endpoint-path").value = "/v1/chat/completions";
+            document.getElementById("share-summary-audio-model").value = "mimo-v2.5-tts";
+            document.getElementById("share-summary-audio-voice-select").value = "苏打";
+            document.getElementById("share-summary-audio-style-preset").value = "SUN_WUKONG";
+            document.getElementById("share-summary-audio-style").value = MIMO_TTS_DEFAULT_STYLE;
+        } else {
+            document.getElementById("share-summary-audio-base-url").value = "https://tts.wangwangit.com";
+            document.getElementById("share-summary-audio-endpoint-path").value = "/v1/audio/speech";
+            document.getElementById("share-summary-audio-model").value = "";
+            document.getElementById("share-summary-audio-voice").value = "zh-CN-YunhaoNeural";
+            document.getElementById("share-summary-audio-style").value = "newscast";
+        }
+    }
+
+    function updateShareSummaryAudioStyleFromPreset() {
+        const preset = document.getElementById("share-summary-audio-style-preset").value;
+        if (preset === "CUSTOM") {
+            document.getElementById("share-summary-audio-style").focus();
+            return;
+        }
+        document.getElementById("share-summary-audio-style").value = MIMO_TTS_STYLE_PRESETS[preset] || preset || "";
+    }
+
+    function updateShareSummaryAudioStylePresetFromValue() {
+        if (!isMimoTtsAudioProvider()) {
+            return;
+        }
+        const value = document.getElementById("share-summary-audio-style").value.trim();
+        const preset = Object.entries(MIMO_TTS_STYLE_PRESETS).find((entry) => entry[1] === value);
+        document.getElementById("share-summary-audio-style-preset").value = preset ? preset[0] : (value ? "CUSTOM" : "");
     }
 
     async function saveShareSummaryAudioConfig(event) {
@@ -2656,11 +2730,11 @@
             endpointPath: document.getElementById("share-summary-audio-endpoint-path").value.trim(),
             apiKey: document.getElementById("share-summary-audio-api-key").value.trim(),
             model: document.getElementById("share-summary-audio-model").value.trim(),
-            voice: document.getElementById("share-summary-audio-voice").value.trim(),
+            voice: shareSummaryAudioVoiceValue(),
             speed: Number(document.getElementById("share-summary-audio-speed").value || 1.2),
             pitch: Number(document.getElementById("share-summary-audio-pitch").value || 0),
             style: document.getElementById("share-summary-audio-style").value.trim(),
-            outputFormat: "mp3",
+            outputFormat: isMimoTtsAudioProvider() ? "wav" : "mp3",
             requestTimeoutSeconds: Number(document.getElementById("share-summary-audio-timeout").value || 120)
         };
         const error = validateShareSummaryAudioConfig(payload);
@@ -2701,10 +2775,10 @@
         if (!payload.endpointPath) {
             return "Endpoint Path 不能为空。";
         }
-        if (!Number.isFinite(payload.speed) || payload.speed < 0.25 || payload.speed > 4) {
+        if (payload.providerType !== "MIMO_TTS" && (!Number.isFinite(payload.speed) || payload.speed < 0.25 || payload.speed > 4)) {
             return "Speed 必须是 0.25-4 之间的数字。";
         }
-        if (!Number.isInteger(payload.pitch)) {
+        if (payload.providerType !== "MIMO_TTS" && !Number.isInteger(payload.pitch)) {
             return "Pitch 必须是整数。";
         }
         if (!Number.isInteger(payload.requestTimeoutSeconds) || payload.requestTimeoutSeconds < 1 || payload.requestTimeoutSeconds > 1800) {

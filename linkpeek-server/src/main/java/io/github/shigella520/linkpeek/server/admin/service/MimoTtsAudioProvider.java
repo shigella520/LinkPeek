@@ -1,5 +1,6 @@
 package io.github.shigella520.linkpeek.server.admin.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord;
 import org.slf4j.Logger;
@@ -15,35 +16,37 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @Component
-public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
-    private static final Logger log = LoggerFactory.getLogger(ShareSummaryAudioClient.class);
+public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
+    private static final Logger log = LoggerFactory.getLogger(MimoTtsAudioProvider.class);
     private static final int MAX_BODY_LOG_CHARS = 2_000;
+    private static final String SUN_WUKONG_STYLE = "请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。";
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public ShareSummaryAudioClient(HttpClient httpClient, ObjectMapper objectMapper) {
+    public MimoTtsAudioProvider(HttpClient httpClient, ObjectMapper objectMapper) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
     }
 
     @Override
     public boolean supports(String providerType) {
-        return "OPENAI_COMPATIBLE".equalsIgnoreCase(providerType) || "OPENAI_SPEECH".equalsIgnoreCase(providerType);
+        return "MIMO_TTS".equalsIgnoreCase(providerType);
     }
 
     @Override
-    public AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException {
+    public ShareSummaryAudioClient.AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException {
         URI endpoint = endpointUri(config.getBaseUrl(), config.getEndpointPath());
         byte[] body = requestBody(config, input);
         Duration timeout = Duration.ofSeconds(Math.max(1, config.getRequestTimeoutSeconds()));
         log.info(
-                "share_summary_audio_request_start providerType={} model={} voice={} endpoint={} timeoutMs={} requestBytes={}",
-                config.getProviderType(),
+                "share_summary_mimo_audio_request_start model={} voice={} endpoint={} timeoutMs={} requestBytes={}",
                 config.getModel(),
                 config.getVoice(),
                 endpoint,
@@ -51,8 +54,7 @@ public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
                 body.length
         );
         log.info(
-                "share_summary_audio_request_body providerType={} model={} voice={} endpoint={} requestBody={}",
-                config.getProviderType(),
+                "share_summary_mimo_audio_request_body model={} voice={} endpoint={} requestBody={}",
                 config.getModel(),
                 config.getVoice(),
                 endpoint,
@@ -61,21 +63,21 @@ public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(endpoint)
                 .timeout(timeout)
-                .header("Accept", "audio/mpeg, audio/*")
+                .header("Accept", "application/json")
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofByteArray(body));
         if (StringUtils.hasText(config.getApiKey())) {
-            builder.header("Authorization", "Bearer " + config.getApiKey().strip());
+            builder.header("api-key", config.getApiKey().strip());
         }
 
         long startedAt = System.nanoTime();
         HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
         long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
         String contentType = response.headers().firstValue("Content-Type").orElse("");
+        String responseBody = bodySnippet(response.body());
         if (response.statusCode() >= 400) {
-            String responseBody = bodySnippet(response.body());
             log.warn(
-                    "share_summary_audio_http_error model={} voice={} endpoint={} status={} durationMs={} requestId={} responseBody={}",
+                    "share_summary_mimo_audio_http_error model={} voice={} endpoint={} status={} durationMs={} requestId={} responseBody={}",
                     config.getModel(),
                     config.getVoice(),
                     endpoint,
@@ -84,17 +86,11 @@ public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
                     requestId(response.headers()),
                     responseBody
             );
-            throw new IOException("Audio provider returned HTTP " + response.statusCode() + " body=" + responseBody);
+            throw new IOException("MiMo TTS provider returned HTTP " + response.statusCode() + " body=" + responseBody);
         }
-        byte[] audioBytes = response.body();
-        if (audioBytes == null || audioBytes.length == 0) {
-            throw new IOException("Audio provider returned an empty response.");
-        }
-        if (!isAudioResponse(contentType, audioBytes)) {
-            throw new IOException("Audio provider returned non-audio content type: " + contentType);
-        }
+        byte[] audioBytes = decodeAudioBytes(response.body());
         log.info(
-                "share_summary_audio_request_success model={} voice={} endpoint={} status={} durationMs={} requestId={} responseBytes={}",
+                "share_summary_mimo_audio_request_success model={} voice={} endpoint={} status={} durationMs={} requestId={} responseBytes={}",
                 config.getModel(),
                 config.getVoice(),
                 endpoint,
@@ -103,44 +99,92 @@ public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
                 requestId(response.headers()),
                 audioBytes.length
         );
-        return new AudioGenerationResult(audioBytes, responseSnapshot(response.statusCode(), contentType, audioBytes.length), durationMs);
+        return new ShareSummaryAudioClient.AudioGenerationResult(audioBytes, responseSnapshot(response.statusCode(), contentType, audioBytes.length), durationMs);
     }
 
     private byte[] requestBody(ShareSummaryAudioConfigRecord config, String input) throws IOException {
         Map<String, Object> body = new LinkedHashMap<>();
-        if (StringUtils.hasText(config.getModel())) {
-            body.put("model", config.getModel().strip());
-        }
-        body.put("input", input);
-        body.put("voice", config.getVoice());
-        body.put("speed", config.getSpeed());
-        body.put("pitch", config.getPitch());
-        if (StringUtils.hasText(config.getStyle())) {
-            body.put("style", config.getStyle().strip());
-        }
+        body.put("model", StringUtils.hasText(config.getModel()) ? config.getModel().strip() : "mimo-v2.5-tts");
+        body.put("messages", messages(config, input));
+        Map<String, Object> audio = new LinkedHashMap<>();
+        audio.put("format", providerOutputFormat(config.getOutputFormat()));
+        audio.put("voice", config.getVoice());
+        body.put("audio", audio);
         return objectMapper.writeValueAsBytes(body);
+    }
+
+    private List<Map<String, String>> messages(ShareSummaryAudioConfigRecord config, String input) {
+        String style = styleInstruction(config.getStyle());
+        String assistantContent = assistantContent(config.getStyle(), input);
+        if (StringUtils.hasText(style)) {
+            return List.of(
+                    Map.of("role", "user", "content", style),
+                    Map.of("role", "assistant", "content", assistantContent)
+            );
+        }
+        return List.of(Map.of("role", "assistant", "content", assistantContent));
+    }
+
+    private String styleInstruction(String style) {
+        if (!StringUtils.hasText(style)) {
+            return "";
+        }
+        String value = style.strip();
+        if ("孙悟空".equals(value) || "SUN_WUKONG".equalsIgnoreCase(value)) {
+            return SUN_WUKONG_STYLE;
+        }
+        return value;
+    }
+
+    private String assistantContent(String style, String input) {
+        String text = input == null ? "" : input;
+        if (isSunWukongStyle(style) && !text.startsWith("(孙悟空)") && !text.startsWith("（孙悟空）")) {
+            return "(孙悟空)" + text;
+        }
+        return text;
+    }
+
+    private boolean isSunWukongStyle(String style) {
+        if (!StringUtils.hasText(style)) {
+            return false;
+        }
+        String value = style.strip();
+        return "孙悟空".equals(value)
+                || "SUN_WUKONG".equalsIgnoreCase(value)
+                || value.contains("孙悟空");
+    }
+
+    private String providerOutputFormat(String outputFormat) {
+        String value = StringUtils.hasText(outputFormat) ? outputFormat.strip().toLowerCase() : "wav";
+        return "mp3".equals(value) ? "mp3" : "wav";
+    }
+
+    private byte[] decodeAudioBytes(byte[] responseBody) throws IOException {
+        if (responseBody == null || responseBody.length == 0) {
+            throw new IOException("MiMo TTS provider returned an empty response.");
+        }
+        JsonNode root = objectMapper.readTree(responseBody);
+        JsonNode data = root.path("choices").path(0).path("message").path("audio").path("data");
+        if (!data.isTextual() || !StringUtils.hasText(data.asText())) {
+            throw new IOException("MiMo TTS provider response did not include choices[0].message.audio.data.");
+        }
+        try {
+            return Base64.getDecoder().decode(data.asText());
+        } catch (IllegalArgumentException exception) {
+            throw new IOException("MiMo TTS provider returned invalid base64 audio data.", exception);
+        }
     }
 
     private URI endpointUri(String baseUrl, String endpointPath) {
         if (!StringUtils.hasText(baseUrl)) {
-            throw new IllegalArgumentException("Audio provider base URL must not be blank.");
+            throw new IllegalArgumentException("MiMo TTS base URL must not be blank.");
         }
-        String path = StringUtils.hasText(endpointPath) ? endpointPath.strip() : "/v1/audio/speech";
+        String path = StringUtils.hasText(endpointPath) ? endpointPath.strip() : "/v1/chat/completions";
         if (!path.startsWith("/")) {
             path = "/" + path;
         }
         URI base = URI.create(stripTrailingSlash(baseUrl.strip()));
         return base.resolve(path);
-    }
-
-    private boolean isAudioResponse(String contentType, byte[] bytes) {
-        if (StringUtils.hasText(contentType) && contentType.toLowerCase().startsWith("audio/")) {
-            return true;
-        }
-        return bytes.length >= 3
-                && (bytes[0] & 0xff) == 0x49
-                && (bytes[1] & 0xff) == 0x44
-                && (bytes[2] & 0xff) == 0x33;
     }
 
     private String responseSnapshot(int statusCode, String contentType, int responseBytes) throws IOException {
@@ -190,8 +234,5 @@ public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
             result = result.substring(0, result.length() - 1);
         }
         return result;
-    }
-
-    public record AudioGenerationResult(byte[] audioBytes, String rawResponseSnapshot, long durationMs) {
     }
 }

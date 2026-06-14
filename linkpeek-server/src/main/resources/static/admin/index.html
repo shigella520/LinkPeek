@@ -845,6 +845,7 @@
                 <span>Provider</span>
                 <select id="share-summary-audio-provider-type">
                     <option value="OPENAI_COMPATIBLE">OpenAI Compatible</option>
+                    <option value="MIMO_TTS">Xiaomi MiMo TTS</option>
                 </select>
             </label>
             <label>
@@ -863,20 +864,50 @@
                 <span>Model</span>
                 <input id="share-summary-audio-model" type="text" autocomplete="off" placeholder="可选，例如 tts-1">
             </label>
-            <label>
+            <label id="share-summary-audio-voice-text-row">
                 <span>Voice</span>
                 <input id="share-summary-audio-voice" type="text" value="zh-CN-YunhaoNeural">
             </label>
-            <label>
+            <label id="share-summary-audio-voice-select-row" hidden>
+                <span>Voice</span>
+                <select id="share-summary-audio-voice-select">
+                    <option value="苏打">苏打 / 中文男声</option>
+                    <option value="冰糖">冰糖 / 中文女声</option>
+                    <option value="茉莉">茉莉 / 中文女声</option>
+                    <option value="白桦">白桦 / 中文男声</option>
+                    <option value="mimo_default">MiMo 默认</option>
+                    <option value="Mia">Mia / English Female</option>
+                    <option value="Chloe">Chloe / English Female</option>
+                    <option value="Milo">Milo / English Male</option>
+                    <option value="Dean">Dean / English Male</option>
+                </select>
+            </label>
+            <label id="share-summary-audio-speed-row">
                 <span>Speed</span>
                 <input id="share-summary-audio-speed" type="number" min="0.25" max="4" step="any" value="1.2">
             </label>
-            <label>
+            <label id="share-summary-audio-pitch-row">
                 <span>Pitch</span>
                 <input id="share-summary-audio-pitch" type="number" step="1" value="0">
             </label>
-            <label>
-                <span>Style</span>
+            <label id="share-summary-audio-style-preset-row" hidden>
+                <span>角色风格</span>
+                <select id="share-summary-audio-style-preset">
+                    <option value="SUN_WUKONG">孙悟空</option>
+                    <option value="">无</option>
+                    <option value="林黛玉">林黛玉</option>
+                    <option value="粤语">粤语</option>
+                    <option value="四川话">四川话</option>
+                    <option value="东北话">东北话</option>
+                    <option value="磁性">磁性</option>
+                    <option value="严肃">严肃</option>
+                    <option value="活泼">活泼</option>
+                    <option value="唱歌">唱歌</option>
+                    <option value="CUSTOM">自定义</option>
+                </select>
+            </label>
+            <label id="share-summary-audio-style-row">
+                <span id="share-summary-audio-style-label">Style</span>
                 <input id="share-summary-audio-style" type="text" value="newscast">
             </label>
             <label>

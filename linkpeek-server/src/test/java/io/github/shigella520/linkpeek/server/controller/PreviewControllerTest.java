@@ -1580,6 +1580,84 @@ class PreviewControllerTest {
     }
 
     @Test
+    void adminShareSummaryAudioConfigSupportsMimoTtsWavOutput() throws Exception {
+        Cookie cookie = adminCookie();
+
+        mockMvc.perform(put("/api/admin/share-summary/audio-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"MIMO_TTS","baseUrl":"https://api.xiaomimimo.com","endpointPath":"/v1/chat/completions","apiKey":"sk-mimo","model":"mimo-v2.5-tts","voice":"苏打","speed":1.2,"pitch":0,"style":"请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。","outputFormat":"wav","requestTimeoutSeconds":120}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.providerType").value("MIMO_TTS"))
+                .andExpect(jsonPath("$.baseUrl").value("https://api.xiaomimimo.com"))
+                .andExpect(jsonPath("$.endpointPath").value("/v1/chat/completions"))
+                .andExpect(jsonPath("$.model").value("mimo-v2.5-tts"))
+                .andExpect(jsonPath("$.voice").value("苏打"))
+                .andExpect(jsonPath("$.outputFormat").value("wav"));
+
+        long now = System.currentTimeMillis();
+        testAiTitleClient.generatedText.set("# 分享总结报告正文\n\n- 内容洞察稳定");
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "local", 1, 1, "https://api.openai.com/v1", "RESPONSES", "test-model", "low", "test-key", now
+        );
+        mockMvc.perform(put("/api/admin/share-summary/image-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://api.example.com","endpointPath":"/v1/images/generations","apiKey":"sk-image","model":"image-model","imageSize":"auto","quality":"auto","outputFormat":"png","stylePrompt":"科技感数据报告","requestTimeoutSeconds":300}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/admin/share-summary/tasks")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"小米语音总结","enabled":false,"periodType":"MONTHLY","runTime":"09:00","prompt":"总结","maxLinks":5,"minLinks":1}
+                                """))
+                .andExpect(status().isOk());
+        Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "小米语音总结");
+        ExpectedWindow window = currentMonthlyManualWindow();
+        insertStatsLink("mimo-audio-key", "https://example.com/mimo-audio", "小米语音测试标题", window.start() + 1_000L);
+        insertPreviewCreatedEvent("mimo-audio-key", "https://source.example.com/mimo-audio", window.start() + 1_000L, true, true);
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"));
+        Long runId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_run WHERE task_id = ?", Long.class, taskId);
+
+        mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/image", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk());
+        waitForImageSuccess(runId);
+        String publicToken = jdbcTemplate.queryForObject("SELECT public_token FROM share_summary_image WHERE run_id = ?", String.class, runId);
+
+        testShareSummaryAudioClient.bytes.set(testWavBytes());
+        mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/audio", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk());
+        waitForAudioSuccess(runId);
+
+        org.junit.jupiter.api.Assertions.assertEquals("MIMO_TTS", testShareSummaryAudioClient.config.get().getProviderType());
+        org.junit.jupiter.api.Assertions.assertEquals("wav", testShareSummaryAudioClient.config.get().getOutputFormat());
+        mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.audioUrl").value(containsString("/share-summary/audios/")))
+                .andExpect(jsonPath("$.audioUrl").value(containsString(".wav")));
+
+        mockMvc.perform(get("/share-summary/audios/{publicToken}.wav", publicToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "audio/wav"));
+
+        mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("audio/wav")));
+    }
+
+    @Test
     void notificationAdminApisValidateTemplatesAndDeliverOnShareSummaryImageSuccess() throws Exception {
         Cookie cookie = adminCookie();
 
@@ -2561,6 +2639,11 @@ class PreviewControllerTest {
         }
 
         @Override
+        public boolean supports(String providerType) {
+            return true;
+        }
+
+        @Override
         public AudioGenerationResult generate(io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord config, String input) {
             requests.incrementAndGet();
             this.config.set(config);
@@ -2578,6 +2661,10 @@ class PreviewControllerTest {
 
     private static byte[] testMp3Bytes() {
         return new byte[]{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0, 0};
+    }
+
+    private static byte[] testWavBytes() {
+        return new byte[]{'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E'};
     }
 
     private static String testPngBase64() {

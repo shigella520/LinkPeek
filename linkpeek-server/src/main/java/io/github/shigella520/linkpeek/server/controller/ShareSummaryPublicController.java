@@ -78,9 +78,11 @@ public class ShareSummaryPublicController {
         String description = image.getOgDescription();
         String imageUrl = image.getOgImageUrl();
         String pageUrl = image.getOgPageUrl();
-        String audioUrl = audioUrl(run.getId());
+        ShareSummaryAudioService.AudioSummary audioSummary = audioSummary(run.getId());
+        String audioUrl = audioSummary == null ? "" : audioSummary.audioUrl();
+        String audioMediaType = audioSummary == null || !StringUtils.hasText(audioSummary.audioMediaType()) ? "audio/mpeg" : audioSummary.audioMediaType();
         boolean hasAudio = StringUtils.hasText(audioUrl);
-        String audioMeta = audioMeta(audioUrl);
+        String audioMeta = audioMeta(audioUrl, audioMediaType);
         String report = StringUtils.hasText(run.getReport()) ? run.getReport() : "";
         return """
                 <!doctype html>
@@ -699,7 +701,7 @@ public class ShareSummaryPublicController {
         );
     }
 
-    private String audioMeta(String audioUrl) {
+    private String audioMeta(String audioUrl, String audioMediaType) {
         if (!StringUtils.hasText(audioUrl)) {
             return "";
         }
@@ -707,15 +709,15 @@ public class ShareSummaryPublicController {
         return """
                 <meta property="og:audio" content="%s">
                     <meta property="og:audio:secure_url" content="%s">
-                    <meta property="og:audio:type" content="audio/mpeg">""".formatted(
+                    <meta property="og:audio:type" content="%s">""".formatted(
                 escapedAudioUrl,
-                escapedAudioUrl
+                escapedAudioUrl,
+                escapeAttribute(audioMediaType)
         );
     }
 
-    private String audioUrl(long runId) {
-        ShareSummaryAudioService.AudioSummary summary = shareSummaryAudioService.audioSummary(runId);
-        return summary == null ? "" : summary.audioUrl();
+    private ShareSummaryAudioService.AudioSummary audioSummary(long runId) {
+        return shareSummaryAudioService.audioSummary(runId);
     }
 
     private String escapeHtml(String value) {

@@ -41,6 +41,7 @@ class ShareSummaryAudioServiceTest {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
         ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
                 .thenThrow(new IOException("provider failed"));
         NotificationService notificationService = mock(NotificationService.class);
@@ -63,10 +64,12 @@ class ShareSummaryAudioServiceTest {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
         NotificationService notificationService = mock(NotificationService.class);
+        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
         ShareSummaryAudioService service = service(
                 audioMapper,
                 shareSummaryMapper,
-                mock(ShareSummaryAudioClient.class),
+                audioClient,
                 new RejectingExecutorService(),
                 notificationService
         );
@@ -88,6 +91,7 @@ class ShareSummaryAudioServiceTest {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
         ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
                 .thenThrow(new IOException());
         NotificationService notificationService = mock(NotificationService.class);
@@ -118,6 +122,7 @@ class ShareSummaryAudioServiceTest {
                 shareSummaryMapper,
                 new EmptyImageMapper(),
                 audioClient,
+                null,
                 executor,
                 notificationService,
                 properties,

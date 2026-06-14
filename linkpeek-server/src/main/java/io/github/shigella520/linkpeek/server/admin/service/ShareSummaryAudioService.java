@@ -31,6 +31,7 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.temporal.WeekFields;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
@@ -46,6 +47,13 @@ public class ShareSummaryAudioService {
     private static final String DEFAULT_BASE_URL = "https://tts.wangwangit.com";
     private static final String DEFAULT_ENDPOINT_PATH = "/v1/audio/speech";
     private static final String DEFAULT_VOICE = "zh-CN-YunhaoNeural";
+    private static final String MIMO_PROVIDER_TYPE = "MIMO_TTS";
+    private static final String MIMO_DEFAULT_BASE_URL = "https://api.xiaomimimo.com";
+    private static final String MIMO_DEFAULT_ENDPOINT_PATH = "/v1/chat/completions";
+    private static final String MIMO_DEFAULT_MODEL = "mimo-v2.5-tts";
+    private static final String MIMO_DEFAULT_VOICE = "苏打";
+    private static final String MIMO_DEFAULT_STYLE = "请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。";
+    private static final String MIMO_DEFAULT_OUTPUT_FORMAT = "wav";
     private static final double DEFAULT_SPEED = 1.2;
     private static final int DEFAULT_PITCH = 0;
     private static final String DEFAULT_STYLE = "newscast";
@@ -55,7 +63,7 @@ public class ShareSummaryAudioService {
     private final ShareSummaryAudioMapper audioMapper;
     private final ShareSummaryMapper shareSummaryMapper;
     private final ShareSummaryImageMapper imageMapper;
-    private final ShareSummaryAudioClient audioClient;
+    private final List<ShareSummaryAudioProvider> audioProviders;
     private final ExecutorService executor;
     private final NotificationService notificationService;
     private final LinkPeekProperties properties;
@@ -66,6 +74,7 @@ public class ShareSummaryAudioService {
             ShareSummaryMapper shareSummaryMapper,
             ShareSummaryImageMapper imageMapper,
             ShareSummaryAudioClient audioClient,
+            MimoTtsAudioProvider mimoTtsAudioProvider,
             @Qualifier("shareSummaryAudioExecutor") ExecutorService executor,
             NotificationService notificationService,
             LinkPeekProperties properties,
@@ -74,7 +83,14 @@ public class ShareSummaryAudioService {
         this.audioMapper = audioMapper;
         this.shareSummaryMapper = shareSummaryMapper;
         this.imageMapper = imageMapper;
-        this.audioClient = audioClient;
+        List<ShareSummaryAudioProvider> providers = new ArrayList<>();
+        if (audioClient != null) {
+            providers.add(audioClient);
+        }
+        if (mimoTtsAudioProvider != null) {
+            providers.add(mimoTtsAudioProvider);
+        }
+        this.audioProviders = List.copyOf(providers);
         this.executor = executor;
         this.notificationService = notificationService;
         this.properties = properties;
@@ -119,14 +135,14 @@ public class ShareSummaryAudioService {
         if (!regenerate) {
             ShareSummaryAudioRecord successful = audioMapper.selectLatestSuccessfulAudio(runId);
             if (successful != null) {
-                return AudioResponse.fromRecord(successful, publicAudioUrl(runId));
+                return AudioResponse.fromRecord(successful, publicAudioUrl(successful));
             }
         }
 
         ShareSummaryAudioRecord audio = createPendingAudio(run, config);
         audioMapper.insertAudio(audio);
         submitAudioGeneration(audio.getId());
-        return AudioResponse.fromRecord(audioMapper.selectAudio(audio.getId()), publicAudioUrl(runId));
+        return AudioResponse.fromRecord(audioMapper.selectAudio(audio.getId()), publicAudioUrl(audio));
     }
 
     public void triggerAutoGeneration(ShareSummaryRunRecord run) {
@@ -146,9 +162,8 @@ public class ShareSummaryAudioService {
 
     public List<AudioResponse> audios(long runId) {
         existingRun(runId);
-        String publicAudioUrl = publicAudioUrl(runId);
         return audioMapper.selectAudiosForRun(runId).stream()
-                .map(audio -> AudioResponse.fromRecord(audio, publicAudioUrl))
+                .map(audio -> AudioResponse.fromRecord(audio, publicAudioUrl(audio)))
                 .toList();
     }
 
@@ -164,7 +179,7 @@ public class ShareSummaryAudioService {
 
     public AudioResponse audio(long audioId) {
         ShareSummaryAudioRecord audio = existingAudio(audioId);
-        return AudioResponse.fromRecord(audio, publicAudioUrl(audio.getRunId()));
+        return AudioResponse.fromRecord(audio, publicAudioUrl(audio));
     }
 
     public AudioSummary audioSummary(long runId) {
@@ -174,7 +189,13 @@ public class ShareSummaryAudioService {
             return AudioSummary.empty();
         }
         ShareSummaryAudioRecord display = successful != null ? successful : latest;
-        return AudioSummary.fromRecord(display, latest == null ? null : latest.getStatus(), latest == null ? null : latest.getErrorMessage(), publicAudioUrl(runId));
+        return AudioSummary.fromRecord(
+                display,
+                latest == null ? null : latest.getStatus(),
+                latest == null ? null : latest.getErrorMessage(),
+                publicAudioUrl(display),
+                mediaTypeFor(display.getOutputFormat()).toString()
+        );
     }
 
     public PublicAudio publicAudio(String publicToken, String ext) {
@@ -197,7 +218,7 @@ public class ShareSummaryAudioService {
         if (!path.startsWith(storageRoot()) || !Files.isRegularFile(path)) {
             throw new IllegalArgumentException("Share summary audio file was not found.");
         }
-        return new PublicAudio(new FileSystemResource(path), MediaType.parseMediaType("audio/mpeg"));
+        return new PublicAudio(new FileSystemResource(path), mediaTypeFor(audio.getOutputFormat()));
     }
 
     private void submitAudioGeneration(long audioId) {
@@ -226,14 +247,14 @@ public class ShareSummaryAudioService {
         audioMapper.updateAudio(audio);
         try {
             ShareSummaryAudioConfigRecord config = configRecord();
-            ShareSummaryAudioClient.AudioGenerationResult result = audioClient.generate(config, audio.getTextSnapshot());
+            ShareSummaryAudioClient.AudioGenerationResult result = audioProvider(config).generate(config, audio.getTextSnapshot());
             byte[] bytes = result.audioBytes();
             if (bytes.length > MAX_AUDIO_BYTES) {
                 throw new IOException("Audio response exceeded 20 MB.");
             }
             String storageKey = saveAudioBytes(audio, bytes);
             audio.setStorageKey(storageKey);
-            audio.setAudioUrl(publicAudioUrl(audio.getRunId()));
+            audio.setAudioUrl(publicAudioUrl(audio));
             audio.setRawResponseSnapshot(result.rawResponseSnapshot());
             audio.setDurationMs(result.durationMs());
             audio.setStatus(ShareSummaryAudioStatus.SUCCESS.name());
@@ -270,20 +291,21 @@ public class ShareSummaryAudioService {
         config.setId(1L);
         config.setEnabled(Boolean.TRUE.equals(request.enabled()));
         config.setAutoGenerate(Boolean.TRUE.equals(request.autoGenerate()));
-        config.setProviderType(normalizeProviderType(request.providerType()));
-        config.setBaseUrl(StringUtils.hasText(request.baseUrl()) ? request.baseUrl().strip() : DEFAULT_BASE_URL);
-        config.setEndpointPath(normalizeEndpointPath(request.endpointPath()));
+        String providerType = normalizeProviderType(request.providerType());
+        config.setProviderType(providerType);
+        config.setBaseUrl(StringUtils.hasText(request.baseUrl()) ? request.baseUrl().strip() : defaultBaseUrl(providerType));
+        config.setEndpointPath(normalizeEndpointPath(request.endpointPath(), providerType));
         String apiKey = optionalStrip(request.apiKey());
         if (!StringUtils.hasText(apiKey) && existing != null && StringUtils.hasText(existing.getApiKey())) {
             apiKey = existing.getApiKey();
         }
         config.setApiKey(apiKey);
-        config.setModel(optionalStrip(request.model()));
-        config.setVoice(StringUtils.hasText(request.voice()) ? request.voice().strip() : DEFAULT_VOICE);
+        config.setModel(StringUtils.hasText(request.model()) ? request.model().strip() : defaultModel(providerType));
+        config.setVoice(StringUtils.hasText(request.voice()) ? request.voice().strip() : defaultVoice(providerType));
         config.setSpeed(normalizeSpeed(request.speed()));
         config.setPitch(request.pitch() == null ? DEFAULT_PITCH : request.pitch());
-        config.setStyle(StringUtils.hasText(request.style()) ? request.style().strip() : DEFAULT_STYLE);
-        config.setOutputFormat(normalizeOutputFormat(request.outputFormat()));
+        config.setStyle(StringUtils.hasText(request.style()) ? request.style().strip() : defaultStyle(providerType));
+        config.setOutputFormat(normalizeOutputFormat(request.outputFormat(), providerType));
         int timeout = request.requestTimeoutSeconds() == null ? DEFAULT_REQUEST_TIMEOUT_SECONDS : request.requestTimeoutSeconds();
         if (timeout < 1 || timeout > MAX_REQUEST_TIMEOUT_SECONDS) {
             throw new IllegalArgumentException("Audio request timeout must be between 1 and 1800 seconds.");
@@ -296,8 +318,8 @@ public class ShareSummaryAudioService {
         ShareSummaryAudioConfigRecord config = audioMapper.selectConfig();
         if (config != null) {
             config.setProviderType(normalizeProviderType(config.getProviderType()));
-            config.setEndpointPath(normalizeEndpointPath(config.getEndpointPath()));
-            config.setOutputFormat(normalizeOutputFormat(config.getOutputFormat()));
+            config.setEndpointPath(normalizeEndpointPath(config.getEndpointPath(), config.getProviderType()));
+            config.setOutputFormat(normalizeOutputFormat(config.getOutputFormat(), config.getProviderType()));
             return config;
         }
         ShareSummaryAudioConfigRecord defaults = new ShareSummaryAudioConfigRecord();
@@ -473,12 +495,15 @@ public class ShareSummaryAudioService {
         return properties.getCacheDir().toAbsolutePath().normalize();
     }
 
-    private String publicAudioUrl(long runId) {
-        ShareSummaryImageRecord image = imageMapper.selectLatestSuccessfulImage(runId);
+    private String publicAudioUrl(ShareSummaryAudioRecord audio) {
+        if (audio == null) {
+            return null;
+        }
+        ShareSummaryImageRecord image = imageMapper.selectLatestSuccessfulImage(audio.getRunId());
         if (image == null || !StringUtils.hasText(image.getPublicToken())) {
             return null;
         }
-        return baseUrl() + "/share-summary/audios/" + image.getPublicToken() + ".mp3";
+        return baseUrl() + "/share-summary/audios/" + image.getPublicToken() + "." + normalizeOutputFormat(audio.getOutputFormat(), audio.getProviderType());
     }
 
     private String baseUrl() {
@@ -499,9 +524,9 @@ public class ShareSummaryAudioService {
         return providerType.strip().toUpperCase(Locale.ROOT);
     }
 
-    private String normalizeEndpointPath(String endpointPath) {
+    private String normalizeEndpointPath(String endpointPath, String providerType) {
         if (!StringUtils.hasText(endpointPath)) {
-            return DEFAULT_ENDPOINT_PATH;
+            return MIMO_PROVIDER_TYPE.equals(normalizeProviderType(providerType)) ? MIMO_DEFAULT_ENDPOINT_PATH : DEFAULT_ENDPOINT_PATH;
         }
         String path = endpointPath.strip();
         return path.startsWith("/") ? path : "/" + path;
@@ -515,12 +540,42 @@ public class ShareSummaryAudioService {
         return value;
     }
 
-    private String normalizeOutputFormat(String outputFormat) {
-        String value = StringUtils.hasText(outputFormat) ? outputFormat.strip().toLowerCase(Locale.ROOT) : DEFAULT_OUTPUT_FORMAT;
-        if (!DEFAULT_OUTPUT_FORMAT.equals(value)) {
-            throw new IllegalArgumentException("Audio output format must be mp3.");
+    private String normalizeOutputFormat(String outputFormat, String providerType) {
+        String value = StringUtils.hasText(outputFormat)
+                ? outputFormat.strip().toLowerCase(Locale.ROOT)
+                : (MIMO_PROVIDER_TYPE.equals(normalizeProviderType(providerType)) ? MIMO_DEFAULT_OUTPUT_FORMAT : DEFAULT_OUTPUT_FORMAT);
+        if (!"mp3".equals(value) && !"wav".equals(value)) {
+            throw new IllegalArgumentException("Audio output format must be mp3 or wav.");
         }
         return value;
+    }
+
+    private String defaultBaseUrl(String providerType) {
+        return MIMO_PROVIDER_TYPE.equals(normalizeProviderType(providerType)) ? MIMO_DEFAULT_BASE_URL : DEFAULT_BASE_URL;
+    }
+
+    private String defaultModel(String providerType) {
+        return MIMO_PROVIDER_TYPE.equals(normalizeProviderType(providerType)) ? MIMO_DEFAULT_MODEL : "";
+    }
+
+    private String defaultVoice(String providerType) {
+        return MIMO_PROVIDER_TYPE.equals(normalizeProviderType(providerType)) ? MIMO_DEFAULT_VOICE : DEFAULT_VOICE;
+    }
+
+    private String defaultStyle(String providerType) {
+        return MIMO_PROVIDER_TYPE.equals(normalizeProviderType(providerType)) ? MIMO_DEFAULT_STYLE : DEFAULT_STYLE;
+    }
+
+    private MediaType mediaTypeFor(String outputFormat) {
+        return "wav".equalsIgnoreCase(outputFormat) ? MediaType.parseMediaType("audio/wav") : MediaType.parseMediaType("audio/mpeg");
+    }
+
+    private ShareSummaryAudioProvider audioProvider(ShareSummaryAudioConfigRecord config) {
+        String providerType = normalizeProviderType(config.getProviderType());
+        return audioProviders.stream()
+                .filter(provider -> provider.supports(providerType))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Unsupported audio provider type: " + providerType));
     }
 
     private String optionalStrip(String value) {
@@ -656,17 +711,19 @@ public class ShareSummaryAudioService {
     public record AudioSummary(
             String audioStatus,
             String audioUrl,
-            String audioErrorMessage
+            String audioErrorMessage,
+            String audioMediaType
     ) {
         static AudioSummary empty() {
-            return new AudioSummary(ShareSummaryAudioStatus.NOT_GENERATED.name(), null, null);
+            return new AudioSummary(ShareSummaryAudioStatus.NOT_GENERATED.name(), null, null, null);
         }
 
-        static AudioSummary fromRecord(ShareSummaryAudioRecord record, String latestStatus, String latestError, String audioUrl) {
+        static AudioSummary fromRecord(ShareSummaryAudioRecord record, String latestStatus, String latestError, String audioUrl, String audioMediaType) {
             return new AudioSummary(
                     StringUtils.hasText(latestStatus) ? latestStatus : record.getStatus(),
                     ShareSummaryAudioStatus.SUCCESS.name().equals(record.getStatus()) ? audioUrl : null,
-                    latestError
+                    latestError,
+                    ShareSummaryAudioStatus.SUCCESS.name().equals(record.getStatus()) ? audioMediaType : null
             );
         }
     }
