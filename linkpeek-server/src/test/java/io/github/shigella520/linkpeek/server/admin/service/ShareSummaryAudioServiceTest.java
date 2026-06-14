@@ -109,7 +109,7 @@ class ShareSummaryAudioServiceTest {
     }
 
     @Test
-    void upgradesLegacyMimoSunWukongConfigToVoiceDesignModel() {
+    void keepsMimoSunWukongOnPresetModel() {
         ShareSummaryAudioConfigRecord config = config();
         config.setProviderType("MIMO_TTS");
         config.setBaseUrl("https://api.xiaomimimo.com");
@@ -126,9 +126,33 @@ class ShareSummaryAudioServiceTest {
 
         ShareSummaryAudioService.ConfigResponse response = service.config();
 
-        assertEquals("mimo-v2.5-tts-voicedesign", response.model());
-        assertEquals("孙悟空", response.voice());
-        assertTrue(response.style().contains("神似孙悟空"));
+        assertEquals("mimo-v2.5-tts", response.model());
+        assertEquals("苏打", response.voice());
+        assertTrue(response.style().contains("孙悟空角色扮演"));
+        assertEquals("wav", response.outputFormat());
+    }
+
+    @Test
+    void downgradesFailedMimoVoiceDesignSunWukongConfigToPresetModel() {
+        ShareSummaryAudioConfigRecord config = config();
+        config.setProviderType("MIMO_TTS");
+        config.setBaseUrl("https://api.xiaomimimo.com");
+        config.setEndpointPath("/v1/chat/completions");
+        config.setModel("mimo-v2.5-tts-voicedesign");
+        config.setVoice("孙悟空");
+        config.setStyle("请设计并使用一个神似孙悟空的中文男声音色：声音机灵、有英雄气、节奏明快，带一点齐天大圣的戏剧张力；朗读时保持内容清晰可懂，不要改写原文，不要额外添加台词或口头禅。");
+        config.setOutputFormat("wav");
+        FakeAudioMapper audioMapper = new FakeAudioMapper(config);
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
+        ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
+
+        ShareSummaryAudioService.ConfigResponse response = service.config();
+
+        assertEquals("mimo-v2.5-tts", response.model());
+        assertEquals("苏打", response.voice());
+        assertTrue(response.style().contains("孙悟空角色扮演"));
         assertEquals("wav", response.outputFormat());
     }
 

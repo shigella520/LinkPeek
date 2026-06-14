@@ -27,7 +27,7 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
     private static final int MAX_BODY_LOG_CHARS = 2_000;
     private static final String PRESET_TTS_MODEL = "mimo-v2.5-tts";
     private static final String VOICE_DESIGN_TTS_MODEL = "mimo-v2.5-tts-voicedesign";
-    private static final String SUN_WUKONG_STYLE = "请设计并使用一个神似孙悟空的中文男声音色：声音机灵、有英雄气、节奏明快，带一点齐天大圣的戏剧张力；朗读时保持内容清晰可懂，不要改写原文，不要额外添加台词或口头禅。";
+    private static final String SUN_WUKONG_STYLE = "使用预置音色朗读，并按孙悟空角色扮演风格演绎：机灵、有气势、节奏明快，但保持内容清晰可懂。";
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -124,17 +124,14 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
 
     private String effectiveModel(ShareSummaryAudioConfigRecord config) {
         String configured = StringUtils.hasText(config.getModel()) ? config.getModel().strip() : PRESET_TTS_MODEL;
-        if (isVoiceDesignModel(configured) || isVoiceDesignVoice(config.getVoice()) || isSunWukongStyle(config.getStyle())) {
+        if (isVoiceDesignModel(configured) && !isSunWukongStyle(config.getStyle())) {
             return VOICE_DESIGN_TTS_MODEL;
         }
-        return configured;
+        return isSunWukongStyle(config.getStyle()) ? PRESET_TTS_MODEL : configured;
     }
 
     private String effectiveVoice(ShareSummaryAudioConfigRecord config) {
         if (isVoiceDesignModel(effectiveModel(config))) {
-            if (isSunWukongStyle(config.getStyle()) || isVoiceDesignVoice(config.getVoice())) {
-                return "孙悟空";
-            }
             return StringUtils.hasText(config.getVoice()) ? config.getVoice().strip() : "声音设计";
         }
         return StringUtils.hasText(config.getVoice()) ? config.getVoice().strip() : "mimo_default";
@@ -169,7 +166,7 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
             return "";
         }
         String value = style.strip();
-        if ("孙悟空".equals(value) || "SUN_WUKONG".equalsIgnoreCase(value)) {
+        if ("孙悟空".equals(value) || "SUN_WUKONG".equalsIgnoreCase(value) || value.contains("神似孙悟空")) {
             return SUN_WUKONG_STYLE;
         }
         return value;

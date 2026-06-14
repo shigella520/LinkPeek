@@ -52,9 +52,9 @@ public class ShareSummaryAudioService {
     private static final String MIMO_DEFAULT_ENDPOINT_PATH = "/v1/chat/completions";
     private static final String MIMO_PRESET_MODEL = "mimo-v2.5-tts";
     private static final String MIMO_VOICE_DESIGN_MODEL = "mimo-v2.5-tts-voicedesign";
-    private static final String MIMO_DEFAULT_MODEL = MIMO_VOICE_DESIGN_MODEL;
-    private static final String MIMO_DEFAULT_VOICE = "孙悟空";
-    private static final String MIMO_DEFAULT_STYLE = "请设计并使用一个神似孙悟空的中文男声音色：声音机灵、有英雄气、节奏明快，带一点齐天大圣的戏剧张力；朗读时保持内容清晰可懂，不要改写原文，不要额外添加台词或口头禅。";
+    private static final String MIMO_DEFAULT_MODEL = MIMO_PRESET_MODEL;
+    private static final String MIMO_DEFAULT_VOICE = "苏打";
+    private static final String MIMO_DEFAULT_STYLE = "使用预置音色朗读，并按孙悟空角色扮演风格演绎：机灵、有气势、节奏明快，但保持内容清晰可懂。";
     private static final String MIMO_DEFAULT_OUTPUT_FORMAT = "wav";
     private static final double DEFAULT_SPEED = 1.2;
     private static final int DEFAULT_PITCH = 0;
@@ -364,7 +364,7 @@ public class ShareSummaryAudioService {
             return;
         }
         if (isMimoSunWukongVoice(config.getVoice()) || isMimoSunWukongStyle(config.getStyle())) {
-            config.setModel(MIMO_VOICE_DESIGN_MODEL);
+            config.setModel(MIMO_PRESET_MODEL);
             config.setVoice(MIMO_DEFAULT_VOICE);
             if (!StringUtils.hasText(config.getStyle()) || isLegacyMimoSunWukongStyle(config.getStyle())) {
                 config.setStyle(MIMO_DEFAULT_STYLE);
@@ -602,7 +602,8 @@ public class ShareSummaryAudioService {
     }
 
     private boolean isLegacyMimoSunWukongStyle(String style) {
-        return StringUtils.hasText(style) && style.strip().contains("请用孙悟空式的角色语气朗读");
+        return StringUtils.hasText(style)
+                && (style.strip().contains("请用孙悟空式的角色语气朗读") || style.strip().contains("神似孙悟空"));
     }
 
     private MediaType mediaTypeFor(String outputFormat) {

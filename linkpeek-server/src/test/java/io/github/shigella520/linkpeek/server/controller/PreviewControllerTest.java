@@ -1593,9 +1593,9 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.providerType").value("MIMO_TTS"))
                 .andExpect(jsonPath("$.baseUrl").value("https://api.xiaomimimo.com"))
                 .andExpect(jsonPath("$.endpointPath").value("/v1/chat/completions"))
-                .andExpect(jsonPath("$.model").value("mimo-v2.5-tts-voicedesign"))
-                .andExpect(jsonPath("$.voice").value("孙悟空"))
-                .andExpect(jsonPath("$.style").value(containsString("神似孙悟空")))
+                .andExpect(jsonPath("$.model").value("mimo-v2.5-tts"))
+                .andExpect(jsonPath("$.voice").value("苏打"))
+                .andExpect(jsonPath("$.style").value(containsString("孙悟空角色扮演")))
                 .andExpect(jsonPath("$.outputFormat").value("wav"));
 
         long now = System.currentTimeMillis();
