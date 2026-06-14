@@ -108,6 +108,30 @@ class ShareSummaryAudioServiceTest {
         );
     }
 
+    @Test
+    void upgradesLegacyMimoSunWukongConfigToVoiceDesignModel() {
+        ShareSummaryAudioConfigRecord config = config();
+        config.setProviderType("MIMO_TTS");
+        config.setBaseUrl("https://api.xiaomimimo.com");
+        config.setEndpointPath("/v1/chat/completions");
+        config.setModel("mimo-v2.5-tts");
+        config.setVoice("苏打");
+        config.setStyle("请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。");
+        config.setOutputFormat("wav");
+        FakeAudioMapper audioMapper = new FakeAudioMapper(config);
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
+        ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
+
+        ShareSummaryAudioService.ConfigResponse response = service.config();
+
+        assertEquals("mimo-v2.5-tts-voicedesign", response.model());
+        assertEquals("孙悟空", response.voice());
+        assertTrue(response.style().contains("神似孙悟空"));
+        assertEquals("wav", response.outputFormat());
+    }
+
     private ShareSummaryAudioService service(
             FakeAudioMapper audioMapper,
             FakeShareSummaryMapper shareSummaryMapper,

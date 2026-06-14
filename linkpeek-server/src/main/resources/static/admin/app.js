@@ -10,7 +10,10 @@
         {value: "SCHEDULED", label: "定时"},
         {value: "MANUAL", label: "手动"}
     ];
-    const MIMO_TTS_DEFAULT_STYLE = "请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。";
+    const MIMO_TTS_PRESET_MODEL = "mimo-v2.5-tts";
+    const MIMO_TTS_VOICE_DESIGN_MODEL = "mimo-v2.5-tts-voicedesign";
+    const MIMO_TTS_DEFAULT_VOICE = "孙悟空";
+    const MIMO_TTS_DEFAULT_STYLE = "请设计并使用一个神似孙悟空的中文男声音色：声音机灵、有英雄气、节奏明快，带一点齐天大圣的戏剧张力；朗读时保持内容清晰可懂，不要改写原文，不要额外添加台词或口头禅。";
     const MIMO_TTS_STYLE_PRESETS = {
         SUN_WUKONG: MIMO_TTS_DEFAULT_STYLE,
         "林黛玉": "请用林黛玉式的角色语气朗读，语气细腻含蓄、柔婉、有古典气质，但保持内容清晰可懂。",
@@ -548,6 +551,7 @@
         document.getElementById("share-summary-audio-config-cancel-button").addEventListener("click", closeShareSummaryAudioConfigModal);
         document.getElementById("share-summary-audio-config-form").addEventListener("submit", saveShareSummaryAudioConfig);
         document.getElementById("share-summary-audio-provider-type").addEventListener("change", () => updateShareSummaryAudioProviderFields(true));
+        document.getElementById("share-summary-audio-voice-select").addEventListener("change", updateShareSummaryAudioMimoVoiceModel);
         document.getElementById("share-summary-audio-style-preset").addEventListener("change", updateShareSummaryAudioStyleFromPreset);
         document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
         document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
@@ -2653,9 +2657,10 @@
         document.getElementById("share-summary-audio-endpoint-path").value = config.endpointPath || (providerType === "MIMO_TTS" ? "/v1/chat/completions" : "/v1/audio/speech");
         document.getElementById("share-summary-audio-api-key").value = "";
         document.getElementById("share-summary-audio-api-key").placeholder = config.apiKeyConfigured ? "已配置，留空表示不修改" : "可选";
-        document.getElementById("share-summary-audio-model").value = config.model || (providerType === "MIMO_TTS" ? "mimo-v2.5-tts" : "");
-        document.getElementById("share-summary-audio-voice").value = config.voice || (providerType === "MIMO_TTS" ? "苏打" : "zh-CN-YunhaoNeural");
-        document.getElementById("share-summary-audio-voice-select").value = config.voice || "苏打";
+        const mimoVoice = normalizeMimoAudioVoice(config.voice, config.style);
+        document.getElementById("share-summary-audio-model").value = config.model || (providerType === "MIMO_TTS" ? MIMO_TTS_VOICE_DESIGN_MODEL : "");
+        document.getElementById("share-summary-audio-voice").value = config.voice || (providerType === "MIMO_TTS" ? MIMO_TTS_DEFAULT_VOICE : "zh-CN-YunhaoNeural");
+        document.getElementById("share-summary-audio-voice-select").value = providerType === "MIMO_TTS" ? mimoVoice : (config.voice || "苏打");
         document.getElementById("share-summary-audio-speed").value = config.speed || 1.2;
         document.getElementById("share-summary-audio-pitch").value = config.pitch ?? 0;
         document.getElementById("share-summary-audio-style").value = config.style || (providerType === "MIMO_TTS" ? MIMO_TTS_DEFAULT_STYLE : "newscast");
@@ -2681,16 +2686,16 @@
         document.getElementById("share-summary-audio-style-preset-row").hidden = !mimo;
         document.getElementById("share-summary-audio-speed-row").hidden = mimo;
         document.getElementById("share-summary-audio-pitch-row").hidden = mimo;
-        document.getElementById("share-summary-audio-style-label").textContent = mimo ? "风格指令" : "Style";
-        document.getElementById("share-summary-audio-model").placeholder = mimo ? "mimo-v2.5-tts" : "可选，例如 tts-1";
+        document.getElementById("share-summary-audio-style-label").textContent = mimo ? "音色/风格描述" : "Style";
+        document.getElementById("share-summary-audio-model").placeholder = mimo ? MIMO_TTS_VOICE_DESIGN_MODEL : "可选，例如 tts-1";
         if (!applyDefaults) {
             return;
         }
         if (mimo) {
             document.getElementById("share-summary-audio-base-url").value = "https://api.xiaomimimo.com";
             document.getElementById("share-summary-audio-endpoint-path").value = "/v1/chat/completions";
-            document.getElementById("share-summary-audio-model").value = "mimo-v2.5-tts";
-            document.getElementById("share-summary-audio-voice-select").value = "苏打";
+            document.getElementById("share-summary-audio-model").value = MIMO_TTS_VOICE_DESIGN_MODEL;
+            document.getElementById("share-summary-audio-voice-select").value = MIMO_TTS_DEFAULT_VOICE;
             document.getElementById("share-summary-audio-style-preset").value = "SUN_WUKONG";
             document.getElementById("share-summary-audio-style").value = MIMO_TTS_DEFAULT_STYLE;
         } else {
@@ -2699,6 +2704,32 @@
             document.getElementById("share-summary-audio-model").value = "";
             document.getElementById("share-summary-audio-voice").value = "zh-CN-YunhaoNeural";
             document.getElementById("share-summary-audio-style").value = "newscast";
+        }
+    }
+
+    function normalizeMimoAudioVoice(voice, style) {
+        const value = (voice || "").trim();
+        if (value === MIMO_TTS_DEFAULT_VOICE || value.toUpperCase() === "SUN_WUKONG") {
+            return MIMO_TTS_DEFAULT_VOICE;
+        }
+        if ((style || "").includes("孙悟空")) {
+            return MIMO_TTS_DEFAULT_VOICE;
+        }
+        return value || MIMO_TTS_DEFAULT_VOICE;
+    }
+
+    function updateShareSummaryAudioMimoVoiceModel() {
+        if (!isMimoTtsAudioProvider()) {
+            return;
+        }
+        const voice = document.getElementById("share-summary-audio-voice-select").value.trim();
+        const modelInput = document.getElementById("share-summary-audio-model");
+        if (voice === MIMO_TTS_DEFAULT_VOICE) {
+            modelInput.value = MIMO_TTS_VOICE_DESIGN_MODEL;
+            document.getElementById("share-summary-audio-style-preset").value = "SUN_WUKONG";
+            document.getElementById("share-summary-audio-style").value = MIMO_TTS_DEFAULT_STYLE;
+        } else if (!modelInput.value.trim() || modelInput.value.trim() === MIMO_TTS_VOICE_DESIGN_MODEL) {
+            modelInput.value = MIMO_TTS_PRESET_MODEL;
         }
     }
 

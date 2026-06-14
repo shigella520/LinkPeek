@@ -25,7 +25,9 @@ import java.util.Map;
 public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
     private static final Logger log = LoggerFactory.getLogger(MimoTtsAudioProvider.class);
     private static final int MAX_BODY_LOG_CHARS = 2_000;
-    private static final String SUN_WUKONG_STYLE = "请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。";
+    private static final String PRESET_TTS_MODEL = "mimo-v2.5-tts";
+    private static final String VOICE_DESIGN_TTS_MODEL = "mimo-v2.5-tts-voicedesign";
+    private static final String SUN_WUKONG_STYLE = "请设计并使用一个神似孙悟空的中文男声音色：声音机灵、有英雄气、节奏明快，带一点齐天大圣的戏剧张力；朗读时保持内容清晰可懂，不要改写原文，不要额外添加台词或口头禅。";
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -43,20 +45,22 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
     @Override
     public ShareSummaryAudioClient.AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException {
         URI endpoint = endpointUri(config.getBaseUrl(), config.getEndpointPath());
+        String model = effectiveModel(config);
+        String voice = effectiveVoice(config);
         byte[] body = requestBody(config, input);
         Duration timeout = Duration.ofSeconds(Math.max(1, config.getRequestTimeoutSeconds()));
         log.info(
                 "share_summary_mimo_audio_request_start model={} voice={} endpoint={} timeoutMs={} requestBytes={}",
-                config.getModel(),
-                config.getVoice(),
+                model,
+                voice,
                 endpoint,
                 timeout.toMillis(),
                 body.length
         );
         log.info(
                 "share_summary_mimo_audio_request_body model={} voice={} endpoint={} requestBody={}",
-                config.getModel(),
-                config.getVoice(),
+                model,
+                voice,
                 endpoint,
                 requestBodyLog(body)
         );
@@ -78,8 +82,8 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
         if (response.statusCode() >= 400) {
             log.warn(
                     "share_summary_mimo_audio_http_error model={} voice={} endpoint={} status={} durationMs={} requestId={} responseBody={}",
-                    config.getModel(),
-                    config.getVoice(),
+                    model,
+                    voice,
                     endpoint,
                     response.statusCode(),
                     durationMs,
@@ -91,8 +95,8 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
         byte[] audioBytes = decodeAudioBytes(response.body());
         log.info(
                 "share_summary_mimo_audio_request_success model={} voice={} endpoint={} status={} durationMs={} requestId={} responseBytes={}",
-                config.getModel(),
-                config.getVoice(),
+                model,
+                voice,
                 endpoint,
                 response.statusCode(),
                 durationMs,
@@ -103,19 +107,54 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
     }
 
     private byte[] requestBody(ShareSummaryAudioConfigRecord config, String input) throws IOException {
+        String model = effectiveModel(config);
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", StringUtils.hasText(config.getModel()) ? config.getModel().strip() : "mimo-v2.5-tts");
-        body.put("messages", messages(config, input));
+        body.put("model", model);
+        body.put("messages", messages(config, input, isVoiceDesignModel(model)));
         Map<String, Object> audio = new LinkedHashMap<>();
         audio.put("format", providerOutputFormat(config.getOutputFormat()));
-        audio.put("voice", config.getVoice());
+        if (isVoiceDesignModel(model)) {
+            audio.put("optimize_text_preview", true);
+        } else {
+            audio.put("voice", effectiveVoice(config));
+        }
         body.put("audio", audio);
         return objectMapper.writeValueAsBytes(body);
     }
 
-    private List<Map<String, String>> messages(ShareSummaryAudioConfigRecord config, String input) {
+    private String effectiveModel(ShareSummaryAudioConfigRecord config) {
+        String configured = StringUtils.hasText(config.getModel()) ? config.getModel().strip() : PRESET_TTS_MODEL;
+        if (isVoiceDesignModel(configured) || isVoiceDesignVoice(config.getVoice()) || isSunWukongStyle(config.getStyle())) {
+            return VOICE_DESIGN_TTS_MODEL;
+        }
+        return configured;
+    }
+
+    private String effectiveVoice(ShareSummaryAudioConfigRecord config) {
+        if (isVoiceDesignModel(effectiveModel(config))) {
+            if (isSunWukongStyle(config.getStyle()) || isVoiceDesignVoice(config.getVoice())) {
+                return "孙悟空";
+            }
+            return StringUtils.hasText(config.getVoice()) ? config.getVoice().strip() : "声音设计";
+        }
+        return StringUtils.hasText(config.getVoice()) ? config.getVoice().strip() : "mimo_default";
+    }
+
+    private boolean isVoiceDesignModel(String model) {
+        return VOICE_DESIGN_TTS_MODEL.equalsIgnoreCase(model);
+    }
+
+    private boolean isVoiceDesignVoice(String voice) {
+        if (!StringUtils.hasText(voice)) {
+            return false;
+        }
+        String value = voice.strip();
+        return "孙悟空".equals(value) || "SUN_WUKONG".equalsIgnoreCase(value);
+    }
+
+    private List<Map<String, String>> messages(ShareSummaryAudioConfigRecord config, String input, boolean voiceDesign) {
         String style = styleInstruction(config.getStyle());
-        String assistantContent = assistantContent(config.getStyle(), input);
+        String assistantContent = assistantContent(config.getStyle(), input, voiceDesign);
         if (StringUtils.hasText(style)) {
             return List.of(
                     Map.of("role", "user", "content", style),
@@ -136,9 +175,9 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
         return value;
     }
 
-    private String assistantContent(String style, String input) {
+    private String assistantContent(String style, String input, boolean voiceDesign) {
         String text = input == null ? "" : input;
-        if (isSunWukongStyle(style) && !text.startsWith("(孙悟空)") && !text.startsWith("（孙悟空）")) {
+        if (!voiceDesign && isSunWukongStyle(style) && !text.startsWith("(孙悟空)") && !text.startsWith("（孙悟空）")) {
             return "(孙悟空)" + text;
         }
         return text;

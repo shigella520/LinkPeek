@@ -55,13 +55,32 @@ class MimoTtsAudioProviderTest {
         assertArrayEquals(audioBytes, result.audioBytes());
         assertEquals("/v1/chat/completions", httpClient.lastRequestUri.getPath());
         assertEquals("sk-mimo", httpClient.lastApiKey);
-        assertEquals("mimo-v2.5-tts", body.path("model").asText());
+        assertEquals("mimo-v2.5-tts-voicedesign", body.path("model").asText());
         assertEquals("user", body.path("messages").path(0).path("role").asText());
-        assertTrue(body.path("messages").path(0).path("content").asText().contains("孙悟空式"));
+        assertTrue(body.path("messages").path(0).path("content").asText().contains("孙悟空"));
         assertEquals("assistant", body.path("messages").path(1).path("role").asText());
-        assertEquals("(孙悟空)报告正文", body.path("messages").path(1).path("content").asText());
+        assertEquals("报告正文", body.path("messages").path(1).path("content").asText());
         assertEquals("wav", body.path("audio").path("format").asText());
+        assertTrue(body.path("audio").path("optimize_text_preview").asBoolean());
+        assertTrue(body.path("audio").path("voice").isMissingNode());
+    }
+
+    @Test
+    void keepsPresetVoiceForNonRolePresetModel() throws Exception {
+        byte[] audioBytes = new byte[]{4, 3, 2, 1};
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "application/json", """
+                {"choices":[{"message":{"audio":{"data":"%s"}}}]}
+                """.formatted(Base64.getEncoder().encodeToString(audioBytes)).getBytes(StandardCharsets.UTF_8));
+        MimoTtsAudioProvider provider = new MimoTtsAudioProvider(httpClient, objectMapper);
+        ShareSummaryAudioConfigRecord config = config();
+        config.setStyle("请用严肃、清晰、适合新闻播报的语气朗读。");
+
+        provider.generate(config, "报告正文");
+
+        JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
+        assertEquals("mimo-v2.5-tts", body.path("model").asText());
         assertEquals("苏打", body.path("audio").path("voice").asText());
+        assertTrue(body.path("audio").path("optimize_text_preview").isMissingNode());
     }
 
     @Test
