@@ -178,6 +178,12 @@ public class ShareSummaryService {
     void runScheduledScan() {
         long now = now();
         shareSummaryMapper.markStaleRunningRunsFailed(now - RUNNING_TIMEOUT_MILLIS, now);
+        if (shareSummaryImageService != null) {
+            shareSummaryImageService.markStaleActiveImagesFailed();
+        }
+        if (shareSummaryAudioService != null) {
+            shareSummaryAudioService.markStaleActiveAudiosFailed();
+        }
         for (ShareSummaryTaskRecord task : shareSummaryMapper.selectEnabledTasks()) {
             try {
                 runDueWindows(task);

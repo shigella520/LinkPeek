@@ -59,6 +59,7 @@ public class ShareSummaryImageService {
     private static final int MAX_IMAGE_REDIRECTS = 5;
     private static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 300;
     private static final int MAX_REQUEST_TIMEOUT_SECONDS = 1800;
+    private static final long STALE_ACTIVE_BUFFER_MILLIS = 60_000L;
     private static final int DEFAULT_WIDTH = 1200;
     private static final int DEFAULT_HEIGHT = 630;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
@@ -126,6 +127,7 @@ public class ShareSummaryImageService {
         }
         ShareSummaryImageConfigRecord config = configRecord();
         validateReadyConfig(config);
+        markStaleActiveImagesFailed();
         ShareSummaryImageRecord active = imageMapper.selectActiveImage(runId);
         if (active != null) {
             throw new IllegalStateException("IMAGE_GENERATION_IN_PROGRESS");
@@ -166,6 +168,7 @@ public class ShareSummaryImageService {
     }
 
     public int deleteImagesForRun(long runId) {
+        markStaleActiveImagesFailed();
         if (imageMapper.selectActiveImage(runId) != null) {
             throw new IllegalStateException("Share summary image generation is in progress.");
         }
@@ -173,6 +176,17 @@ public class ShareSummaryImageService {
         int deleted = imageMapper.deleteImagesForRun(runId);
         deleteStoredImagesAfterCommit(images);
         return deleted;
+    }
+
+    public int markStaleActiveImagesFailed() {
+        ShareSummaryImageConfigRecord config = configRecord();
+        long now = now();
+        long threshold = now - staleActiveTimeoutMillis(config.getRequestTimeoutSeconds());
+        int updated = imageMapper.markStaleActiveImagesFailed(threshold, now, "GENERATION timeout exceeded.");
+        if (updated > 0) {
+            log.warn("share_summary_image_stale_active_marked_failed count={} threshold={}", updated, threshold);
+        }
+        return updated;
     }
 
     public ImageResponse image(long imageId) {
@@ -332,6 +346,11 @@ public class ShareSummaryImageService {
         defaults.setRequestTimeoutSeconds(DEFAULT_REQUEST_TIMEOUT_SECONDS);
         defaults.setUpdatedAt(0);
         return defaults;
+    }
+
+    private long staleActiveTimeoutMillis(int requestTimeoutSeconds) {
+        int seconds = Math.max(1, requestTimeoutSeconds);
+        return seconds * 2_000L + STALE_ACTIVE_BUFFER_MILLIS;
     }
 
     private void validateReadyConfig(ShareSummaryImageConfigRecord config) {

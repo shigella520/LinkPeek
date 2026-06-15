@@ -164,6 +164,16 @@
         WHERE id = #{id}
     </update>
 
+    <update id="markStaleActiveAudiosFailed">
+        UPDATE share_summary_audio
+        SET
+            status = 'FAILED',
+            error_message = #{errorMessage},
+            finished_at = #{finishedAt}
+        WHERE status IN ('PENDING', 'GENERATING')
+          AND COALESCE(started_at, created_at) &lt; #{threshold}
+    </update>
+
     <select id="selectAudio" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord">
         SELECT <include refid="audioColumns"/>
         FROM share_summary_audio

@@ -12,18 +12,7 @@
     ];
     const MIMO_TTS_PRESET_MODEL = "mimo-v2.5-tts";
     const MIMO_TTS_DEFAULT_VOICE = "苏打";
-    const MIMO_TTS_DEFAULT_STYLE = "孙悟空 活泼 凌厉 兴奋";
-    const MIMO_TTS_STYLE_PRESETS = {
-        SUN_WUKONG: MIMO_TTS_DEFAULT_STYLE,
-        "林黛玉": "林黛玉",
-        "粤语": "粤语",
-        "四川话": "四川话",
-        "东北话": "东北话",
-        "磁性": "磁性",
-        "严肃": "严肃",
-        "活泼": "活泼",
-        "唱歌": "唱歌"
-    };
+    const MIMO_TTS_DEFAULT_STYLE = "四川话";
 
     const state = {
         prompts: [],
@@ -550,7 +539,6 @@
         document.getElementById("share-summary-audio-config-cancel-button").addEventListener("click", closeShareSummaryAudioConfigModal);
         document.getElementById("share-summary-audio-config-form").addEventListener("submit", saveShareSummaryAudioConfig);
         document.getElementById("share-summary-audio-provider-type").addEventListener("change", () => updateShareSummaryAudioProviderFields(true));
-        document.getElementById("share-summary-audio-style-preset").addEventListener("change", updateShareSummaryAudioStyleFromPreset);
         document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
         document.getElementById("share-summary-run-cancel-button").addEventListener("click", closeShareSummaryRunModal);
         document.getElementById("share-summary-task-period").addEventListener("change", updateShareSummaryPeriodFields);
@@ -2663,7 +2651,6 @@
         document.getElementById("share-summary-audio-style").value = config.style || (providerType === "MIMO_TTS" ? MIMO_TTS_DEFAULT_STYLE : "newscast");
         document.getElementById("share-summary-audio-timeout").value = config.requestTimeoutSeconds || 120;
         updateShareSummaryAudioProviderFields(false);
-        updateShareSummaryAudioStylePresetFromValue();
     }
 
     function isMimoTtsAudioProvider() {
@@ -2680,7 +2667,6 @@
         const mimo = isMimoTtsAudioProvider();
         document.getElementById("share-summary-audio-voice-text-row").hidden = mimo;
         document.getElementById("share-summary-audio-voice-select-row").hidden = !mimo;
-        document.getElementById("share-summary-audio-style-preset-row").hidden = !mimo;
         document.getElementById("share-summary-audio-speed-row").hidden = mimo;
         document.getElementById("share-summary-audio-pitch-row").hidden = mimo;
         document.getElementById("share-summary-audio-style-label").textContent = mimo ? "音频标签" : "Style";
@@ -2693,7 +2679,6 @@
             document.getElementById("share-summary-audio-endpoint-path").value = "/v1/chat/completions";
             document.getElementById("share-summary-audio-model").value = MIMO_TTS_PRESET_MODEL;
             document.getElementById("share-summary-audio-voice-select").value = MIMO_TTS_DEFAULT_VOICE;
-            document.getElementById("share-summary-audio-style-preset").value = "SUN_WUKONG";
             document.getElementById("share-summary-audio-style").value = MIMO_TTS_DEFAULT_STYLE;
         } else {
             document.getElementById("share-summary-audio-base-url").value = "https://tts.wangwangit.com";
@@ -2702,36 +2687,6 @@
             document.getElementById("share-summary-audio-voice").value = "zh-CN-YunhaoNeural";
             document.getElementById("share-summary-audio-style").value = "newscast";
         }
-    }
-
-    function updateShareSummaryAudioStyleFromPreset() {
-        const preset = document.getElementById("share-summary-audio-style-preset").value;
-        if (preset === "CUSTOM") {
-            document.getElementById("share-summary-audio-style").focus();
-            return;
-        }
-        document.getElementById("share-summary-audio-style").value = MIMO_TTS_STYLE_PRESETS[preset] || preset || "";
-    }
-
-    function updateShareSummaryAudioStylePresetFromValue() {
-        if (!isMimoTtsAudioProvider()) {
-            return;
-        }
-        const value = document.getElementById("share-summary-audio-style").value.trim();
-        const preset = Object.entries(MIMO_TTS_STYLE_PRESETS).find((entry) => entry[1] === value);
-        document.getElementById("share-summary-audio-style-preset").value = preset ? preset[0] : mimoStylePresetFromText(value);
-    }
-
-    function mimoStylePresetFromText(value) {
-        if (!value) {
-            return "";
-        }
-        if (value.includes("孙悟空")) {
-            return "SUN_WUKONG";
-        }
-        const preset = Object.keys(MIMO_TTS_STYLE_PRESETS)
-                .find((key) => key !== "SUN_WUKONG" && value.includes(key));
-        return preset || "CUSTOM";
     }
 
     async function saveShareSummaryAudioConfig(event) {

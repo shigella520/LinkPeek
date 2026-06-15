@@ -163,6 +163,56 @@ class ShareSummaryImageServiceTest {
     }
 
     @Test
+    void staleActiveImageIsMarkedFailedBeforeRegeneration() throws Exception {
+        ShareSummaryImageConfigRecord config = config();
+        FakeImageMapper imageMapper = new FakeImageMapper(config);
+        ShareSummaryImageRecord stale = new ShareSummaryImageRecord();
+        stale.setId(7L);
+        stale.setRunId(1L);
+        stale.setAttemptNo(1);
+        stale.setStatus(ShareSummaryImageStatus.GENERATING.name());
+        stale.setProviderType(config.getProviderType());
+        stale.setModel(config.getModel());
+        stale.setImageSize(config.getImageSize());
+        stale.setOutputFormat(config.getOutputFormat());
+        stale.setQuality(config.getQuality());
+        stale.setStylePromptSnapshot(config.getStylePrompt());
+        stale.setPromptSnapshot("old prompt");
+        stale.setPublicToken("stale-token");
+        stale.setCreatedAt(1L);
+        stale.setStartedAt(1L);
+        imageMapper.images.add(stale);
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        ShareSummaryImageClient imageClient = mock(ShareSummaryImageClient.class);
+        when(imageClient.generate(any(ShareSummaryImageConfigRecord.class), any(String.class)))
+                .thenReturn(new ShareSummaryImageClient.ImageGenerationResult(
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+                        null,
+                        "{}",
+                        10
+                ));
+        LinkPeekProperties properties = new LinkPeekProperties();
+        properties.setBaseUrl("https://linkpeek.example.com");
+        properties.setCacheDir(cacheDir);
+        ShareSummaryImageService service = new ShareSummaryImageService(
+                imageMapper,
+                shareSummaryMapper,
+                imageClient,
+                new RedirectingImageHttpClient(),
+                new DirectExecutorService(),
+                null,
+                properties,
+                Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
+        );
+
+        service.generateImage(1, true);
+
+        assertEquals(ShareSummaryImageStatus.FAILED.name(), stale.getStatus());
+        assertEquals("GENERATION timeout exceeded.", stale.getErrorMessage());
+        assertEquals(ShareSummaryImageStatus.SUCCESS.name(), imageMapper.latestImage().getStatus());
+    }
+
+    @Test
     void generatesPeriodSpecificOgTitles() {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 new FakeImageMapper(config()),
@@ -364,6 +414,23 @@ class ShareSummaryImageServiceTest {
         @Override
         public int updateImage(ShareSummaryImageRecord image) {
             return 1;
+        }
+
+        @Override
+        public int markStaleActiveImagesFailed(long threshold, long finishedAt, String errorMessage) {
+            int updated = 0;
+            for (ShareSummaryImageRecord image : images) {
+                long activeAt = image.getStartedAt() == null ? image.getCreatedAt() : image.getStartedAt();
+                if ((ShareSummaryImageStatus.PENDING.name().equals(image.getStatus())
+                        || ShareSummaryImageStatus.GENERATING.name().equals(image.getStatus()))
+                        && activeAt < threshold) {
+                    image.setStatus(ShareSummaryImageStatus.FAILED.name());
+                    image.setErrorMessage(errorMessage);
+                    image.setFinishedAt(finishedAt);
+                    updated++;
+                }
+            }
+            return updated;
         }
 
         @Override

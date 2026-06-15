@@ -42,6 +42,7 @@ public class ShareSummaryAudioService {
     private static final Logger log = LoggerFactory.getLogger(ShareSummaryAudioService.class);
     private static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 120;
     private static final int MAX_REQUEST_TIMEOUT_SECONDS = 1800;
+    private static final long STALE_ACTIVE_BUFFER_MILLIS = 60_000L;
     private static final long MAX_AUDIO_BYTES = 20L * 1024L * 1024L;
     private static final String DEFAULT_PROVIDER_TYPE = "OPENAI_COMPATIBLE";
     private static final String DEFAULT_BASE_URL = "https://tts.wangwangit.com";
@@ -53,7 +54,8 @@ public class ShareSummaryAudioService {
     private static final String MIMO_PRESET_MODEL = "mimo-v2.5-tts";
     private static final String MIMO_DEFAULT_MODEL = MIMO_PRESET_MODEL;
     private static final String MIMO_DEFAULT_VOICE = "苏打";
-    private static final String MIMO_DEFAULT_STYLE = "孙悟空 活泼 凌厉 兴奋";
+    private static final String MIMO_DEFAULT_STYLE = "四川话";
+    private static final String MIMO_SUN_WUKONG_STYLE = "孙悟空 活泼 凌厉 兴奋";
     private static final String MIMO_DEFAULT_OUTPUT_FORMAT = "wav";
     private static final double DEFAULT_SPEED = 1.2;
     private static final int DEFAULT_PITCH = 0;
@@ -129,6 +131,7 @@ public class ShareSummaryAudioService {
         }
         ShareSummaryAudioConfigRecord config = configRecord();
         validateReadyConfig(config);
+        markStaleActiveAudiosFailed();
         ShareSummaryAudioRecord active = audioMapper.selectActiveAudio(runId);
         if (active != null) {
             throw new IllegalStateException("AUDIO_GENERATION_IN_PROGRESS");
@@ -169,6 +172,7 @@ public class ShareSummaryAudioService {
     }
 
     public int deleteAudiosForRun(long runId) {
+        markStaleActiveAudiosFailed();
         if (audioMapper.selectActiveAudio(runId) != null) {
             throw new IllegalStateException("Share summary audio generation is in progress.");
         }
@@ -176,6 +180,17 @@ public class ShareSummaryAudioService {
         int deleted = audioMapper.deleteAudiosForRun(runId);
         deleteStoredAudiosAfterCommit(audios);
         return deleted;
+    }
+
+    public int markStaleActiveAudiosFailed() {
+        ShareSummaryAudioConfigRecord config = configRecord();
+        long now = now();
+        long threshold = now - staleActiveTimeoutMillis(config.getRequestTimeoutSeconds());
+        int updated = audioMapper.markStaleActiveAudiosFailed(threshold, now, "GENERATION timeout exceeded.");
+        if (updated > 0) {
+            log.warn("share_summary_audio_stale_active_marked_failed count={} threshold={}", updated, threshold);
+        }
+        return updated;
     }
 
     public AudioResponse audio(long audioId) {
@@ -349,6 +364,11 @@ public class ShareSummaryAudioService {
         return defaults;
     }
 
+    private long staleActiveTimeoutMillis(int requestTimeoutSeconds) {
+        int seconds = Math.max(1, requestTimeoutSeconds);
+        return seconds * 2_000L + STALE_ACTIVE_BUFFER_MILLIS;
+    }
+
     private void validateReadyConfig(ShareSummaryAudioConfigRecord config) {
         if (!config.isEnabled()) {
             throw new IllegalArgumentException("Share summary TTS generation is disabled.");
@@ -388,7 +408,7 @@ public class ShareSummaryAudioService {
             return "";
         }
         if ("SUN_WUKONG".equalsIgnoreCase(value) || value.contains("孙悟空") || value.contains("神似孙悟空")) {
-            return MIMO_DEFAULT_STYLE;
+            return MIMO_SUN_WUKONG_STYLE;
         }
         if (isLegacyMimoStyleInstruction(value)) {
             String mapped = legacyMimoStyleTag(value);

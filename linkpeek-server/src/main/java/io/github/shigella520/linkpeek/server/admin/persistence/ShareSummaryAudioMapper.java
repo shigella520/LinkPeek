@@ -17,6 +17,12 @@ public interface ShareSummaryAudioMapper {
 
     int updateAudio(ShareSummaryAudioRecord audio);
 
+    int markStaleActiveAudiosFailed(
+            @Param("threshold") long threshold,
+            @Param("finishedAt") long finishedAt,
+            @Param("errorMessage") String errorMessage
+    );
+
     ShareSummaryAudioRecord selectAudio(@Param("id") long id);
 
     ShareSummaryAudioRecord selectLatestAudio(@Param("runId") long runId);

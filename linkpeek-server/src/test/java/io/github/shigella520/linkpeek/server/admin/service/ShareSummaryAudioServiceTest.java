@@ -12,8 +12,10 @@ import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryImage
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryMapper;
 import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -35,6 +37,9 @@ import static org.mockito.Mockito.when;
 
 class ShareSummaryAudioServiceTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+
+    @TempDir
+    Path cacheDir;
 
     @Test
     void publishesAudioFailedNotificationWhenGenerationThrows() throws Exception {
@@ -106,6 +111,40 @@ class ShareSummaryAudioServiceTest {
                 eq("IOException"),
                 eq("Audio generation failed.")
         );
+    }
+
+    @Test
+    void staleActiveAudioIsMarkedFailedBeforeRegeneration() throws Exception {
+        ShareSummaryAudioConfigRecord config = config();
+        FakeAudioMapper audioMapper = new FakeAudioMapper(config);
+        ShareSummaryAudioRecord stale = new ShareSummaryAudioRecord();
+        stale.setId(9L);
+        stale.setRunId(1L);
+        stale.setAttemptNo(1);
+        stale.setStatus(ShareSummaryAudioStatus.GENERATING.name());
+        stale.setProviderType(config.getProviderType());
+        stale.setModel(config.getModel());
+        stale.setVoice(config.getVoice());
+        stale.setSpeed(config.getSpeed());
+        stale.setPitch(config.getPitch());
+        stale.setStyle(config.getStyle());
+        stale.setOutputFormat(config.getOutputFormat());
+        stale.setTextSnapshot("old text");
+        stale.setCreatedAt(1L);
+        stale.setStartedAt(1L);
+        audioMapper.audios.add(stale);
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
+        when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
+                .thenReturn(new ShareSummaryAudioClient.AudioGenerationResult(new byte[]{1, 2}, "{}", 10));
+        ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
+
+        service.generateAudio(1, true);
+
+        assertEquals(ShareSummaryAudioStatus.FAILED.name(), stale.getStatus());
+        assertEquals("GENERATION timeout exceeded.", stale.getErrorMessage());
+        assertEquals(ShareSummaryAudioStatus.SUCCESS.name(), audioMapper.latestAudio().getStatus());
     }
 
     @Test
@@ -189,6 +228,7 @@ class ShareSummaryAudioServiceTest {
     ) {
         LinkPeekProperties properties = new LinkPeekProperties();
         properties.setBaseUrl("https://linkpeek.example.com");
+        properties.setCacheDir(cacheDir);
         return new ShareSummaryAudioService(
                 audioMapper,
                 shareSummaryMapper,
@@ -263,6 +303,23 @@ class ShareSummaryAudioServiceTest {
         @Override
         public int updateAudio(ShareSummaryAudioRecord audio) {
             return 1;
+        }
+
+        @Override
+        public int markStaleActiveAudiosFailed(long threshold, long finishedAt, String errorMessage) {
+            int updated = 0;
+            for (ShareSummaryAudioRecord audio : audios) {
+                long activeAt = audio.getStartedAt() == null ? audio.getCreatedAt() : audio.getStartedAt();
+                if ((ShareSummaryAudioStatus.PENDING.name().equals(audio.getStatus())
+                        || ShareSummaryAudioStatus.GENERATING.name().equals(audio.getStatus()))
+                        && activeAt < threshold) {
+                    audio.setStatus(ShareSummaryAudioStatus.FAILED.name());
+                    audio.setErrorMessage(errorMessage);
+                    audio.setFinishedAt(finishedAt);
+                    updated++;
+                }
+            }
+            return updated;
         }
 
         @Override
@@ -427,6 +484,11 @@ class ShareSummaryAudioServiceTest {
 
         @Override
         public int updateImage(ShareSummaryImageRecord image) {
+            return 0;
+        }
+
+        @Override
+        public int markStaleActiveImagesFailed(long threshold, long finishedAt, String errorMessage) {
             return 0;
         }
 
