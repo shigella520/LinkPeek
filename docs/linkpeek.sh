@@ -60,6 +60,7 @@ input="$(printf '%s' "$input" | tr -d '\r' | xargs)"
 
 # 让云端服务用当前 provider registry 判断链接是否支持。
 # 网络失败或返回非 JSON 时按“不支持”处理，避免误改剪贴板。
+support_curl_command="curl -fsS \"${support_url}?url=$(url_encode "$input")\""
 support_response="$(curl -fsS -G --data-urlencode "url=$input" "$support_url" 2>/dev/null || true)"
 compact_response="${support_response//$'\n'/}"
 compact_response="${compact_response//$'\r'/}"
@@ -70,7 +71,7 @@ if [[ "$compact_response" != *'"supported":true'* ]]; then
   if [[ -n "$compact_response" ]]; then
     printf '%s\n' "$compact_response"
   else
-    printf '%s\n' "LinkPeek: 支持判定接口没有返回内容，未生成预览链接。"
+    printf 'LinkPeek: 支持判定接口没有返回内容，未生成预览链接。Debug curl: %s\n' "$support_curl_command"
   fi
   open_messages_after_notice
   exit 0
