@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260612-admin-login-polish">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260616-provider-config-bilibili">
 </head>
 <body>
 <header class="topbar">
@@ -465,7 +465,17 @@
                     </div>
                 </div>
                 <form id="provider-form" class="provider-grid">
-                    <fieldset>
+                    <fieldset class="provider-card provider-card-bilibili">
+                        <legend>Bilibili</legend>
+                        <label class="checkbox-row provider-toggle-row">
+                            <input data-provider="bilibili" data-key="ai_title_enabled" type="checkbox" value="true">
+                            <span>
+                                启用 AI 标题
+                                <span class="keyline">关闭后保留原始标题，封面仍使用原图。</span>
+                            </span>
+                        </label>
+                    </fieldset>
+                    <fieldset class="provider-card provider-card-linuxdo">
                         <legend>LinuxDo Cookie</legend>
                         <label>
                             <span>_t</span>
@@ -480,7 +490,7 @@
                             <input data-provider="linuxdo" data-key="_forum_session" type="text" autocomplete="off">
                         </label>
                     </fieldset>
-                    <fieldset>
+                    <fieldset class="provider-card provider-card-nga">
                         <legend>NGA Cookie</legend>
                         <label>
                             <span>NGA_PASSPORT_UID</span>
@@ -491,7 +501,9 @@
                             <input data-provider="nga" data-key="NGA_PASSPORT_CID" type="text" autocomplete="off">
                         </label>
                     </fieldset>
-                    <button type="submit">保存 Provider 配置</button>
+                    <div class="provider-actions">
+                        <button type="submit">保存 Provider 配置</button>
+                    </div>
                 </form>
                 <p id="provider-feedback" class="feedback" role="status" aria-live="polite"></p>
             </section>
@@ -1063,6 +1075,6 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260615-mimo-audio-tags-input"></script>
+<script src="/admin/app.js?v=20260616-provider-config-bilibili"></script>
 </body>
 </html>

@@ -419,7 +419,7 @@
             const valuesByProvider = {};
             document.querySelectorAll("[data-provider][data-key]").forEach((input) => {
                 valuesByProvider[input.dataset.provider] ||= {};
-                valuesByProvider[input.dataset.provider][input.dataset.key] = input.value.trim();
+                valuesByProvider[input.dataset.provider][input.dataset.key] = providerInputValue(input);
             });
             setFeedback("provider-feedback", "正在保存 Provider 配置...", "");
             try {
@@ -782,8 +782,27 @@
         const payload = await fetchJson("/api/admin/provider-config");
         const configs = payload.configs || {};
         document.querySelectorAll("[data-provider][data-key]").forEach((input) => {
-            input.value = (configs[input.dataset.provider] || {})[input.dataset.key] || "";
+            const value = (configs[input.dataset.provider] || {})[input.dataset.key];
+            if (input.type === "checkbox") {
+                input.checked = providerCheckboxChecked(value);
+                return;
+            }
+            input.value = value || "";
         });
+    }
+
+    function providerInputValue(input) {
+        if (input.type === "checkbox") {
+            return input.checked ? "true" : "false";
+        }
+        return input.value.trim();
+    }
+
+    function providerCheckboxChecked(value) {
+        if (value == null || value === "") {
+            return true;
+        }
+        return !["false", "0", "off", "no"].includes(String(value).trim().toLowerCase());
     }
 
     async function loadAiProviders() {
@@ -1042,19 +1061,19 @@
                 <td class="drag-cell">
                     <button type="button" class="drag-handle" data-drag-ai="${provider.id}" draggable="true" title="拖拽排序" aria-label="拖拽排序">↕</button>
                 </td>
-                <td>${escapeHtml(provider.name)}</td>
-                <td>${escapeHtml(provider.baseUrl)}</td>
-                <td>${escapeHtml(aiKindLabel(providerApiKind(provider)))}</td>
-                <td>${escapeHtml(provider.model)}</td>
-                <td>${providerRequestTimeoutLabel(provider)}</td>
-                <td>
+                <td class="ai-provider-name-cell">${escapeHtml(provider.name)}</td>
+                <td class="ai-provider-base-url-cell">${escapeHtml(provider.baseUrl)}</td>
+                <td class="ai-provider-format-cell">${escapeHtml(aiKindLabel(providerApiKind(provider)))}</td>
+                <td class="ai-provider-model-cell">${escapeHtml(provider.model)}</td>
+                <td class="ai-provider-timeout-cell">${providerRequestTimeoutLabel(provider)}</td>
+                <td class="ai-provider-enabled-cell">
                     <label class="switch-row">
                         <input type="checkbox" data-toggle-ai="${provider.id}" ${provider.enabled ? "checked" : ""}>
                         <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
                         <span class="switch-text">${provider.enabled ? "启用" : "禁用"}</span>
                     </label>
                 </td>
-                <td>
+                <td class="ai-provider-action-cell">
                     <div class="row-actions ai-provider-actions">
                         <button type="button" data-test-ai="${provider.id}" class="secondary test-button">测试</button>
                         <button type="button" data-edit-ai="${provider.id}" class="secondary">编辑</button>

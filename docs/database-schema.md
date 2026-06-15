@@ -165,6 +165,7 @@ Style Prompt 表，管理后台通过它维护 `style -> prompt`。
 
 | provider_id | config_key | 写入入口 | 含义和读取逻辑 |
 | --- | --- | --- | --- |
+| `bilibili` | `ai_title_enabled` | 管理后台 Provider 配置，`PUT /api/admin/provider-config/bilibili`。 | Bilibili 是否启用 AI 标题，字符串 `true`/`false`。`ProviderConfigService.bilibiliAiTitleEnabled()` 读取；没有记录或空值时默认启用。关闭后 Bilibili 仍使用上游原始标题和原图封面。 |
 | `linuxdo` | `_t` | 管理后台论坛配置，`PUT /api/admin/provider-config/linuxdo`。 | LinuxDo Cookie `_t`。`ProviderConfigService.linuxDoCookieHeader()` 读取后拼入上游请求 Cookie。保存值会 `strip()`；生成 Cookie header 时允许用户粘贴完整 `_t=...; Path=...`，代码会截取第一个分号前的真实 cookie 值。 |
 | `linuxdo` | `cf_clearance` | 管理后台论坛配置，`PUT /api/admin/provider-config/linuxdo`。 | LinuxDo Cloudflare Cookie `cf_clearance`。读取和清洗逻辑同 `_t`。 |
 | `linuxdo` | `_forum_session` | 管理后台论坛配置，`PUT /api/admin/provider-config/linuxdo`。 | LinuxDo Cookie `_forum_session`。读取和清洗逻辑同 `_t`。 |
@@ -176,7 +177,7 @@ Style Prompt 表，管理后台通过它维护 `style -> prompt`。
 
 注意：
 
-- 通用接口 `PUT /api/admin/provider-config/{providerId}` 没有 key 白名单，传入的 `values` 会逐项 upsert 到 `provider_config`。当前后台 UI 固定写入上表中的 LinuxDo/NGA Cookie key；如果 API 额外写入 `linuxdo` 下的其他 key，`linuxDoCookieHeader()` 会把它们作为额外 Cookie 附加到 header。
+- 通用接口 `PUT /api/admin/provider-config/{providerId}` 没有 key 白名单，传入的 `values` 会逐项 upsert 到 `provider_config`。当前后台 UI 固定写入上表中的 Bilibili AI 标题开关和 LinuxDo/NGA Cookie key；如果 API 额外写入 `linuxdo` 下的其他 key，`linuxDoCookieHeader()` 会把它们作为额外 Cookie 附加到 header。
 - `auto_downgrade_enabled` 和 `auto_downgrade_failure_threshold` 是全局配置，不是 `ai_provider` 表字段。
 - 自动降级的连续处理失败计数保存在进程内存中，服务重启后会清空。
 - Cookie 和提示词以明文保存，应保护 SQLite 文件权限和后台访问权限。

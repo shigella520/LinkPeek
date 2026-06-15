@@ -290,12 +290,14 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("LinkPeek Admin")))
-                .andExpect(content().string(containsString("/admin/styles.css?v=20260612-admin-login-polish")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20260616-provider-config-bilibili")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
                 .andExpect(content().string(containsString("brand-text")))
-                .andExpect(content().string(containsString("/admin/app.js?v=20260615-mimo-audio-tags-input")))
+                .andExpect(content().string(containsString("/admin/app.js?v=20260616-provider-config-bilibili")))
                 .andExpect(content().string(not(containsString("brand-copy"))))
                 .andExpect(content().string(containsString("provider-config")))
+                .andExpect(content().string(containsString("data-provider=\"bilibili\"")))
+                .andExpect(content().string(containsString("data-key=\"ai_title_enabled\"")))
                 .andExpect(content().string(containsString("service-logs")))
                 .andExpect(content().string(containsString("ai-providers")))
                 .andExpect(content().string(containsString("preview-events")))
@@ -344,7 +346,7 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("login-form")))
-                .andExpect(content().string(containsString("/admin/styles.css?v=20260612-admin-login-polish")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20260616-provider-config-bilibili")))
                 .andExpect(content().string(containsString("class=\"login-head brand-mark\"")))
                 .andExpect(content().string(containsString("class=\"brand-text\"")))
                 .andExpect(content().string(not(containsString(">Management<"))))
@@ -367,7 +369,10 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("body.admin-nav-hover-open .admin-drawer-backdrop")))
                 .andExpect(content().string(containsString("backdrop-filter: none")))
                 .andExpect(content().string(containsString(".checkbox-row > input[type=\"checkbox\"] + span::before")))
-                .andExpect(content().string(containsString(".inline-threshold-input:focus")));
+                .andExpect(content().string(containsString(".inline-threshold-input:focus")))
+                .andExpect(content().string(containsString(".provider-card-linuxdo")))
+                .andExpect(content().string(containsString(".provider-actions button")))
+                .andExpect(content().string(containsString(".ai-provider-table .ai-provider-base-url-cell::before")));
 
         mockMvc.perform(get("/admin/app.js"))
                 .andExpect(status().isOk())
@@ -382,7 +387,9 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("/api/admin/share-summary")))
                 .andExpect(content().string(containsString("/api/admin/notifications")))
                 .andExpect(content().string(containsString("renderNotificationDeliveryEvent")))
-                .andExpect(content().string(containsString("eventKeyTargetId")));
+                .andExpect(content().string(containsString("eventKeyTargetId")))
+                .andExpect(content().string(containsString("providerInputValue")))
+                .andExpect(content().string(containsString("ai-provider-base-url-cell")));
 
         mockMvc.perform(get("/admin/login.js"))
                 .andExpect(status().isOk())
@@ -775,6 +782,45 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("Stub title")));
 
         org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.requests.get());
+    }
+
+    @Test
+    void previewStyleCanUseAiTitleForAllowedRealImageCardsWithoutChangingImage() throws Exception {
+        testPreviewProvider.aiTitleForRealImage.set(true);
+        testAiTitleClient.generatedTitle.set("\"AI 原图标题\"");
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
+                "FUN", "UC 风格", now
+        );
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "local", 1, 1, "https://api.openai.com/v1/chat/completions", "test-model", "", "test-key", now
+        );
+
+        MvcResult result = mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .param("style", "fun")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String html = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("AI 原图标题"));
+        String styledImageUrl = ogImageUrl(html);
+        String styledPreviewKey = jdbcTemplate.queryForObject(
+                "SELECT preview_key FROM stats_event WHERE event_type = 'PREVIEW_CREATED' ORDER BY id DESC LIMIT 1",
+                String.class
+        );
+
+        mockMvc.perform(get("/media/thumb/{previewKey}.jpg", styledPreviewKey)
+                        .param("v", imageVersion(styledImageUrl)))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes("thumb-data".getBytes(StandardCharsets.UTF_8)));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("真实图片正文，包含需要被 AI 总结的信息。", testAiTitleClient.prompt.get().rawContent());
+        org.junit.jupiter.api.Assertions.assertEquals(1, testPreviewProvider.thumbnailDownloads.get());
+        org.junit.jupiter.api.Assertions.assertEquals("https://img.example/thumb.jpg", testPreviewProvider.downloadedThumbnailUrl.get());
     }
 
     @Test
@@ -2029,6 +2075,20 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(true))
                 .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(2));
 
+        mockMvc.perform(get("/api/admin/provider-config")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configs.bilibili.ai_title_enabled").value("true"));
+        org.junit.jupiter.api.Assertions.assertTrue(providerConfigService.bilibiliAiTitleEnabled());
+
+        mockMvc.perform(put("/api/admin/provider-config/bilibili")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"values\":{\"ai_title_enabled\":\"false\"}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configs.bilibili.ai_title_enabled").value("false"));
+        org.junit.jupiter.api.Assertions.assertFalse(providerConfigService.bilibiliAiTitleEnabled());
+
         mockMvc.perform(put("/api/admin/provider-config/linuxdo")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -2571,7 +2631,9 @@ class PreviewControllerTest {
         private final AtomicInteger thumbnailDownloads = new AtomicInteger();
         private final AtomicInteger canonicalizations = new AtomicInteger();
         private final AtomicInteger resolutions = new AtomicInteger();
+        private final AtomicReference<String> downloadedThumbnailUrl = new AtomicReference<>("");
         private final java.util.concurrent.atomic.AtomicBoolean generatedTextCard = new java.util.concurrent.atomic.AtomicBoolean();
+        private final java.util.concurrent.atomic.AtomicBoolean aiTitleForRealImage = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean resolveFails = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean thumbnailFails = new java.util.concurrent.atomic.AtomicBoolean();
 
@@ -2579,7 +2641,9 @@ class PreviewControllerTest {
             thumbnailDownloads.set(0);
             canonicalizations.set(0);
             resolutions.set(0);
+            downloadedThumbnailUrl.set("");
             generatedTextCard.set(false);
+            aiTitleForRealImage.set(false);
             resolveFails.set(false);
             thumbnailFails.set(false);
         }
@@ -2618,8 +2682,17 @@ class PreviewControllerTest {
                     1200,
                     630,
                     generated ? ContentType.ARTICLE : ContentType.VIDEO,
-                    generated ? "原始帖子正文，包含需要被 AI 总结的信息。" : ""
+                    generated
+                            ? "原始帖子正文，包含需要被 AI 总结的信息。"
+                            : (aiTitleForRealImage.get() ? "真实图片正文，包含需要被 AI 总结的信息。" : "")
             );
+        }
+
+        @Override
+        public boolean supportsAiTitle(PreviewMetadata metadata) {
+            return generatedTextCard.get()
+                    ? PreviewProvider.super.supportsAiTitle(metadata)
+                    : aiTitleForRealImage.get() && metadata != null && !metadata.rawContent().isBlank();
         }
 
         @Override
@@ -2629,6 +2702,7 @@ class PreviewControllerTest {
                 throw new UpstreamFetchException("Thumbnail failed");
             }
             Files.createDirectories(targetPath.getParent());
+            downloadedThumbnailUrl.set(metadata.thumbnailUrl());
             Files.writeString(targetPath, "thumb-data");
             return targetPath;
         }

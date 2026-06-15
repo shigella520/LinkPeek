@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProviderConfigServiceTest {
     @Test
@@ -42,6 +44,38 @@ class ProviderConfigServiceTest {
 
         assertEquals("uid", service.ngaPassportUid());
         assertEquals("cid", service.ngaPassportCid());
+    }
+
+    @Test
+    void bilibiliAiTitleDefaultsToEnabledInConfigResponse() {
+        FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
+        ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
+
+        assertTrue(service.bilibiliAiTitleEnabled());
+        assertEquals(
+                "true",
+                service.allProviderConfigs()
+                        .get(ProviderConfigService.PROVIDER_BILIBILI)
+                        .get(ProviderConfigService.BILIBILI_AI_TITLE_ENABLED)
+        );
+    }
+
+    @Test
+    void bilibiliAiTitleCanBeDisabledFromProviderConfig() {
+        FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
+        ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
+
+        service.saveProviderConfigs(ProviderConfigService.PROVIDER_BILIBILI, Map.of(
+                ProviderConfigService.BILIBILI_AI_TITLE_ENABLED, " false "
+        ));
+
+        assertFalse(service.bilibiliAiTitleEnabled());
+        assertEquals(
+                "false",
+                service.allProviderConfigs()
+                        .get(ProviderConfigService.PROVIDER_BILIBILI)
+                        .get(ProviderConfigService.BILIBILI_AI_TITLE_ENABLED)
+        );
     }
 
     private Clock fixedClock() {

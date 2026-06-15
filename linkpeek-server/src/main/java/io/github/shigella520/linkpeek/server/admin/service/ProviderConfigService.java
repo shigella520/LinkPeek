@@ -16,8 +16,10 @@ import java.util.TreeMap;
 
 @Service
 public class ProviderConfigService {
+    public static final String PROVIDER_BILIBILI = "bilibili";
     public static final String PROVIDER_LINUXDO = "linuxdo";
     public static final String PROVIDER_NGA = "nga";
+    public static final String BILIBILI_AI_TITLE_ENABLED = "ai_title_enabled";
     public static final String NGA_PASSPORT_UID = "NGA_PASSPORT_UID";
     public static final String NGA_PASSPORT_CID = "NGA_PASSPORT_CID";
     public static final List<String> LINUXDO_COOKIE_KEYS = List.of("_t", "cf_clearance", "_forum_session");
@@ -36,6 +38,8 @@ public class ProviderConfigService {
             grouped.computeIfAbsent(record.getProviderId(), ignored -> new TreeMap<>())
                     .put(record.getConfigKey(), record.getConfigValue());
         }
+        grouped.computeIfAbsent(PROVIDER_BILIBILI, ignored -> new TreeMap<>())
+                .putIfAbsent(BILIBILI_AI_TITLE_ENABLED, Boolean.TRUE.toString());
         grouped.computeIfAbsent(PROVIDER_LINUXDO, ignored -> new TreeMap<>());
         grouped.computeIfAbsent(PROVIDER_NGA, ignored -> new TreeMap<>());
         return grouped;
@@ -102,6 +106,12 @@ public class ProviderConfigService {
         return value(PROVIDER_NGA, NGA_PASSPORT_CID).orElse(null);
     }
 
+    public boolean bilibiliAiTitleEnabled() {
+        return value(PROVIDER_BILIBILI, BILIBILI_AI_TITLE_ENABLED)
+                .map(this::enabledByTextValue)
+                .orElse(true);
+    }
+
     private String normalizeRequired(String value, String fieldName) {
         if (!StringUtils.hasText(value)) {
             throw new IllegalArgumentException(fieldName + " must not be blank");
@@ -124,5 +134,13 @@ public class ProviderConfigService {
             return "";
         }
         return key + "=" + value;
+    }
+
+    private boolean enabledByTextValue(String value) {
+        String normalized = value.strip().toLowerCase(java.util.Locale.ROOT);
+        return !("false".equals(normalized)
+                || "0".equals(normalized)
+                || "off".equals(normalized)
+                || "no".equals(normalized));
     }
 }
