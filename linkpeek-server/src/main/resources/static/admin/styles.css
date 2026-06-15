@@ -2428,6 +2428,24 @@ button.danger {
     background: linear-gradient(135deg, #b42318, #d64c2f);
 }
 
+button.test-button.is-success,
+button.test-button.is-success:hover:not(:disabled),
+button.test-button.is-success:focus-visible {
+    border-color: rgba(15, 143, 95, 0.18);
+    background: linear-gradient(135deg, #0f8f5f, #13b981);
+    color: #ffffff;
+    box-shadow: 0 16px 28px rgba(15, 143, 95, 0.16);
+}
+
+button.test-button.is-error,
+button.test-button.is-error:hover:not(:disabled),
+button.test-button.is-error:focus-visible {
+    border-color: rgba(180, 35, 24, 0.2);
+    background: linear-gradient(135deg, #b42318, #d64c2f);
+    color: #ffffff;
+    box-shadow: 0 16px 28px rgba(180, 35, 24, 0.16);
+}
+
 main.admin-main {
     width: min(1480px, calc(100vw - 32px));
     margin-top: 22px;
