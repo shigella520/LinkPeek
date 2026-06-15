@@ -2,6 +2,7 @@ package io.github.shigella520.linkpeek.server.ai;
 
 import io.github.shigella520.linkpeek.core.model.PreviewKey;
 import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
+import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.core.util.CardTextSanitizer;
 import io.github.shigella520.linkpeek.server.admin.model.AdminPromptRecord;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
@@ -214,10 +215,7 @@ public class AiTitleService {
     }
 
     public boolean supportsAiTitle(PreviewMetadata metadata) {
-        return metadata != null
-                && metadata.thumbnailUrl() != null
-                && metadata.thumbnailUrl().startsWith("generated://")
-                && StringUtils.hasText(metadata.rawContent());
+        return PreviewProvider.defaultSupportsAiTitle(metadata);
     }
 
     public Optional<PreviewMetadata> generateStyledMetadata(PreviewMetadata metadata, StylePrompt stylePrompt) {
@@ -228,7 +226,13 @@ public class AiTitleService {
         if (!supportsAiTitle(metadata)) {
             return StyledMetadataResult.empty();
         }
+        return generateSupportedStyledMetadataResult(metadata, stylePrompt);
+    }
 
+    public StyledMetadataResult generateSupportedStyledMetadataResult(PreviewMetadata metadata, StylePrompt stylePrompt) {
+        if (metadata == null || !StringUtils.hasText(metadata.rawContent())) {
+            return StyledMetadataResult.empty();
+        }
         AiTitlePrompt prompt = buildPrompt(stylePrompt.prompt(), metadata.rawContent(), stylePrompt.titleFormatPrompt());
         List<AiProviderRecord> providers = aiProviderMapper.selectEnabledProviders();
         AiAttemptStats attemptStats = new AiAttemptStats();

@@ -20,6 +20,18 @@ public interface PreviewProvider {
         return metadata;
     }
 
+    default boolean supportsAiTitle(PreviewMetadata metadata) {
+        return defaultSupportsAiTitle(metadata);
+    }
+
+    static boolean defaultSupportsAiTitle(PreviewMetadata metadata) {
+        return metadata != null
+                && metadata.thumbnailUrl() != null
+                && metadata.thumbnailUrl().startsWith("generated://")
+                && metadata.rawContent() != null
+                && !metadata.rawContent().isBlank();
+    }
+
     default Path downloadThumbnail(PreviewMetadata metadata, Path targetPath) throws IOException {
         throw new MediaNotSupportedException("Thumbnail download is not supported by provider " + getId());
     }

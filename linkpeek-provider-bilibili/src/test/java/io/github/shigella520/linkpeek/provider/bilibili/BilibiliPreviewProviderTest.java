@@ -116,6 +116,8 @@ class BilibiliPreviewProviderTest {
         assertEquals("https://www.bilibili.com/video/BV1xx411c7mD", metadata.canonicalUrl());
         assertEquals("Demo UP：Demo", metadata.title());
         assertEquals("https://img.example/test.jpg", metadata.thumbnailUrl());
+        assertTrue(provider.supportsAiTitle(metadata));
+        assertEquals("原标题\nDemo UP：Demo\n\n正文\nDescription", metadata.rawContent());
     }
 
     @Test
@@ -135,6 +137,33 @@ class BilibiliPreviewProviderTest {
         PreviewMetadata metadata = provider.resolve(URI.create("https://www.bilibili.com/video/BV1xx411c7mD"));
 
         assertEquals("Demo gzip", metadata.title());
+    }
+
+    @Test
+    void disablesAiTitleWhenConfiguredOff() {
+        BilibiliPreviewProvider disabledProvider = new BilibiliPreviewProvider(
+                HttpClient.newHttpClient(),
+                new ObjectMapper(),
+                URI.create("http://127.0.0.1:" + server.getAddress().getPort()),
+                Duration.ofSeconds(3),
+                "LinkPeek-Test/1.0",
+                () -> false
+        );
+        PreviewMetadata metadata = new PreviewMetadata(
+                "https://www.bilibili.com/video/BV1xx411c7mD",
+                "https://www.bilibili.com/video/BV1xx411c7mD",
+                "bilibili",
+                "Demo",
+                "Desc",
+                "Bilibili",
+                "https://img.example/test.jpg",
+                1280,
+                720,
+                io.github.shigella520.linkpeek.core.model.ContentType.VIDEO,
+                "原标题\nDemo"
+        );
+
+        assertFalse(disabledProvider.supportsAiTitle(metadata));
     }
 
     @Test

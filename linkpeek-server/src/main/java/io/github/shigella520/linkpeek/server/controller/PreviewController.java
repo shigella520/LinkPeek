@@ -86,7 +86,7 @@ public class PreviewController {
             )
             @RequestParam("url") String url,
             @Parameter(
-                    description = "可选的 AI 标题风格。命中后台提示词且目标 provider 使用文本卡片时生效。",
+                    description = "可选的 AI 标题风格。命中后台提示词且目标 provider 支持 AI 标题时生效。",
                     example = "fun"
             )
             @RequestParam(name = "style", required = false) String style,

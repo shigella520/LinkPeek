@@ -14,10 +14,13 @@
 可选扩展方法：
 
 - `enrichForAiTitle(...)`
+- `supportsAiTitle(...)`
 - `downloadThumbnail(...)`
 - `downloadVideo(...)`
 
 `enrichForAiTitle(...)` 默认原样返回元数据。文本卡片 provider 如果希望支持更高质量的 AI 标题，可以在这里基于原始 URL 补齐更完整的 `rawContent`，例如抓取帖子正文和回复内容；失败时应尽量返回原元数据，不影响基础预览。
+
+`supportsAiTitle(...)` 默认只允许 `generated://...` 文本卡片且 `rawContent` 非空的元数据进入 AI 标题生成。真实图片 provider 如果要保留原图但使用 AI 标题，可以覆盖该方法，并确保 `rawContent` 包含可供生成标题的文本。
 
 如果不支持媒体能力，`downloadThumbnail(...)` 和 `downloadVideo(...)` 的默认实现会抛出 `MediaNotSupportedException`。
 
