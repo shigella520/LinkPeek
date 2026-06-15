@@ -537,6 +537,7 @@
         document.getElementById("share-summary-image-config-form").addEventListener("submit", saveShareSummaryImageConfig);
         document.getElementById("share-summary-audio-config-button").addEventListener("click", openShareSummaryAudioConfigModal);
         document.getElementById("share-summary-audio-config-cancel-button").addEventListener("click", closeShareSummaryAudioConfigModal);
+        document.getElementById("share-summary-audio-config-test-button").addEventListener("click", testShareSummaryAudioConfig);
         document.getElementById("share-summary-audio-config-form").addEventListener("submit", saveShareSummaryAudioConfig);
         document.getElementById("share-summary-audio-provider-type").addEventListener("change", () => updateShareSummaryAudioProviderFields(true));
         document.getElementById("share-summary-task-cancel-button").addEventListener("click", closeShareSummaryTaskModal);
@@ -2616,6 +2617,7 @@
 
     async function openShareSummaryAudioConfigModal() {
         openModal("share-summary-audio-config-modal");
+        resetShareSummaryAudioTestButton();
         setFeedback("share-summary-audio-config-modal-feedback", "正在读取 TTS 配置...", "");
         try {
             await loadShareSummaryAudioConfig();
@@ -2629,6 +2631,7 @@
     function closeShareSummaryAudioConfigModal(clearFeedback = true) {
         closeModal("share-summary-audio-config-modal");
         document.getElementById("share-summary-audio-config-form").reset();
+        resetShareSummaryAudioTestButton();
         if (clearFeedback) {
             setFeedback("share-summary-audio-config-modal-feedback", "", "");
         }
@@ -2691,21 +2694,7 @@
 
     async function saveShareSummaryAudioConfig(event) {
         event.preventDefault();
-        const payload = {
-            enabled: document.getElementById("share-summary-audio-enabled").checked,
-            autoGenerate: document.getElementById("share-summary-audio-auto-generate").checked,
-            providerType: document.getElementById("share-summary-audio-provider-type").value,
-            baseUrl: document.getElementById("share-summary-audio-base-url").value.trim(),
-            endpointPath: document.getElementById("share-summary-audio-endpoint-path").value.trim(),
-            apiKey: document.getElementById("share-summary-audio-api-key").value.trim(),
-            model: document.getElementById("share-summary-audio-model").value.trim(),
-            voice: shareSummaryAudioVoiceValue(),
-            speed: isMimoTtsAudioProvider() ? 1.2 : Number(document.getElementById("share-summary-audio-speed").value || 1.2),
-            pitch: isMimoTtsAudioProvider() ? 0 : Number(document.getElementById("share-summary-audio-pitch").value || 0),
-            style: document.getElementById("share-summary-audio-style").value.trim(),
-            outputFormat: isMimoTtsAudioProvider() ? "wav" : "mp3",
-            requestTimeoutSeconds: Number(document.getElementById("share-summary-audio-timeout").value || 120)
-        };
+        const payload = shareSummaryAudioConfigPayload();
         const error = validateShareSummaryAudioConfig(payload);
         if (error) {
             setFeedback("share-summary-audio-config-modal-feedback", error, "is-error");
@@ -2724,8 +2713,106 @@
         }
     }
 
-    function validateShareSummaryAudioConfig(payload) {
-        if (payload.enabled || payload.autoGenerate) {
+    async function testShareSummaryAudioConfig() {
+        const button = document.getElementById("share-summary-audio-config-test-button");
+        const payload = shareSummaryAudioConfigPayload();
+        const error = validateShareSummaryAudioConfig(payload, true);
+        button.classList.remove("is-success", "is-error");
+        button.textContent = "测试 TTS";
+        resetShareSummaryAudioTestAudio();
+        if (error) {
+            setFeedback("share-summary-audio-config-modal-feedback", error, "is-error");
+            button.classList.add("is-error");
+            return;
+        }
+        button.disabled = true;
+        button.textContent = "测试中";
+        setFeedback("share-summary-audio-config-modal-feedback", "正在请求 TTS Provider 生成测试音频...", "");
+        try {
+            const result = await fetchJson("/api/admin/share-summary/audio-config/test", {
+                method: "POST",
+                body: JSON.stringify(payload)
+            });
+            button.classList.toggle("is-success", Boolean(result.success));
+            button.classList.toggle("is-error", !result.success);
+            button.textContent = "测试 TTS";
+            if (result.success) {
+                const parts = [];
+                if (typeof result.durationMs === "number") {
+                    parts.push(`耗时 ${result.durationMs}ms`);
+                }
+                if (typeof result.responseBytes === "number") {
+                    parts.push(`音频 ${formatBytes(result.responseBytes)}`);
+                }
+                showShareSummaryAudioTestAudio(result.audioUrl);
+                setFeedback("share-summary-audio-config-modal-feedback", `TTS 测试成功${parts.length ? "，" + parts.join("，") : ""}。`, "is-success");
+            } else {
+                resetShareSummaryAudioTestAudio();
+                setFeedback("share-summary-audio-config-modal-feedback", result.message || "TTS 测试失败。", "is-error");
+            }
+        } catch (testError) {
+            button.classList.add("is-error");
+            button.textContent = "测试 TTS";
+            resetShareSummaryAudioTestAudio();
+            setFeedback("share-summary-audio-config-modal-feedback", testError.message, "is-error");
+        } finally {
+            button.disabled = false;
+        }
+    }
+
+    function resetShareSummaryAudioTestButton() {
+        const button = document.getElementById("share-summary-audio-config-test-button");
+        button.disabled = false;
+        button.textContent = "测试 TTS";
+        button.classList.remove("is-success", "is-error");
+        resetShareSummaryAudioTestAudio();
+    }
+
+    function showShareSummaryAudioTestAudio(audioUrl) {
+        const player = document.getElementById("share-summary-audio-test-player");
+        const audio = document.getElementById("share-summary-audio-test-audio");
+        if (!player || !audio || !audioUrl) {
+            resetShareSummaryAudioTestAudio();
+            return;
+        }
+        audio.src = audioUrl;
+        audio.load();
+        player.hidden = false;
+    }
+
+    function resetShareSummaryAudioTestAudio() {
+        const player = document.getElementById("share-summary-audio-test-player");
+        const audio = document.getElementById("share-summary-audio-test-audio");
+        if (audio) {
+            audio.pause();
+            audio.removeAttribute("src");
+            audio.load();
+        }
+        if (player) {
+            player.hidden = true;
+        }
+    }
+
+    function shareSummaryAudioConfigPayload() {
+        return {
+            enabled: document.getElementById("share-summary-audio-enabled").checked,
+            autoGenerate: document.getElementById("share-summary-audio-auto-generate").checked,
+            providerType: document.getElementById("share-summary-audio-provider-type").value,
+            baseUrl: document.getElementById("share-summary-audio-base-url").value.trim(),
+            endpointPath: document.getElementById("share-summary-audio-endpoint-path").value.trim(),
+            apiKey: document.getElementById("share-summary-audio-api-key").value.trim(),
+            model: document.getElementById("share-summary-audio-model").value.trim(),
+            voice: shareSummaryAudioVoiceValue(),
+            speed: isMimoTtsAudioProvider() ? 1.2 : Number(document.getElementById("share-summary-audio-speed").value || 1.2),
+            pitch: isMimoTtsAudioProvider() ? 0 : Number(document.getElementById("share-summary-audio-pitch").value || 0),
+            style: document.getElementById("share-summary-audio-style").value.trim(),
+            outputFormat: isMimoTtsAudioProvider() ? "wav" : "mp3",
+            requestTimeoutSeconds: Number(document.getElementById("share-summary-audio-timeout").value || 120)
+        };
+    }
+
+    function validateShareSummaryAudioConfig(payload, requireProvider = false) {
+        if (requireProvider || payload.enabled || payload.autoGenerate) {
             if (!payload.baseUrl) {
                 return "Base URL 不能为空。";
             }

@@ -1453,6 +1453,26 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.model").value(""))
                 .andExpect(jsonPath("$.pitch").value(0));
 
+        mockMvc.perform(post("/api/admin/share-summary/audio-config/test")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://tts.wangwangit.com","endpointPath":"/v1/audio/speech","apiKey":"","model":"","voice":"zh-CN-YunhaoNeural","speed":1.2,"pitch":0,"style":"newscast","outputFormat":"mp3","requestTimeoutSeconds":120}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.responseBytes").value(testMp3Bytes().length))
+                .andExpect(jsonPath("$.durationMs").value(19))
+                .andExpect(jsonPath("$.audioUrl", containsString("/api/admin/share-summary/audio-config/test-audio.mp3?v=")));
+        mockMvc.perform(get("/api/admin/share-summary/audio-config/test-audio.mp3")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(content().contentType("audio/mpeg"))
+                .andExpect(content().bytes(testMp3Bytes()));
+        org.junit.jupiter.api.Assertions.assertEquals("俺老孙有七十二般变化，一个筋斗云就是十万八千里！", testShareSummaryAudioClient.input.get());
+        testShareSummaryAudioClient.reset();
+
         mockMvc.perform(post("/api/admin/share-summary/tasks")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -1872,6 +1892,14 @@ class PreviewControllerTest {
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(post("/api/admin/ai-providers/1/test"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(post("/api/admin/share-summary/audio-config/test")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/admin/share-summary/audio-config/test-audio.mp3"))
                 .andExpect(status().isUnauthorized());
 
         mockMvc.perform(get("/api/admin/logs"))

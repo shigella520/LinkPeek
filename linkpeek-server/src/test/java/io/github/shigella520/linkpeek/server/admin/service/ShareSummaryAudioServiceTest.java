@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
@@ -27,7 +28,10 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -37,6 +41,7 @@ import static org.mockito.Mockito.when;
 
 class ShareSummaryAudioServiceTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
+    private static final String TEST_AUDIO_TEXT = "俺老孙有七十二般变化，一个筋斗云就是十万八千里！";
 
     @TempDir
     Path cacheDir;
@@ -145,6 +150,84 @@ class ShareSummaryAudioServiceTest {
         assertEquals(ShareSummaryAudioStatus.FAILED.name(), stale.getStatus());
         assertEquals("GENERATION timeout exceeded.", stale.getErrorMessage());
         assertEquals(ShareSummaryAudioStatus.SUCCESS.name(), audioMapper.latestAudio().getStatus());
+    }
+
+    @Test
+    void testConfigWritesSingleCachedAudioFile() throws Exception {
+        FakeAudioMapper audioMapper = new FakeAudioMapper(config());
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
+        byte[] audioBytes = new byte[]{'I', 'D', '3', 1};
+        when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), eq(TEST_AUDIO_TEXT)))
+                .thenReturn(new ShareSummaryAudioClient.AudioGenerationResult(audioBytes, "{}", 12));
+        ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
+        Path testAudioDir = cacheDir.resolve("share-summary/test-audio");
+        Files.createDirectories(testAudioDir);
+        Path oldWav = testAudioDir.resolve("tts-test.wav");
+        Files.write(oldWav, new byte[]{9});
+
+        ShareSummaryAudioService.TestResponse response = service.testConfig(new ShareSummaryAudioService.ConfigRequest(
+                true,
+                false,
+                "OPENAI_COMPATIBLE",
+                "https://tts.example.com",
+                "/v1/audio/speech",
+                "sk-test",
+                "tts-1",
+                "zh-CN-YunhaoNeural",
+                1.2,
+                0,
+                "newscast",
+                "mp3",
+                7
+        ));
+
+        assertTrue(response.success());
+        assertEquals("测试成功。", response.message());
+        assertEquals(4, response.responseBytes());
+        assertEquals(12, response.durationMs());
+        assertEquals("/api/admin/share-summary/audio-config/test-audio.mp3?v=1780106400000", response.audioUrl());
+        assertArrayEquals(audioBytes, Files.readAllBytes(testAudioDir.resolve("tts-test.mp3")));
+        assertFalse(Files.exists(oldWav));
+        ShareSummaryAudioService.TestAudio testAudio = service.testAudio("mp3");
+        assertTrue(testAudio.resource().exists());
+        assertEquals("audio/mpeg", testAudio.mediaType().toString());
+        assertTrue(audioMapper.audios.isEmpty());
+        verify(audioClient).generate(any(ShareSummaryAudioConfigRecord.class), eq(TEST_AUDIO_TEXT));
+    }
+
+    @Test
+    void testConfigReturnsFailureWhenProviderThrows() throws Exception {
+        FakeAudioMapper audioMapper = new FakeAudioMapper(config());
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
+        when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
+                .thenThrow(new IOException("provider failed"));
+        ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
+
+        ShareSummaryAudioService.TestResponse response = service.testConfig(new ShareSummaryAudioService.ConfigRequest(
+                true,
+                false,
+                "OPENAI_COMPATIBLE",
+                "https://tts.example.com",
+                "/v1/audio/speech",
+                "sk-test",
+                "tts-1",
+                "zh-CN-YunhaoNeural",
+                1.2,
+                0,
+                "newscast",
+                "mp3",
+                7
+        ));
+
+        assertEquals(false, response.success());
+        assertEquals("provider failed", response.message());
+        assertEquals("IOException", response.errorType());
+        assertNull(response.audioUrl());
+        assertTrue(audioMapper.audios.isEmpty());
     }
 
     @Test

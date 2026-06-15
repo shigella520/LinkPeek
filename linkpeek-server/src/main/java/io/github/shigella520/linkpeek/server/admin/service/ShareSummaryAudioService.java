@@ -61,6 +61,10 @@ public class ShareSummaryAudioService {
     private static final int DEFAULT_PITCH = 0;
     private static final String DEFAULT_STYLE = "newscast";
     private static final String DEFAULT_OUTPUT_FORMAT = "mp3";
+    private static final String TEST_AUDIO_TEXT = "俺老孙有七十二般变化，一个筋斗云就是十万八千里！";
+    private static final String TEST_AUDIO_STORAGE_DIR = "share-summary/test-audio";
+    private static final String TEST_AUDIO_STORAGE_BASENAME = "tts-test";
+    private static final List<String> TEST_AUDIO_OUTPUT_FORMATS = List.of("mp3", "wav");
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private final ShareSummaryAudioMapper audioMapper;
@@ -115,13 +119,32 @@ public class ShareSummaryAudioService {
         return ConfigResponse.fromRecord(audioMapper.selectConfig());
     }
 
-    public ConfigResponse testConfig(ConfigRequest request) {
+    public TestResponse testConfig(ConfigRequest request) {
         if (request == null) {
             throw new IllegalArgumentException("Audio config payload is required.");
         }
+        long startedAt = System.nanoTime();
         ShareSummaryAudioConfigRecord normalized = normalizeConfig(request, audioMapper.selectConfig());
-        validateReadyConfig(normalized);
-        return ConfigResponse.fromRecord(normalized);
+        try {
+            validateProviderConfig(normalized);
+            ShareSummaryAudioClient.AudioGenerationResult result = audioProvider(normalized).generate(normalized, TEST_AUDIO_TEXT);
+            byte[] audioBytes = result.audioBytes();
+            if (audioBytes == null || audioBytes.length == 0) {
+                throw new IOException("Audio response was empty.");
+            }
+            if (audioBytes.length > MAX_AUDIO_BYTES) {
+                throw new IOException("Audio response exceeded 20 MB.");
+            }
+            String audioUrl = saveTestAudioBytes(normalized.getOutputFormat(), audioBytes);
+            int responseBytes = audioBytes.length;
+            long durationMs = result.durationMs() > 0 ? result.durationMs() : elapsedMillis(startedAt);
+            return new TestResponse(true, "测试成功。", responseBytes, durationMs, null, audioUrl);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            return new TestResponse(false, "测试中断。", 0, elapsedMillis(startedAt), "InterruptedException", null);
+        } catch (RuntimeException | IOException exception) {
+            return new TestResponse(false, errorMessage(exception, null, "TTS test failed."), 0, elapsedMillis(startedAt), errorType(exception, "AudioProviderException"), null);
+        }
     }
 
     public AudioResponse generateAudio(long runId, boolean regenerate) {
@@ -235,6 +258,15 @@ public class ShareSummaryAudioService {
             throw new IllegalArgumentException("Share summary audio file was not found.");
         }
         return new PublicAudio(new FileSystemResource(path), mediaTypeFor(audio.getOutputFormat()));
+    }
+
+    public TestAudio testAudio(String ext) {
+        String outputFormat = normalizeOutputFormat(ext, DEFAULT_PROVIDER_TYPE);
+        Path path = testAudioPath(outputFormat);
+        if (!Files.isRegularFile(path)) {
+            throw new IllegalArgumentException("TTS test audio was not found.");
+        }
+        return new TestAudio(new FileSystemResource(path), mediaTypeFor(outputFormat));
     }
 
     private void submitAudioGeneration(long audioId) {
@@ -373,6 +405,10 @@ public class ShareSummaryAudioService {
         if (!config.isEnabled()) {
             throw new IllegalArgumentException("Share summary TTS generation is disabled.");
         }
+        validateProviderConfig(config);
+    }
+
+    private void validateProviderConfig(ShareSummaryAudioConfigRecord config) {
         if (!StringUtils.hasText(config.getBaseUrl())) {
             throw new IllegalArgumentException("Audio provider base URL must not be blank.");
         }
@@ -535,6 +571,21 @@ public class ShareSummaryAudioService {
         return storageKey;
     }
 
+    private String saveTestAudioBytes(String outputFormat, byte[] bytes) throws IOException {
+        String normalizedOutputFormat = normalizeOutputFormat(outputFormat, DEFAULT_PROVIDER_TYPE);
+        Path directory = storageRoot().resolve(TEST_AUDIO_STORAGE_DIR).normalize();
+        if (!directory.startsWith(storageRoot())) {
+            throw new IOException("Audio storage path is invalid.");
+        }
+        Files.createDirectories(directory);
+        for (String format : TEST_AUDIO_OUTPUT_FORMATS) {
+            Files.deleteIfExists(testAudioPath(format));
+        }
+        Path path = testAudioPath(normalizedOutputFormat);
+        Files.write(path, bytes);
+        return "/api/admin/share-summary/audio-config/test-audio.%s?v=%d".formatted(normalizedOutputFormat, now());
+    }
+
     private void failAudio(ShareSummaryAudioRecord audio, Throwable exception, String fallbackMessage) {
         audio.setStatus(ShareSummaryAudioStatus.FAILED.name());
         audio.setErrorMessage(errorMessage(exception, fallbackMessage, "Audio generation failed."));
@@ -603,6 +654,13 @@ public class ShareSummaryAudioService {
 
     private Path storageRoot() {
         return properties.getCacheDir().toAbsolutePath().normalize();
+    }
+
+    private Path testAudioPath(String outputFormat) {
+        return storageRoot()
+                .resolve(TEST_AUDIO_STORAGE_DIR)
+                .resolve(TEST_AUDIO_STORAGE_BASENAME + "." + outputFormat)
+                .normalize();
     }
 
     private String publicAudioUrl(ShareSummaryAudioRecord audio) {
@@ -731,6 +789,10 @@ public class ShareSummaryAudioService {
         return Instant.now(clock).toEpochMilli();
     }
 
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
+    }
+
     public record ConfigRequest(
             Boolean enabled,
             Boolean autoGenerate,
@@ -782,6 +844,16 @@ public class ShareSummaryAudioService {
                     record.getUpdatedAt()
             );
         }
+    }
+
+    public record TestResponse(
+            boolean success,
+            String message,
+            int responseBytes,
+            long durationMs,
+            String errorType,
+            String audioUrl
+    ) {
     }
 
     public record AudioResponse(
@@ -847,5 +919,8 @@ public class ShareSummaryAudioService {
     }
 
     public record PublicAudio(Resource resource, MediaType mediaType) {
+    }
+
+    public record TestAudio(Resource resource, MediaType mediaType) {
     }
 }

@@ -960,7 +960,27 @@ textarea:focus {
 
 .modal-actions {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+#share-summary-audio-config-test-button {
+    min-width: 96px;
+}
+
+.audio-test-player {
+    display: flex;
+    justify-content: flex-end;
+}
+
+.audio-test-player[hidden] {
+    display: none;
+}
+
+.audio-test-player audio {
+    width: min(420px, 100%);
 }
 
 .checkbox-row {

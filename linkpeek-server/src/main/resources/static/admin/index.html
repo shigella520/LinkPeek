@@ -899,7 +899,11 @@
                 <input id="share-summary-audio-timeout" type="number" min="1" max="1800" value="120">
             </label>
             <div class="modal-actions wide">
+                <button type="button" class="secondary test-button" id="share-summary-audio-config-test-button">测试 TTS</button>
                 <button type="submit">保存配置</button>
+            </div>
+            <div id="share-summary-audio-test-player" class="audio-test-player wide" hidden>
+                <audio id="share-summary-audio-test-audio" controls preload="none" aria-label="TTS 测试音频"></audio>
             </div>
         </form>
         <p id="share-summary-audio-config-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
