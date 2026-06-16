@@ -27,9 +27,13 @@ public class AiProviderDowngradeService {
     public static final String PROVIDER_AI_PROVIDER = "ai_provider";
     public static final String AUTO_DOWNGRADE_ENABLED_KEY = "auto_downgrade_enabled";
     public static final String AUTO_DOWNGRADE_FAILURE_THRESHOLD_KEY = "auto_downgrade_failure_threshold";
+    public static final String SHARE_SUMMARY_TIMEOUT_MULTIPLIER_KEY = "share_summary_timeout_multiplier";
     public static final int DEFAULT_AUTO_DOWNGRADE_FAILURE_THRESHOLD = 3;
     public static final int MIN_AUTO_DOWNGRADE_FAILURE_THRESHOLD = 1;
     public static final int MAX_AUTO_DOWNGRADE_FAILURE_THRESHOLD = 100;
+    public static final double DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER = 1.0D;
+    public static final double MIN_SHARE_SUMMARY_TIMEOUT_MULTIPLIER = 1.0D;
+    public static final double MAX_SHARE_SUMMARY_TIMEOUT_MULTIPLIER = 20.0D;
 
     private static final int SORT_STEP = 100;
     private static final int DATABASE_WRITE_ATTEMPTS = 5;
@@ -64,28 +68,54 @@ public class AiProviderDowngradeService {
     public ConfigResponse config() {
         ProviderConfigRecord enabled = providerConfigMapper.selectConfig(PROVIDER_AI_PROVIDER, AUTO_DOWNGRADE_ENABLED_KEY);
         ProviderConfigRecord threshold = providerConfigMapper.selectConfig(PROVIDER_AI_PROVIDER, AUTO_DOWNGRADE_FAILURE_THRESHOLD_KEY);
-        Long updatedAt = updatedAt(enabled, threshold);
+        ProviderConfigRecord shareSummaryTimeoutMultiplier = providerConfigMapper.selectConfig(
+                PROVIDER_AI_PROVIDER,
+                SHARE_SUMMARY_TIMEOUT_MULTIPLIER_KEY
+        );
+        Long updatedAt = updatedAt(enabled, threshold, shareSummaryTimeoutMultiplier);
         return new ConfigResponse(
                 parseBoolean(enabled, false),
                 parseThreshold(threshold),
                 DEFAULT_AUTO_DOWNGRADE_FAILURE_THRESHOLD,
+                parseShareSummaryTimeoutMultiplier(shareSummaryTimeoutMultiplier),
+                DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER,
                 updatedAt
         );
     }
 
     @Transactional
     public ConfigResponse saveConfig(Boolean autoDowngradeEnabled, Integer autoDowngradeFailureThreshold) {
+        return saveConfig(autoDowngradeEnabled, autoDowngradeFailureThreshold, null);
+    }
+
+    @Transactional
+    public ConfigResponse saveConfig(
+            Boolean autoDowngradeEnabled,
+            Integer autoDowngradeFailureThreshold,
+            Double shareSummaryTimeoutMultiplier
+    ) {
         if (autoDowngradeEnabled == null) {
             throw new IllegalArgumentException("Auto downgrade enabled value is required.");
         }
         int threshold = normalizeThreshold(autoDowngradeFailureThreshold);
+        double multiplier = shareSummaryTimeoutMultiplier == null
+                ? parseShareSummaryTimeoutMultiplier(providerConfigMapper.selectConfig(
+                        PROVIDER_AI_PROVIDER,
+                        SHARE_SUMMARY_TIMEOUT_MULTIPLIER_KEY
+                ))
+                : normalizeShareSummaryTimeoutMultiplier(shareSummaryTimeoutMultiplier);
         long updatedAt = Instant.now(clock).toEpochMilli();
         upsert(AUTO_DOWNGRADE_ENABLED_KEY, Boolean.toString(autoDowngradeEnabled), updatedAt);
         upsert(AUTO_DOWNGRADE_FAILURE_THRESHOLD_KEY, Integer.toString(threshold), updatedAt);
+        upsert(SHARE_SUMMARY_TIMEOUT_MULTIPLIER_KEY, Double.toString(multiplier), updatedAt);
         if (!autoDowngradeEnabled) {
             failureCounts.clear();
         }
         return config();
+    }
+
+    public double shareSummaryTimeoutMultiplier() {
+        return config().shareSummaryTimeoutMultiplier();
     }
 
     public void recordSuccess(AiProviderRecord provider) {
@@ -354,12 +384,33 @@ public class AiProviderDowngradeService {
         }
     }
 
+    private double parseShareSummaryTimeoutMultiplier(ProviderConfigRecord record) {
+        if (record == null || !StringUtils.hasText(record.getConfigValue())) {
+            return DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER;
+        }
+        try {
+            return normalizeShareSummaryTimeoutMultiplier(Double.parseDouble(record.getConfigValue().strip()));
+        } catch (NumberFormatException exception) {
+            return DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER;
+        }
+    }
+
     private int normalizeThreshold(Integer threshold) {
         int value = threshold == null ? DEFAULT_AUTO_DOWNGRADE_FAILURE_THRESHOLD : threshold;
         if (value < MIN_AUTO_DOWNGRADE_FAILURE_THRESHOLD || value > MAX_AUTO_DOWNGRADE_FAILURE_THRESHOLD) {
             throw new IllegalArgumentException("Auto downgrade failure threshold must be between 1 and 100.");
         }
         return value;
+    }
+
+    private double normalizeShareSummaryTimeoutMultiplier(Double multiplier) {
+        double value = multiplier == null ? DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER : multiplier;
+        if (!Double.isFinite(value)
+                || value < MIN_SHARE_SUMMARY_TIMEOUT_MULTIPLIER
+                || value > MAX_SHARE_SUMMARY_TIMEOUT_MULTIPLIER) {
+            throw new IllegalArgumentException("Share summary timeout multiplier must be between 1 and 20.");
+        }
+        return Math.round(value * 100.0D) / 100.0D;
     }
 
     private Long updatedAt(ProviderConfigRecord... records) {
@@ -374,6 +425,8 @@ public class AiProviderDowngradeService {
             boolean autoDowngradeEnabled,
             int autoDowngradeFailureThreshold,
             int defaultAutoDowngradeFailureThreshold,
+            double shareSummaryTimeoutMultiplier,
+            double defaultShareSummaryTimeoutMultiplier,
             Long updatedAt
     ) {
     }

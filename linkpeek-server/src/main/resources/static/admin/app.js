@@ -441,6 +441,7 @@
         const form = document.getElementById("ai-downgrade-config-form");
         const enabledToggle = document.getElementById("ai-auto-downgrade-enabled-toggle");
         const thresholdInput = document.getElementById("ai-auto-downgrade-failure-threshold");
+        const shareSummaryTimeoutMultiplierInput = document.getElementById("ai-share-summary-timeout-multiplier");
         form.addEventListener("submit", (event) => {
             event.preventDefault();
             scheduleAiProviderDowngradeSave();
@@ -450,6 +451,7 @@
             scheduleAiProviderDowngradeSave();
         });
         thresholdInput.addEventListener("input", scheduleAiProviderDowngradeSave);
+        shareSummaryTimeoutMultiplierInput.addEventListener("input", scheduleAiProviderDowngradeSave);
     }
 
     function bindAiForm() {
@@ -942,7 +944,7 @@
 
         const payload = readAiProviderDowngradePayload();
         if (!payload) {
-            setFeedback("ai-downgrade-config-feedback", "失败阈值降级次数必须是 1-100 之间的整数。", "is-error");
+            setFeedback("ai-downgrade-config-feedback", "失败阈值降级次数必须是 1-100 的整数，分享总结超时倍率必须是 1-20。", "is-error");
             return;
         }
 
@@ -956,10 +958,14 @@
     function readAiProviderDowngradePayload() {
         const autoDowngradeEnabled = document.getElementById("ai-auto-downgrade-enabled-toggle").dataset.enabled === "true";
         const autoDowngradeFailureThreshold = Number(document.getElementById("ai-auto-downgrade-failure-threshold").value || 0);
+        const shareSummaryTimeoutMultiplier = Number(document.getElementById("ai-share-summary-timeout-multiplier").value || 0);
         if (!Number.isInteger(autoDowngradeFailureThreshold) || autoDowngradeFailureThreshold < 1 || autoDowngradeFailureThreshold > 100) {
             return null;
         }
-        return {autoDowngradeEnabled, autoDowngradeFailureThreshold};
+        if (!Number.isFinite(shareSummaryTimeoutMultiplier) || shareSummaryTimeoutMultiplier < 1 || shareSummaryTimeoutMultiplier > 20) {
+            return null;
+        }
+        return {autoDowngradeEnabled, autoDowngradeFailureThreshold, shareSummaryTimeoutMultiplier};
     }
 
     async function saveAiProviderDowngradeConfig(payload, saveVersion) {
@@ -1119,6 +1125,7 @@
         const config = state.aiProviderDowngradeConfig || {};
         setAiProviderDowngradeEnabled(Boolean(config.autoDowngradeEnabled));
         document.getElementById("ai-auto-downgrade-failure-threshold").value = config.autoDowngradeFailureThreshold || 3;
+        document.getElementById("ai-share-summary-timeout-multiplier").value = config.shareSummaryTimeoutMultiplier || 1;
     }
 
     function renderPreviewEvents() {

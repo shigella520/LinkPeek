@@ -807,8 +807,9 @@ textarea:focus {
 }
 
 .ai-downgrade-config-form {
-    display: flex;
-    justify-content: flex-end;
+    display: grid;
+    justify-items: end;
+    gap: 4px;
     min-width: 0;
     margin-top: 14px;
 }
@@ -852,6 +853,11 @@ textarea:focus {
 .inline-threshold-field {
     display: inline-block;
     width: 42px;
+}
+
+.inline-multiplier-field {
+    display: inline-block;
+    width: 56px;
 }
 
 .inline-threshold-input {
@@ -2817,7 +2823,7 @@ fieldset,
     }
 
     #ai-providers .ai-downgrade-config-form {
-        justify-content: flex-start;
+        justify-items: start;
         margin-top: 12px;
     }
 
@@ -3611,6 +3617,10 @@ body.admin-nav-hover-open .admin-drawer-backdrop {
 
 .inline-threshold-field {
     width: 54px;
+}
+
+.inline-multiplier-field {
+    width: 66px;
 }
 
 .inline-threshold-input,

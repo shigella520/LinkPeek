@@ -47,6 +47,7 @@ public class ShareSummaryService {
     private static final int DEFAULT_MIN_LINKS = 1;
     private static final int MIN_MIN_LINKS = 1;
     private static final int MAX_MIN_LINKS = 2_000;
+    private static final int MAX_SHARE_SUMMARY_REQUEST_TIMEOUT_SECONDS = 3_600;
     private static final int CATCH_UP_LIMIT = 7;
     private static final long RUNNING_TIMEOUT_MILLIS = 30 * 60 * 1000L;
     private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接分享列表，生成一份结构清晰、信息密度高的中文分享总结。";
@@ -491,10 +492,14 @@ public class ShareSummaryService {
         List<String> providerNames = new ArrayList<>();
         long durationMs = 0;
         String lastError = "";
+        double shareSummaryTimeoutMultiplier = shareSummaryTimeoutMultiplier();
         for (AiProviderRecord provider : providers) {
             long startedAt = System.nanoTime();
             try {
-                AiTitleClient.AiTextResult result = aiTitleClient.generateTextResult(provider, prompt);
+                AiTitleClient.AiTextResult result = aiTitleClient.generateTextResult(
+                        providerWithShareSummaryTimeout(provider, shareSummaryTimeoutMultiplier),
+                        prompt
+                );
                 long attemptDurationMs = result.durationMs() > 0 ? result.durationMs() : elapsedMillis(startedAt);
                 durationMs += attemptDurationMs;
                 providerNames.add(provider.getName());
@@ -530,6 +535,37 @@ public class ShareSummaryService {
             }
         }
         throw new IllegalStateException(StringUtils.hasText(lastError) ? lastError : "AI summary request failed.");
+    }
+
+    private double shareSummaryTimeoutMultiplier() {
+        return aiProviderDowngradeService == null
+                ? AiProviderDowngradeService.DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER
+                : aiProviderDowngradeService.shareSummaryTimeoutMultiplier();
+    }
+
+    private AiProviderRecord providerWithShareSummaryTimeout(AiProviderRecord provider, double multiplier) {
+        AiProviderRecord requestProvider = new AiProviderRecord();
+        requestProvider.setId(provider.getId());
+        requestProvider.setName(provider.getName());
+        requestProvider.setEnabled(provider.isEnabled());
+        requestProvider.setSortOrder(provider.getSortOrder());
+        requestProvider.setBaseUrl(provider.getBaseUrl());
+        requestProvider.setApiKind(provider.getApiKind());
+        requestProvider.setModel(provider.getModel());
+        requestProvider.setEffort(provider.getEffort());
+        requestProvider.setApiKey(provider.getApiKey());
+        requestProvider.setUpdatedAt(provider.getUpdatedAt());
+        requestProvider.setRequestTimeoutSeconds(shareSummaryRequestTimeout(provider, multiplier));
+        return requestProvider;
+    }
+
+    private int shareSummaryRequestTimeout(AiProviderRecord provider, double multiplier) {
+        int baseTimeoutSeconds = provider.getRequestTimeoutSeconds() > 0
+                ? provider.getRequestTimeoutSeconds()
+                : AiTitleClient.DEFAULT_REQUEST_TIMEOUT_SECONDS;
+        long timeoutSeconds = Math.round(baseTimeoutSeconds * multiplier);
+        timeoutSeconds = Math.max(1L, Math.min(MAX_SHARE_SUMMARY_REQUEST_TIMEOUT_SECONDS, timeoutSeconds));
+        return (int) timeoutSeconds;
     }
 
     private void recordAiProviderSuccess(AiProviderRecord provider) {

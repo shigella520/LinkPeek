@@ -290,10 +290,10 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("LinkPeek Admin")))
-                .andExpect(content().string(containsString("/admin/styles.css?v=20260616-provider-config-bilibili")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20260616-share-summary-timeout-multiplier")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
                 .andExpect(content().string(containsString("brand-text")))
-                .andExpect(content().string(containsString("/admin/app.js?v=20260616-provider-config-bilibili")))
+                .andExpect(content().string(containsString("/admin/app.js?v=20260616-share-summary-timeout-multiplier")))
                 .andExpect(content().string(not(containsString("brand-copy"))))
                 .andExpect(content().string(containsString("provider-config")))
                 .andExpect(content().string(containsString("data-provider=\"bilibili\"")))
@@ -346,7 +346,7 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("login-form")))
-                .andExpect(content().string(containsString("/admin/styles.css?v=20260616-provider-config-bilibili")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20260616-share-summary-timeout-multiplier")))
                 .andExpect(content().string(containsString("class=\"login-head brand-mark\"")))
                 .andExpect(content().string(containsString("class=\"brand-text\"")))
                 .andExpect(content().string(not(containsString(">Management<"))))
@@ -2065,15 +2065,18 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(false))
                 .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(3))
-                .andExpect(jsonPath("$.defaultAutoDowngradeFailureThreshold").value(3));
+                .andExpect(jsonPath("$.defaultAutoDowngradeFailureThreshold").value(3))
+                .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(1.0))
+                .andExpect(jsonPath("$.defaultShareSummaryTimeoutMultiplier").value(1.0));
 
         mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2}"))
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2,\"shareSummaryTimeoutMultiplier\":4}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(true))
-                .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(2));
+                .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(2))
+                .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(4.0));
 
         mockMvc.perform(get("/api/admin/provider-config")
                         .cookie(cookie))

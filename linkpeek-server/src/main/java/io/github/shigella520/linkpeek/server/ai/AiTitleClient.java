@@ -48,22 +48,28 @@ public class AiTitleClient {
                 prompt.styleMessage(),
                 prompt.rawContentMessage()
         );
-        AiTextResult result = generateTextResult(provider, textPrompt, "ai_title");
+        AiTextResult result = generateTextResult(provider, textPrompt, "ai_title", null);
         return new AiTitleResult(result.text(), result.durationMs());
     }
 
     public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
-        return generateTextResult(provider, prompt, "ai_text");
+        return generateTextResult(provider, prompt, "ai_text", null);
     }
 
-    private AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt, String operation) throws IOException, InterruptedException {
+    public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt, Duration timeout) throws IOException, InterruptedException {
+        return generateTextResult(provider, prompt, "ai_text", timeout);
+    }
+
+    private AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt, String operation, Duration timeout) throws IOException, InterruptedException {
         AiApiKind apiKind = AiApiKind.fromValue(provider.getApiKind());
         URI endpointUri = apiKind.endpointUri(provider.getBaseUrl());
         byte[] body = switch (apiKind) {
             case RESPONSES -> responsesBody(provider, prompt);
             case CHAT_COMPLETIONS -> chatCompletionsBody(provider, prompt);
         };
-        Duration requestTimeout = requestTimeout(provider);
+        Duration requestTimeout = timeout == null || timeout.isZero() || timeout.isNegative()
+                ? requestTimeout(provider)
+                : timeout;
         log.info(
                 "{}_request_start providerId={} apiKind={} model={} baseUrl={} timeoutMs={} requestBytes={} requestBody={}",
                 operation,

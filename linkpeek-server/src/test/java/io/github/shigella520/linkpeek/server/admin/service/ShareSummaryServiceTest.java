@@ -316,6 +316,40 @@ class ShareSummaryServiceTest {
         assertEquals(1, downgraded.failureCount());
     }
 
+    @Test
+    void shareSummaryUsesConfiguredTimeoutMultiplier() {
+        FakeShareSummaryMapper mapper = new FakeShareSummaryMapper();
+        mapper.task = task("DAILY", "09:00", null);
+        ShareSummaryLinkRow link = new ShareSummaryLinkRow();
+        link.setTitle("数据库标题 A");
+        FakeShareSummaryLinkMapper linkMapper = new FakeShareSummaryLinkMapper();
+        linkMapper.summaryLinks = List.of(link);
+        FakeAiProviderMapper providerMapper = new FakeAiProviderMapper();
+        AiProviderRecord provider = provider(1L, "summary-provider", 10);
+        provider.setRequestTimeoutSeconds(45);
+        providerMapper.providers = List.of(provider);
+        FakeAiTitleClient aiTitleClient = new FakeAiTitleClient(null);
+        AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                new ConfigurableAiProviderConfigMapper(true, 2, 4.0D),
+                providerMapper,
+                Clock.fixed(Instant.parse("2026-06-04T02:00:00Z"), ZONE),
+                new CapturingEventPublisher()
+        );
+        ShareSummaryService service = service(
+                mapper,
+                linkMapper,
+                providerMapper,
+                aiTitleClient,
+                downgradeService,
+                "2026-06-04T02:00:00Z"
+        );
+
+        ShareSummaryRunRecord run = service.runTask(1L);
+
+        assertEquals("SUCCESS", run.getStatus());
+        assertEquals(180, aiTitleClient.lastRequestTimeoutSeconds);
+    }
+
     private ShareSummaryService service(FakeShareSummaryMapper mapper, String instant) {
         return service(mapper, new FakeShareSummaryLinkMapper(), instant);
     }
@@ -565,6 +599,7 @@ class ShareSummaryServiceTest {
 
     private static final class FakeAiTitleClient extends AiTitleClient {
         private final Long failedProviderId;
+        private int lastRequestTimeoutSeconds;
 
         private FakeAiTitleClient(Long failedProviderId) {
             super(null, null);
@@ -573,6 +608,7 @@ class ShareSummaryServiceTest {
 
         @Override
         public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
+            lastRequestTimeoutSeconds = provider.getRequestTimeoutSeconds();
             if (provider.getId().equals(failedProviderId)) {
                 throw new IOException("provider failed");
             }
@@ -580,7 +616,17 @@ class ShareSummaryServiceTest {
         }
     }
 
-    private static final class EnabledAutoDowngradeConfigMapper implements ProviderConfigMapper {
+    private static class ConfigurableAiProviderConfigMapper implements ProviderConfigMapper {
+        private final boolean enabled;
+        private final int threshold;
+        private final Double shareSummaryTimeoutMultiplier;
+
+        private ConfigurableAiProviderConfigMapper(boolean enabled, int threshold, Double shareSummaryTimeoutMultiplier) {
+            this.enabled = enabled;
+            this.threshold = threshold;
+            this.shareSummaryTimeoutMultiplier = shareSummaryTimeoutMultiplier;
+        }
+
         @Override
         public List<io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord> selectAllConfigs() {
             return List.of();
@@ -597,15 +643,26 @@ class ShareSummaryServiceTest {
             record.setProviderId(providerId);
             record.setConfigKey(configKey);
             if (AiProviderDowngradeService.AUTO_DOWNGRADE_ENABLED_KEY.equals(configKey)) {
-                record.setConfigValue("true");
+                record.setConfigValue(Boolean.toString(enabled));
             } else if (AiProviderDowngradeService.AUTO_DOWNGRADE_FAILURE_THRESHOLD_KEY.equals(configKey)) {
-                record.setConfigValue("1");
+                record.setConfigValue(Integer.toString(threshold));
+            } else if (AiProviderDowngradeService.SHARE_SUMMARY_TIMEOUT_MULTIPLIER_KEY.equals(configKey)
+                    && shareSummaryTimeoutMultiplier != null) {
+                record.setConfigValue(Double.toString(shareSummaryTimeoutMultiplier));
+            } else {
+                return null;
             }
             return record;
         }
 
         @Override
         public void upsertConfig(io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord config) {
+        }
+    }
+
+    private static final class EnabledAutoDowngradeConfigMapper extends ConfigurableAiProviderConfigMapper {
+        private EnabledAutoDowngradeConfigMapper() {
+            super(true, 1, null);
         }
     }
 
