@@ -589,14 +589,13 @@ public class ShareSummaryService {
                 .append("\n\n链接分享列表：\n");
         for (int index = 0; index < links.size(); index++) {
             ShareSummaryLinkRow link = links.get(index);
-            content.append(index + 1)
-                    .append(".标题：")
+            content.append("- 标题：")
                     .append(link.getTitle())
                     .append('\n')
-                    .append("   链接：")
+                    .append("  - 链接：")
                     .append(summaryLinkUrl(link))
                     .append('\n')
-                    .append("   分享时间：")
+                    .append("  - 分享时间：")
                     .append(summaryTime(link.getFirstOccurredAt()))
                     .append('\n');
         }

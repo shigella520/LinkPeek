@@ -1327,11 +1327,11 @@ class PreviewControllerTest {
         AiTextPrompt prompt = testAiTitleClient.textPrompt.get();
         org.junit.jupiter.api.Assertions.assertTrue(prompt.prompt().contains("按主题聚合"));
         org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("链接分享列表"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("1.标题：数据库标题 A"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   链接：https://example.com/a"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   分享时间：" + expectedShareTime(windowStart + 1_000L)));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("2.标题：数据库标题 B"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   链接：https://example.com/b"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("- 标题：数据库标题 A"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("  - 链接：https://example.com/a"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("  - 分享时间：" + expectedShareTime(windowStart + 1_000L)));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("- 标题：数据库标题 B"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("  - 链接：https://example.com/b"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("[2次]"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 A 晚到"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 C"));
