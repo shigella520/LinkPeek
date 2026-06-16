@@ -1,8 +1,8 @@
-package io.github.shigella520.linkpeek.server.ai;
+package io.github.shigella520.linkpeek.server.admin.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageConfigRecord;
 import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
@@ -36,135 +36,93 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class AiTitleClientTest {
+class OpenAiCompatibleImageClientTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void sendsChatCompletionsRequestAndParsesMessageContent() throws Exception {
+    void parsesBase64ImageResponse() throws Exception {
         CapturingHttpClient httpClient = new CapturingHttpClient(200, """
-                {"choices":[{"message":{"content":"AI 生成标题"}}]}
+                {"data":[{"b64_json":"aW1hZ2UtYnl0ZXM="}]}
                 """);
-        AiTitleClient client = new AiTitleClient(httpClient, objectMapper);
+        OpenAiCompatibleImageClient client = new OpenAiCompatibleImageClient(httpClient, objectMapper);
 
-        Optional<String> title = client.generateTitle(
-                provider("https://api.example.com/v1", "CHAT_COMPLETIONS", "gpt-test", "low", "sk-test"),
-                prompt()
-        );
+        OpenAiCompatibleImageClient.ImageGenerationResult result = client.generate(config(), "生成分享图");
 
         JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
-        assertEquals(Optional.of("AI 生成标题"), title);
-        assertEquals("/v1/chat/completions", httpClient.lastRequestUri.getPath());
+        assertEquals("aW1hZ2UtYnl0ZXM=", result.base64());
+        assertEquals(null, result.imageUrl());
+        assertEquals("/v1/images/generations", httpClient.lastRequestUri.getPath());
         assertEquals("Bearer sk-test", httpClient.lastAuthorization);
-        assertEquals("gpt-test", body.path("model").asText());
-        assertEquals("system", body.path("messages").get(0).path("role").asText());
-        assertEquals("标题格式", body.path("messages").get(0).path("content").asText());
-        assertEquals("user", body.path("messages").get(1).path("role").asText());
-        assertEquals("Style Prompt\nUC 风格", body.path("messages").get(1).path("content").asText());
-        assertEquals("user", body.path("messages").get(2).path("role").asText());
-        assertEquals("Raw Content\n原文内容", body.path("messages").get(2).path("content").asText());
-        assertEquals("low", body.path("reasoning_effort").asText());
-        assertEquals(Optional.of(Duration.ofSeconds(45)), httpClient.lastRequestTimeout);
+        assertEquals("test-image", body.path("model").asText());
+        assertEquals("生成分享图", body.path("prompt").asText());
+        assertEquals("auto", body.path("size").asText());
+        assertEquals(1, body.path("n").asInt());
+        assertEquals("png", body.path("output_format").asText());
+        assertEquals("auto", body.path("quality").asText());
+        assertEquals("auto", body.path("moderation").asText());
+        assertTrue(body.path("response_format").isMissingNode());
+        assertTrue(result.rawResponseSnapshot().contains("has_b64_json"));
     }
 
     @Test
-    void sendsResponsesRequestAndParsesOutputText() throws Exception {
+    void parsesUrlImageResponse() throws Exception {
         CapturingHttpClient httpClient = new CapturingHttpClient(200, """
-                {"output":[{"content":[{"type":"output_text","text":"Responses 标题"}]}]}
+                {"data":[{"url":"https://cdn.example.com/image.png"}]}
                 """);
-        AiTitleClient client = new AiTitleClient(httpClient, objectMapper);
+        OpenAiCompatibleImageClient client = new OpenAiCompatibleImageClient(httpClient, objectMapper);
 
-        Optional<String> title = client.generateTitle(
-                provider("https://api.example.com/v1", "RESPONSES", "gpt-test", "medium", ""),
-                prompt()
-        );
+        OpenAiCompatibleImageClient.ImageGenerationResult result = client.generate(config(), "生成分享图");
 
-        JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
-        assertEquals(Optional.of("Responses 标题"), title);
-        assertEquals("/v1/responses", httpClient.lastRequestUri.getPath());
-        assertEquals("", httpClient.lastAuthorization);
-        assertEquals("gpt-test", body.path("model").asText());
-        assertEquals("标题格式", body.path("instructions").asText());
-        assertEquals("user", body.path("input").get(0).path("role").asText());
-        assertEquals("Style Prompt\nUC 风格", body.path("input").get(0).path("content").asText());
-        assertEquals("user", body.path("input").get(1).path("role").asText());
-        assertEquals("Raw Content\n原文内容", body.path("input").get(1).path("content").asText());
-        assertEquals("medium", body.path("reasoning").path("effort").asText());
-        assertEquals(Optional.of(Duration.ofSeconds(45)), httpClient.lastRequestTimeout);
+        assertEquals(null, result.base64());
+        assertEquals("https://cdn.example.com/image.png", result.imageUrl());
     }
 
     @Test
-    void usesProviderRequestTimeoutWhenPresent() throws Exception {
+    void failsWhenResponseHasNoImage() {
         CapturingHttpClient httpClient = new CapturingHttpClient(200, """
-                {"choices":[{"message":{"content":"AI 生成标题"}}]}
+                {"data":[{"revised_prompt":"prompt"}]}
                 """);
-        AiTitleClient client = new AiTitleClient(httpClient, objectMapper);
-        AiProviderRecord provider = provider("https://api.example.com/v1", "CHAT_COMPLETIONS", "gpt-test", "", "sk-test");
-        provider.setRequestTimeoutSeconds(12);
+        OpenAiCompatibleImageClient client = new OpenAiCompatibleImageClient(httpClient, objectMapper);
 
-        client.generateTitle(provider, prompt());
+        IOException exception = assertThrows(IOException.class, () -> client.generate(config(), "生成分享图"));
 
-        assertEquals(Optional.of(Duration.ofSeconds(12)), httpClient.lastRequestTimeout);
+        assertTrue(exception.getMessage().contains("data[0].b64_json"));
     }
 
     @Test
-    void rejectsBaseUrlWithoutV1Path() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> AiApiKind.normalizeBaseUrl("https://api.example.com/v1/completions")
-        );
-    }
-
-    @Test
-    void rejectsBlankApiFormat() {
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> AiApiKind.fromValue("")
-        );
-    }
-
-    @Test
-    void includesResponseBodySnippetWhenProviderReturnsHttpError() {
-        CapturingHttpClient httpClient = new CapturingHttpClient(503, """
-                {"error":{"message":"upstream overloaded","type":"service_unavailable"}}
+    void includesProviderErrorBody() {
+        CapturingHttpClient httpClient = new CapturingHttpClient(500, """
+                {"error":{"message":"upstream failed"}}
                 """);
-        AiTitleClient client = new AiTitleClient(httpClient, objectMapper);
+        OpenAiCompatibleImageClient client = new OpenAiCompatibleImageClient(httpClient, objectMapper);
 
-        IOException exception = assertThrows(
-                IOException.class,
-                () -> client.generateTitle(
-                        provider("https://api.example.com/v1", "CHAT_COMPLETIONS", "gpt-test", "", "sk-test"),
-                        prompt()
-                )
-        );
+        IOException exception = assertThrows(IOException.class, () -> client.generate(config(), "生成分享图"));
 
-        assertTrue(exception.getMessage().contains("HTTP 503"));
-        assertTrue(exception.getMessage().contains("upstream overloaded"));
+        assertTrue(exception.getMessage().contains("HTTP 500"));
+        assertTrue(exception.getMessage().contains("upstream failed"));
     }
 
-    private AiProviderRecord provider(String baseUrl, String apiKind, String model, String effort, String apiKey) {
-        AiProviderRecord provider = new AiProviderRecord();
-        provider.setId(1L);
-        provider.setName("test");
-        provider.setEnabled(true);
-        provider.setSortOrder(1);
-        provider.setBaseUrl(baseUrl);
-        provider.setApiKind(apiKind);
-        provider.setModel(model);
-        provider.setEffort(effort);
-        provider.setApiKey(apiKey);
-        provider.setUpdatedAt(1L);
-        return provider;
-    }
-
-    private AiTitlePrompt prompt() {
-        return new AiTitlePrompt("标题格式", "UC 风格", "原文内容");
+    private ShareSummaryImageConfigRecord config() {
+        ShareSummaryImageConfigRecord config = new ShareSummaryImageConfigRecord();
+        config.setEnabled(true);
+        config.setAutoGenerate(true);
+        config.setProviderType("OPENAI_COMPATIBLE");
+        config.setBaseUrl("https://api.example.com");
+        config.setEndpointPath("/v1/images/generations");
+        config.setApiKey("sk-test");
+        config.setModel("test-image");
+        config.setImageSize("auto");
+        config.setQuality("auto");
+        config.setOutputFormat("png");
+        config.setStylePrompt("style");
+        config.setRequestTimeoutSeconds(7);
+        return config;
     }
 
     private static final class CapturingHttpClient extends HttpClient {
         private final int statusCode;
         private final byte[] responseBody;
         private URI lastRequestUri;
-        private Optional<Duration> lastRequestTimeout = Optional.empty();
         private String lastRequestBody = "";
         private String lastAuthorization = "";
 
@@ -228,7 +186,6 @@ class AiTitleClientTest {
         @SuppressWarnings("unchecked")
         public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler) throws IOException {
             lastRequestUri = request.uri();
-            lastRequestTimeout = request.timeout();
             lastRequestBody = BodyCollector.collect(request);
             lastAuthorization = request.headers().firstValue("Authorization").orElse("");
             return (HttpResponse<T>) new StubHttpResponse(request.uri(), statusCode, responseBody);

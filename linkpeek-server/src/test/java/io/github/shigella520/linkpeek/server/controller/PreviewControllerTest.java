@@ -11,11 +11,12 @@ import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.service.NotificationService;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
-import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioClient;
-import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClient;
+import io.github.shigella520.linkpeek.server.admin.service.OpenAiCompatibleAudioClient;
+import io.github.shigella520.linkpeek.server.admin.service.OpenAiCompatibleImageClient;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioProvider;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
 import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
-import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import io.github.shigella520.linkpeek.server.ai.AiTitlePrompt;
 import io.github.shigella520.linkpeek.server.service.PreviewService;
 import io.github.shigella520.linkpeek.server.stats.model.StatisticsClientType;
@@ -123,13 +124,13 @@ class PreviewControllerTest {
     private TestPreviewProvider testPreviewProvider;
 
     @Autowired
-    private TestAiTitleClient testAiTitleClient;
+    private TestOpenAiCompatibleTextClient testOpenAiCompatibleTextClient;
 
     @Autowired
-    private TestShareSummaryImageClient testShareSummaryImageClient;
+    private TestOpenAiCompatibleImageClient testOpenAiCompatibleImageClient;
 
     @Autowired
-    private TestShareSummaryAudioClient testShareSummaryAudioClient;
+    private TestOpenAiCompatibleAudioClient testOpenAiCompatibleAudioClient;
 
     @Autowired
     private NotificationService notificationService;
@@ -177,9 +178,9 @@ class PreviewControllerTest {
         jdbcTemplate.execute("DELETE FROM ai_provider");
 
         testPreviewProvider.reset();
-        testAiTitleClient.reset();
-        testShareSummaryImageClient.reset();
-        testShareSummaryAudioClient.reset();
+        testOpenAiCompatibleTextClient.reset();
+        testOpenAiCompatibleImageClient.reset();
+        testOpenAiCompatibleAudioClient.reset();
         statisticsEventDeduplicator.clear();
     }
 
@@ -562,7 +563,7 @@ class PreviewControllerTest {
     @Test
     void previewStyleUsesAiTitleForGeneratedTextCardsAndCachesResult() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 生成标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 生成标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -592,10 +593,10 @@ class PreviewControllerTest {
                         result.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("AI 生成标题")
                 ));
 
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertEquals("UC 风格", testAiTitleClient.prompt.get().stylePrompt());
-        org.junit.jupiter.api.Assertions.assertEquals("原始帖子正文，包含需要被 AI 总结的信息。", testAiTitleClient.prompt.get().rawContent());
-        org.junit.jupiter.api.Assertions.assertTrue(testAiTitleClient.prompt.get().titleFormatPrompt().contains("只返回一行中文标题文本"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("UC 风格", testOpenAiCompatibleTextClient.prompt.get().stylePrompt());
+        org.junit.jupiter.api.Assertions.assertEquals("原始帖子正文，包含需要被 AI 总结的信息。", testOpenAiCompatibleTextClient.prompt.get().rawContent());
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleTextClient.prompt.get().titleFormatPrompt().contains("只返回一行中文标题文本"));
         org.junit.jupiter.api.Assertions.assertEquals(
                 1,
                 jdbcTemplate.queryForObject(
@@ -625,7 +626,7 @@ class PreviewControllerTest {
     @Test
     void styledGeneratedCardImageUrlChangesWhenAiTitleChangesAfterCacheClear() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 第一标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 第一标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -661,7 +662,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.previewKey").value(styledPreviewKey))
                 .andExpect(jsonPath("$.deletedFiles").value(2));
 
-        testAiTitleClient.generatedTitle.set("\"AI 第二标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 第二标题\"");
         MvcResult second = mockMvc.perform(get("/preview")
                         .param("url", "https://video.example.com/watch/abc")
                         .param("style", "fun")
@@ -677,7 +678,7 @@ class PreviewControllerTest {
                 String.class
         ));
         org.junit.jupiter.api.Assertions.assertNotEquals(firstImageUrl, secondImageUrl);
-        org.junit.jupiter.api.Assertions.assertEquals(2, testAiTitleClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(2, testOpenAiCompatibleTextClient.requests.get());
 
         mockMvc.perform(get("/media/thumb/{previewKey}.jpg", styledPreviewKey)
                         .param("v", imageVersion(secondImageUrl)))
@@ -688,7 +689,7 @@ class PreviewControllerTest {
     @Test
     void previewFreestyleUsesRandomConfiguredStylePrompt() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI freestyle 标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI freestyle 标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -708,15 +709,15 @@ class PreviewControllerTest {
                         result.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("AI freestyle 标题")
                 ));
 
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertEquals("UC 风格", testAiTitleClient.prompt.get().stylePrompt());
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("UC 风格", testOpenAiCompatibleTextClient.prompt.get().stylePrompt());
     }
 
     @Test
     void concurrentFreestylePreviewUsesSameStableStyleAndWaitsForCachedAiResult() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 并发标题\"");
-        testAiTitleClient.blockNextRequest();
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 并发标题\"");
+        testOpenAiCompatibleTextClient.blockNextRequest();
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -732,11 +733,11 @@ class PreviewControllerTest {
         );
 
         CompletableFuture<MvcResult> first = CompletableFuture.supplyAsync(() -> performFreestylePreview());
-        org.junit.jupiter.api.Assertions.assertTrue(testAiTitleClient.awaitBlockedRequest());
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleTextClient.awaitBlockedRequest());
         CompletableFuture<MvcResult> second = CompletableFuture.supplyAsync(() -> performFreestylePreview());
         Thread.sleep(50);
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
-        testAiTitleClient.releaseBlockedRequest();
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
+        testOpenAiCompatibleTextClient.releaseBlockedRequest();
 
         org.junit.jupiter.api.Assertions.assertTrue(
                 first.get(2, TimeUnit.SECONDS).getResponse().getContentAsString(StandardCharsets.UTF_8).contains("AI 并发标题")
@@ -744,7 +745,7 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 second.get(2, TimeUnit.SECONDS).getResponse().getContentAsString(StandardCharsets.UTF_8).contains("AI 并发标题")
         );
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
         org.junit.jupiter.api.Assertions.assertEquals(1, testPreviewProvider.resolutions.get());
         org.junit.jupiter.api.Assertions.assertEquals(
                 1,
@@ -781,13 +782,13 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Stub title")));
 
-        org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testOpenAiCompatibleTextClient.requests.get());
     }
 
     @Test
     void previewStyleCanUseAiTitleForAllowedRealImageCardsWithoutChangingImage() throws Exception {
         testPreviewProvider.aiTitleForRealImage.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 原图标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 原图标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -817,8 +818,8 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().bytes("thumb-data".getBytes(StandardCharsets.UTF_8)));
 
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertEquals("真实图片正文，包含需要被 AI 总结的信息。", testAiTitleClient.prompt.get().rawContent());
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("真实图片正文，包含需要被 AI 总结的信息。", testOpenAiCompatibleTextClient.prompt.get().rawContent());
         org.junit.jupiter.api.Assertions.assertEquals(1, testPreviewProvider.thumbnailDownloads.get());
         org.junit.jupiter.api.Assertions.assertEquals("https://img.example/thumb.jpg", testPreviewProvider.downloadedThumbnailUrl.get());
     }
@@ -1144,7 +1145,7 @@ class PreviewControllerTest {
     @Test
     void adminPreviewEventsEndpointListsCreatedLinksAndClearsCache() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 管理后台标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 管理后台标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -1218,7 +1219,7 @@ class PreviewControllerTest {
     void adminShareSummaryCrudManualRunAndHistoryUseDatabaseTitles() throws Exception {
         Cookie cookie = adminCookie();
         long now = System.currentTimeMillis();
-        testAiTitleClient.generatedText.set("分享总结报告");
+        testOpenAiCompatibleTextClient.generatedText.set("分享总结报告");
         jdbcTemplate.update(
                 "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 "local", 1, 1, "https://api.openai.com/v1", "RESPONSES", "test-model", "low", "test-key", now
@@ -1323,8 +1324,8 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertTrue(actualWindowEnd <= afterRun);
         org.junit.jupiter.api.Assertions.assertTrue(runResult.getResponse().getContentAsString().contains("\"windowEnd\":" + actualWindowEnd));
 
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.textRequests.get());
-        AiTextPrompt prompt = testAiTitleClient.textPrompt.get();
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.textRequests.get());
+        AiTextPrompt prompt = testOpenAiCompatibleTextClient.textPrompt.get();
         org.junit.jupiter.api.Assertions.assertTrue(prompt.prompt().contains("按主题聚合"));
         org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("链接分享列表"));
         org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("- 标题：数据库标题 A"));
@@ -1395,7 +1396,7 @@ class PreviewControllerTest {
                         .content("{\"windowStart\":1000,\"windowEnd\":2000}"))
                 .andExpect(status().isBadRequest());
 
-        org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.textRequests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testOpenAiCompatibleTextClient.textRequests.get());
     }
 
     @Test
@@ -1430,14 +1431,14 @@ class PreviewControllerTest {
                         .param("taskId", String.valueOf(taskId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].errorMessage").value("Link title count 1 is below the configured minimum 2."));
-        org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.textRequests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testOpenAiCompatibleTextClient.textRequests.get());
     }
 
     @Test
     void adminShareSummaryImageConfigGenerationAndPublicOgEndpoints() throws Exception {
         Cookie cookie = adminCookie();
         long now = System.currentTimeMillis();
-        testAiTitleClient.generatedText.set("""
+        testOpenAiCompatibleTextClient.generatedText.set("""
                 # 分享总结报告正文
 
                 ## 关键洞察
@@ -1516,8 +1517,8 @@ class PreviewControllerTest {
                 .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
                 .andExpect(content().contentType("audio/mpeg"))
                 .andExpect(content().bytes(testMp3Bytes()));
-        org.junit.jupiter.api.Assertions.assertEquals("俺老孙有七十二般变化，一个筋斗云就是十万八千里！", testShareSummaryAudioClient.input.get());
-        testShareSummaryAudioClient.reset();
+        org.junit.jupiter.api.Assertions.assertEquals("俺老孙有七十二般变化，一个筋斗云就是十万八千里！", testOpenAiCompatibleAudioClient.input.get());
+        testOpenAiCompatibleAudioClient.reset();
 
         mockMvc.perform(post("/api/admin/share-summary/tasks")
                         .cookie(cookie)
@@ -1544,9 +1545,9 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.status").value(isIn(List.of("PENDING", "GENERATING"))));
 
         waitForImageSuccess(runId);
-        org.junit.jupiter.api.Assertions.assertEquals(1, testShareSummaryImageClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryImageClient.prompt.get().contains("LinkPeek - "));
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryImageClient.prompt.get().contains("科技感数据报告"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleImageClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleImageClient.prompt.get().contains("LinkPeek - "));
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleImageClient.prompt.get().contains("科技感数据报告"));
 
         mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
                         .cookie(cookie))
@@ -1579,16 +1580,16 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.status").value(isIn(List.of("PENDING", "GENERATING"))));
 
         waitForAudioSuccess(runId);
-        org.junit.jupiter.api.Assertions.assertEquals(1, testShareSummaryAudioClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertEquals("", testShareSummaryAudioClient.config.get().getModel());
-        org.junit.jupiter.api.Assertions.assertEquals(0, testShareSummaryAudioClient.config.get().getPitch());
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("LinkPeek - "));
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("分享总结报告正文"));
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("内容洞察稳定"));
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("图片测试标题"));
-        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("# 分享总结报告正文"));
-        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("**内容洞察**"));
-        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("[图片测试标题](https://example.com/image)"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleAudioClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("", testOpenAiCompatibleAudioClient.config.get().getModel());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testOpenAiCompatibleAudioClient.config.get().getPitch());
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleAudioClient.input.get().contains("LinkPeek - "));
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleAudioClient.input.get().contains("分享总结报告正文"));
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleAudioClient.input.get().contains("内容洞察稳定"));
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleAudioClient.input.get().contains("图片测试标题"));
+        org.junit.jupiter.api.Assertions.assertFalse(testOpenAiCompatibleAudioClient.input.get().contains("# 分享总结报告正文"));
+        org.junit.jupiter.api.Assertions.assertFalse(testOpenAiCompatibleAudioClient.input.get().contains("**内容洞察**"));
+        org.junit.jupiter.api.Assertions.assertFalse(testOpenAiCompatibleAudioClient.input.get().contains("[图片测试标题](https://example.com/image)"));
 
         mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
                         .cookie(cookie))
@@ -1665,7 +1666,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.outputFormat").value("wav"));
 
         long now = System.currentTimeMillis();
-        testAiTitleClient.generatedText.set("# 分享总结报告正文\n\n- 内容洞察稳定");
+        testOpenAiCompatibleTextClient.generatedText.set("# 分享总结报告正文\n\n- 内容洞察稳定");
         jdbcTemplate.update(
                 "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 "local", 1, 1, "https://api.openai.com/v1", "RESPONSES", "test-model", "low", "test-key", now
@@ -1701,14 +1702,14 @@ class PreviewControllerTest {
         waitForImageSuccess(runId);
         String publicToken = jdbcTemplate.queryForObject("SELECT public_token FROM share_summary_image WHERE run_id = ?", String.class, runId);
 
-        testShareSummaryAudioClient.bytes.set(testWavBytes());
+        testOpenAiCompatibleAudioClient.bytes.set(testWavBytes());
         mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/audio", runId)
                         .cookie(cookie))
                 .andExpect(status().isOk());
         waitForAudioSuccess(runId);
 
-        org.junit.jupiter.api.Assertions.assertEquals("MIMO_TTS", testShareSummaryAudioClient.config.get().getProviderType());
-        org.junit.jupiter.api.Assertions.assertEquals("wav", testShareSummaryAudioClient.config.get().getOutputFormat());
+        org.junit.jupiter.api.Assertions.assertEquals("MIMO_TTS", testOpenAiCompatibleAudioClient.config.get().getProviderType());
+        org.junit.jupiter.api.Assertions.assertEquals("wav", testOpenAiCompatibleAudioClient.config.get().getOutputFormat());
         mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
                         .cookie(cookie))
                 .andExpect(status().isOk())
@@ -2185,7 +2186,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.output").value("AI title"));
 
-        testAiTitleClient.generatedTitle.set(null);
+        testOpenAiCompatibleTextClient.generatedTitle.set(null);
         mockMvc.perform(post("/api/admin/ai-providers/{id}/test", providerId)
                         .cookie(cookie))
                 .andExpect(status().isOk())
@@ -2534,24 +2535,24 @@ class PreviewControllerTest {
 
         @Bean
         @Primary
-        TestAiTitleClient testAiTitleClient() {
-            return new TestAiTitleClient();
+        TestOpenAiCompatibleTextClient testOpenAiCompatibleTextClient() {
+            return new TestOpenAiCompatibleTextClient();
         }
 
         @Bean
         @Primary
-        TestShareSummaryImageClient testShareSummaryImageClient() {
-            return new TestShareSummaryImageClient();
+        TestOpenAiCompatibleImageClient testOpenAiCompatibleImageClient() {
+            return new TestOpenAiCompatibleImageClient();
         }
 
         @Bean
         @Primary
-        TestShareSummaryAudioClient testShareSummaryAudioClient() {
-            return new TestShareSummaryAudioClient();
+        TestOpenAiCompatibleAudioClient testOpenAiCompatibleAudioClient() {
+            return new TestOpenAiCompatibleAudioClient();
         }
     }
 
-    static final class TestAiTitleClient extends AiTitleClient {
+    static final class TestOpenAiCompatibleTextClient extends OpenAiCompatibleTextClient {
         private final AtomicInteger requests = new AtomicInteger();
         private final AtomicInteger textRequests = new AtomicInteger();
         private final AtomicReference<AiTitlePrompt> prompt = new AtomicReference<>(new AiTitlePrompt("", "", ""));
@@ -2561,7 +2562,7 @@ class PreviewControllerTest {
         private final AtomicReference<CountDownLatch> blockedRequestStarted = new AtomicReference<>();
         private final AtomicReference<CountDownLatch> blockedRequestRelease = new AtomicReference<>();
 
-        TestAiTitleClient() {
+        TestOpenAiCompatibleTextClient() {
             super(null, null);
         }
 
@@ -2573,7 +2574,7 @@ class PreviewControllerTest {
         }
 
         @Override
-        public AiTitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) {
+        public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) {
             requests.incrementAndGet();
             this.prompt.set(prompt);
             CountDownLatch started = blockedRequestStarted.get();
@@ -2590,14 +2591,14 @@ class PreviewControllerTest {
                     blockedRequestRelease.set(null);
                 }
             }
-            return new AiTitleResult(Optional.ofNullable(generatedTitle.get()), 12);
+            return new TitleResult(Optional.ofNullable(generatedTitle.get()), 12);
         }
 
         @Override
-        public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) {
+        public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) {
             textRequests.incrementAndGet();
             this.textPrompt.set(prompt);
-            return new AiTextResult(Optional.ofNullable(generatedText.get()), 34);
+            return new TextResult(Optional.ofNullable(generatedText.get()), 34);
         }
 
         void blockNextRequest() {
@@ -2711,12 +2712,12 @@ class PreviewControllerTest {
         }
     }
 
-    static final class TestShareSummaryImageClient extends ShareSummaryImageClient {
+    static final class TestOpenAiCompatibleImageClient extends OpenAiCompatibleImageClient {
         private final AtomicInteger requests = new AtomicInteger();
         private final AtomicReference<String> prompt = new AtomicReference<>("");
         private final AtomicReference<String> base64 = new AtomicReference<>(testPngBase64());
 
-        TestShareSummaryImageClient() {
+        TestOpenAiCompatibleImageClient() {
             super(null, null);
         }
 
@@ -2734,13 +2735,13 @@ class PreviewControllerTest {
         }
     }
 
-    static final class TestShareSummaryAudioClient extends ShareSummaryAudioClient {
+    static final class TestOpenAiCompatibleAudioClient extends OpenAiCompatibleAudioClient {
         private final AtomicInteger requests = new AtomicInteger();
         private final AtomicReference<io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord> config = new AtomicReference<>();
         private final AtomicReference<String> input = new AtomicReference<>("");
         private final AtomicReference<byte[]> bytes = new AtomicReference<>(testMp3Bytes());
 
-        TestShareSummaryAudioClient() {
+        TestOpenAiCompatibleAudioClient() {
             super(null, null);
         }
 
@@ -2750,11 +2751,11 @@ class PreviewControllerTest {
         }
 
         @Override
-        public AudioGenerationResult generate(io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord config, String input) {
+        public ShareSummaryAudioProvider.AudioGenerationResult generate(io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord config, String input) {
             requests.incrementAndGet();
             this.config.set(config);
             this.input.set(input);
-            return new AudioGenerationResult(bytes.get(), "{\"test\":true}", 19);
+            return new ShareSummaryAudioProvider.AudioGenerationResult(bytes.get(), "{\"test\":true}", 19);
         }
 
         void reset() {

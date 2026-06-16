@@ -68,7 +68,7 @@ public class ShareSummaryImageService {
 
     private final ShareSummaryImageMapper imageMapper;
     private final ShareSummaryMapper shareSummaryMapper;
-    private final ShareSummaryImageClient imageClient;
+    private final OpenAiCompatibleImageClient imageClient;
     private final HttpClient httpClient;
     private final ExecutorService executor;
     private final NotificationService notificationService;
@@ -79,7 +79,7 @@ public class ShareSummaryImageService {
     public ShareSummaryImageService(
             ShareSummaryImageMapper imageMapper,
             ShareSummaryMapper shareSummaryMapper,
-            ShareSummaryImageClient imageClient,
+            OpenAiCompatibleImageClient imageClient,
             @Qualifier("shareSummaryImageHttpClient") HttpClient httpClient,
             @Qualifier("shareSummaryImageExecutor") ExecutorService executor,
             NotificationService notificationService,
@@ -254,7 +254,7 @@ public class ShareSummaryImageService {
         imageMapper.updateImage(image);
         try {
             ShareSummaryImageConfigRecord config = configRecord();
-            ShareSummaryImageClient.ImageGenerationResult result = imageClient.generate(config, image.getPromptSnapshot());
+            OpenAiCompatibleImageClient.ImageGenerationResult result = imageClient.generate(config, image.getPromptSnapshot());
             byte[] sourceBytes = StringUtils.hasText(result.base64())
                     ? decodeBase64Image(result.base64())
                     : downloadImage(result.imageUrl(), config.getRequestTimeoutSeconds());

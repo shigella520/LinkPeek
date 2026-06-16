@@ -23,8 +23,8 @@ import java.util.Map;
 import java.util.Optional;
 
 @Component
-public class AiTitleClient {
-    private static final Logger log = LoggerFactory.getLogger(AiTitleClient.class);
+public class OpenAiCompatibleTextClient {
+    private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleTextClient.class);
 
     public static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 45;
     private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(DEFAULT_REQUEST_TIMEOUT_SECONDS);
@@ -33,7 +33,7 @@ public class AiTitleClient {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public AiTitleClient(HttpClient httpClient, ObjectMapper objectMapper) {
+    public OpenAiCompatibleTextClient(HttpClient httpClient, ObjectMapper objectMapper) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
     }
@@ -42,25 +42,25 @@ public class AiTitleClient {
         return generateTitleResult(provider, prompt).title();
     }
 
-    public AiTitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException, InterruptedException {
+    public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException, InterruptedException {
         AiTextPrompt textPrompt = new AiTextPrompt(
                 prompt.titleFormatPrompt(),
                 prompt.styleMessage(),
                 prompt.rawContentMessage()
         );
-        AiTextResult result = generateTextResult(provider, textPrompt, "ai_title", null);
-        return new AiTitleResult(result.text(), result.durationMs());
+        TextResult result = generateTextResult(provider, textPrompt, "ai_title", null);
+        return new TitleResult(result.text(), result.durationMs());
     }
 
-    public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
+    public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
         return generateTextResult(provider, prompt, "ai_text", null);
     }
 
-    public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt, Duration timeout) throws IOException, InterruptedException {
+    public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt, Duration timeout) throws IOException, InterruptedException {
         return generateTextResult(provider, prompt, "ai_text", timeout);
     }
 
-    private AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt, String operation, Duration timeout) throws IOException, InterruptedException {
+    private TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt, String operation, Duration timeout) throws IOException, InterruptedException {
         AiApiKind apiKind = AiApiKind.fromValue(provider.getApiKind());
         URI endpointUri = apiKind.endpointUri(provider.getBaseUrl());
         byte[] body = switch (apiKind) {
@@ -130,7 +130,7 @@ public class AiTitleClient {
             case RESPONSES -> extractResponsesText(payload);
             case CHAT_COMPLETIONS -> extractChatText(payload);
         };
-        return new AiTextResult(title, durationMs);
+        return new TextResult(title, durationMs);
     }
 
     private byte[] responsesBody(AiProviderRecord provider, AiTextPrompt prompt) throws IOException {
@@ -242,9 +242,9 @@ public class AiTitleClient {
         return text.substring(0, MAX_BODY_LOG_CHARS).stripTrailing() + "...";
     }
 
-    public record AiTitleResult(Optional<String> title, long durationMs) {
+    public record TitleResult(Optional<String> title, long durationMs) {
     }
 
-    public record AiTextResult(Optional<String> text, long durationMs) {
+    public record TextResult(Optional<String> text, long durationMs) {
     }
 }

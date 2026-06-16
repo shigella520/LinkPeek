@@ -47,7 +47,7 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
     }
 
     @Override
-    public ShareSummaryAudioClient.AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException {
+    public ShareSummaryAudioProvider.AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException {
         URI endpoint = endpointUri(config.getBaseUrl(), config.getEndpointPath());
         String model = effectiveModel(config);
         String voice = effectiveVoice(config);
@@ -108,7 +108,7 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
                 requestId(response.headers()),
                 audioBytes.length
         );
-        return new ShareSummaryAudioClient.AudioGenerationResult(audioBytes, responseSnapshot(response.statusCode(), contentType, audioBytes.length), durationMs);
+        return new ShareSummaryAudioProvider.AudioGenerationResult(audioBytes, responseSnapshot(response.statusCode(), contentType, audioBytes.length), durationMs);
     }
 
     private byte[] requestBody(ShareSummaryAudioConfigRecord config, String input) throws IOException {

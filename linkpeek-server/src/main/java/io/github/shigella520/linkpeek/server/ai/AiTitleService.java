@@ -47,7 +47,7 @@ public class AiTitleService {
 
     private final AdminPromptMapper adminPromptMapper;
     private final AiProviderMapper aiProviderMapper;
-    private final AiTitleClient aiTitleClient;
+    private final OpenAiCompatibleTextClient textClient;
     private final AiTitleConfigService aiTitleConfigService;
     private final AiProviderDowngradeService aiProviderDowngradeService;
     private final Clock clock;
@@ -57,14 +57,14 @@ public class AiTitleService {
     public AiTitleService(
             AdminPromptMapper adminPromptMapper,
             AiProviderMapper aiProviderMapper,
-            AiTitleClient aiTitleClient,
+            OpenAiCompatibleTextClient textClient,
             AiTitleConfigService aiTitleConfigService,
             AiProviderDowngradeService aiProviderDowngradeService,
             Clock clock
     ) {
         this.adminPromptMapper = adminPromptMapper;
         this.aiProviderMapper = aiProviderMapper;
-        this.aiTitleClient = aiTitleClient;
+        this.textClient = textClient;
         this.aiTitleConfigService = aiTitleConfigService;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -73,14 +73,14 @@ public class AiTitleService {
     public AiTitleService(
             AdminPromptMapper adminPromptMapper,
             AiProviderMapper aiProviderMapper,
-            AiTitleClient aiTitleClient,
+            OpenAiCompatibleTextClient textClient,
             AiTitleConfigService aiTitleConfigService,
             AiProviderDowngradeService aiProviderDowngradeService
     ) {
         this(
                 adminPromptMapper,
                 aiProviderMapper,
-                aiTitleClient,
+                textClient,
                 aiTitleConfigService,
                 aiProviderDowngradeService,
                 Clock.systemUTC()
@@ -239,7 +239,7 @@ public class AiTitleService {
         for (AiProviderRecord provider : providers) {
             long startedAt = System.nanoTime();
             try {
-                AiTitleClient.AiTitleResult result = aiTitleClient.generateTitleResult(provider, prompt);
+                OpenAiCompatibleTextClient.TitleResult result = textClient.generateTitleResult(provider, prompt);
                 long durationMs = result.durationMs() > 0 ? result.durationMs() : elapsedMillis(startedAt);
                 attemptStats.record(provider, durationMs);
                 Optional<String> generated = result.title()

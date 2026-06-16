@@ -12,7 +12,7 @@ import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
 import io.github.shigella520.linkpeek.server.ai.AiProviderAutoDowngradedEvent;
 import io.github.shigella520.linkpeek.server.ai.AiProviderRequestFailedEvent;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
-import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -275,7 +275,7 @@ class ShareSummaryServiceTest {
         AiProviderRecord failedProvider = provider(1L, "failed-provider", 10);
         AiProviderRecord fallbackProvider = provider(2L, "fallback-provider", 20);
         providerMapper.providers = List.of(failedProvider, fallbackProvider);
-        FakeAiTitleClient aiTitleClient = new FakeAiTitleClient(failedProvider.getId());
+        FakeOpenAiCompatibleTextClient textClient = new FakeOpenAiCompatibleTextClient(failedProvider.getId());
         CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
         AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
                 new EnabledAutoDowngradeConfigMapper(),
@@ -287,7 +287,7 @@ class ShareSummaryServiceTest {
                 mapper,
                 linkMapper,
                 providerMapper,
-                aiTitleClient,
+                textClient,
                 downgradeService,
                 "2026-06-04T02:00:00Z"
         );
@@ -328,7 +328,7 @@ class ShareSummaryServiceTest {
         AiProviderRecord provider = provider(1L, "summary-provider", 10);
         provider.setRequestTimeoutSeconds(45);
         providerMapper.providers = List.of(provider);
-        FakeAiTitleClient aiTitleClient = new FakeAiTitleClient(null);
+        FakeOpenAiCompatibleTextClient textClient = new FakeOpenAiCompatibleTextClient(null);
         AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
                 new ConfigurableAiProviderConfigMapper(true, 2, 4.0D),
                 providerMapper,
@@ -339,7 +339,7 @@ class ShareSummaryServiceTest {
                 mapper,
                 linkMapper,
                 providerMapper,
-                aiTitleClient,
+                textClient,
                 downgradeService,
                 "2026-06-04T02:00:00Z"
         );
@@ -347,7 +347,7 @@ class ShareSummaryServiceTest {
         ShareSummaryRunRecord run = service.runTask(1L);
 
         assertEquals("SUCCESS", run.getStatus());
-        assertEquals(180, aiTitleClient.lastRequestTimeoutSeconds);
+        assertEquals(180, textClient.lastRequestTimeoutSeconds);
     }
 
     private ShareSummaryService service(FakeShareSummaryMapper mapper, String instant) {
@@ -359,7 +359,7 @@ class ShareSummaryServiceTest {
                 mapper,
                 linkMapper,
                 new FakeAiProviderMapper(),
-                new AiTitleClient(null, null),
+                new OpenAiCompatibleTextClient(null, null),
                 null,
                 instant
         );
@@ -369,7 +369,7 @@ class ShareSummaryServiceTest {
             FakeShareSummaryMapper mapper,
             ShareSummaryLinkMapper linkMapper,
             AiProviderMapper providerMapper,
-            AiTitleClient aiTitleClient,
+            OpenAiCompatibleTextClient textClient,
             AiProviderDowngradeService downgradeService,
             String instant
     ) {
@@ -377,7 +377,7 @@ class ShareSummaryServiceTest {
                 mapper,
                 linkMapper,
                 providerMapper,
-                aiTitleClient,
+                textClient,
                 null,
                 null,
                 downgradeService,
@@ -597,22 +597,22 @@ class ShareSummaryServiceTest {
         }
     }
 
-    private static final class FakeAiTitleClient extends AiTitleClient {
+    private static final class FakeOpenAiCompatibleTextClient extends OpenAiCompatibleTextClient {
         private final Long failedProviderId;
         private int lastRequestTimeoutSeconds;
 
-        private FakeAiTitleClient(Long failedProviderId) {
+        private FakeOpenAiCompatibleTextClient(Long failedProviderId) {
             super(null, null);
             this.failedProviderId = failedProviderId;
         }
 
         @Override
-        public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
+        public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
             lastRequestTimeoutSeconds = provider.getRequestTimeoutSeconds();
             if (provider.getId().equals(failedProviderId)) {
                 throw new IOException("provider failed");
             }
-            return new AiTextResult(Optional.of("fallback summary"), 12);
+            return new TextResult(Optional.of("fallback summary"), 12);
         }
     }
 

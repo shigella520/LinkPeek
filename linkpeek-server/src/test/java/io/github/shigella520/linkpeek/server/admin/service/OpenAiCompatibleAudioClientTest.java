@@ -2,7 +2,7 @@ package io.github.shigella520.linkpeek.server.admin.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageConfigRecord;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord;
 import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
@@ -32,103 +32,103 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class ShareSummaryImageClientTest {
+class OpenAiCompatibleAudioClientTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void parsesBase64ImageResponse() throws Exception {
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, """
-                {"data":[{"b64_json":"aW1hZ2UtYnl0ZXM="}]}
-                """);
-        ShareSummaryImageClient client = new ShareSummaryImageClient(httpClient, objectMapper);
+    void omitsBlankModelAndSendsWangwangitExtensionFields() throws Exception {
+        byte[] audioBytes = testMp3Bytes();
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "audio/mpeg", audioBytes);
+        OpenAiCompatibleAudioClient client = new OpenAiCompatibleAudioClient(httpClient, objectMapper);
 
-        ShareSummaryImageClient.ImageGenerationResult result = client.generate(config(), "生成分享图");
+        ShareSummaryAudioProvider.AudioGenerationResult result = client.generate(config(""), "测试文本");
 
         JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
-        assertEquals("aW1hZ2UtYnl0ZXM=", result.base64());
-        assertEquals(null, result.imageUrl());
-        assertEquals("/v1/images/generations", httpClient.lastRequestUri.getPath());
-        assertEquals("Bearer sk-test", httpClient.lastAuthorization);
-        assertEquals("test-image", body.path("model").asText());
-        assertEquals("生成分享图", body.path("prompt").asText());
-        assertEquals("auto", body.path("size").asText());
-        assertEquals(1, body.path("n").asInt());
-        assertEquals("png", body.path("output_format").asText());
-        assertEquals("auto", body.path("quality").asText());
-        assertEquals("auto", body.path("moderation").asText());
-        assertTrue(body.path("response_format").isMissingNode());
-        assertTrue(result.rawResponseSnapshot().contains("has_b64_json"));
+        assertArrayEquals(audioBytes, result.audioBytes());
+        assertEquals("/v1/audio/speech", httpClient.lastRequestUri.getPath());
+        assertEquals("", httpClient.lastAuthorization);
+        assertTrue(body.path("model").isMissingNode());
+        assertEquals("测试文本", body.path("input").asText());
+        assertEquals("zh-CN-YunhaoNeural", body.path("voice").asText());
+        assertEquals(1.2, body.path("speed").asDouble());
+        assertEquals(0, body.path("pitch").asInt());
+        assertEquals("newscast", body.path("style").asText());
     }
 
     @Test
-    void parsesUrlImageResponse() throws Exception {
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, """
-                {"data":[{"url":"https://cdn.example.com/image.png"}]}
-                """);
-        ShareSummaryImageClient client = new ShareSummaryImageClient(httpClient, objectMapper);
+    void sendsConfiguredModelAndAuthorization() throws Exception {
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "audio/mpeg", testMp3Bytes());
+        OpenAiCompatibleAudioClient client = new OpenAiCompatibleAudioClient(httpClient, objectMapper);
+        ShareSummaryAudioConfigRecord config = config("tts-1");
+        config.setApiKey("sk-audio");
 
-        ShareSummaryImageClient.ImageGenerationResult result = client.generate(config(), "生成分享图");
+        client.generate(config, "测试文本");
 
-        assertEquals(null, result.base64());
-        assertEquals("https://cdn.example.com/image.png", result.imageUrl());
+        JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
+        assertEquals("tts-1", body.path("model").asText());
+        assertEquals("Bearer sk-audio", httpClient.lastAuthorization);
     }
 
     @Test
-    void failsWhenResponseHasNoImage() {
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, """
-                {"data":[{"revised_prompt":"prompt"}]}
-                """);
-        ShareSummaryImageClient client = new ShareSummaryImageClient(httpClient, objectMapper);
+    void failsWhenProviderReturnsNonAudio() {
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
+        OpenAiCompatibleAudioClient client = new OpenAiCompatibleAudioClient(httpClient, objectMapper);
 
-        IOException exception = assertThrows(IOException.class, () -> client.generate(config(), "生成分享图"));
+        IOException exception = assertThrows(IOException.class, () -> client.generate(config(""), "测试文本"));
 
-        assertTrue(exception.getMessage().contains("data[0].b64_json"));
+        assertTrue(exception.getMessage().contains("non-audio"));
     }
 
     @Test
     void includesProviderErrorBody() {
-        CapturingHttpClient httpClient = new CapturingHttpClient(500, """
-                {"error":{"message":"upstream failed"}}
-                """);
-        ShareSummaryImageClient client = new ShareSummaryImageClient(httpClient, objectMapper);
+        CapturingHttpClient httpClient = new CapturingHttpClient(500, "application/json", "{\"error\":\"failed\"}".getBytes(StandardCharsets.UTF_8));
+        OpenAiCompatibleAudioClient client = new OpenAiCompatibleAudioClient(httpClient, objectMapper);
 
-        IOException exception = assertThrows(IOException.class, () -> client.generate(config(), "生成分享图"));
+        IOException exception = assertThrows(IOException.class, () -> client.generate(config(""), "测试文本"));
 
         assertTrue(exception.getMessage().contains("HTTP 500"));
-        assertTrue(exception.getMessage().contains("upstream failed"));
+        assertTrue(exception.getMessage().contains("failed"));
     }
 
-    private ShareSummaryImageConfigRecord config() {
-        ShareSummaryImageConfigRecord config = new ShareSummaryImageConfigRecord();
+    private ShareSummaryAudioConfigRecord config(String model) {
+        ShareSummaryAudioConfigRecord config = new ShareSummaryAudioConfigRecord();
         config.setEnabled(true);
         config.setAutoGenerate(true);
         config.setProviderType("OPENAI_COMPATIBLE");
-        config.setBaseUrl("https://api.example.com");
-        config.setEndpointPath("/v1/images/generations");
-        config.setApiKey("sk-test");
-        config.setModel("test-image");
-        config.setImageSize("auto");
-        config.setQuality("auto");
-        config.setOutputFormat("png");
-        config.setStylePrompt("style");
+        config.setBaseUrl("https://tts.example.com");
+        config.setEndpointPath("/v1/audio/speech");
+        config.setApiKey("");
+        config.setModel(model);
+        config.setVoice("zh-CN-YunhaoNeural");
+        config.setSpeed(1.2);
+        config.setPitch(0);
+        config.setStyle("newscast");
+        config.setOutputFormat("mp3");
         config.setRequestTimeoutSeconds(7);
         return config;
     }
 
+    private static byte[] testMp3Bytes() {
+        return new byte[]{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0, 0};
+    }
+
     private static final class CapturingHttpClient extends HttpClient {
         private final int statusCode;
+        private final String contentType;
         private final byte[] responseBody;
         private URI lastRequestUri;
         private String lastRequestBody = "";
         private String lastAuthorization = "";
 
-        private CapturingHttpClient(int statusCode, String responseBody) {
+        private CapturingHttpClient(int statusCode, String contentType, byte[] responseBody) {
             this.statusCode = statusCode;
-            this.responseBody = responseBody.getBytes(StandardCharsets.UTF_8);
+            this.contentType = contentType;
+            this.responseBody = responseBody;
         }
 
         @Override
@@ -188,7 +188,7 @@ class ShareSummaryImageClientTest {
             lastRequestUri = request.uri();
             lastRequestBody = BodyCollector.collect(request);
             lastAuthorization = request.headers().firstValue("Authorization").orElse("");
-            return (HttpResponse<T>) new StubHttpResponse(request.uri(), statusCode, responseBody);
+            return (HttpResponse<T>) new StubHttpResponse(request.uri(), statusCode, contentType, responseBody);
         }
 
         @Override
@@ -206,7 +206,7 @@ class ShareSummaryImageClientTest {
         }
     }
 
-    private record StubHttpResponse(URI uri, int statusCode, byte[] body) implements HttpResponse<byte[]> {
+    private record StubHttpResponse(URI uri, int statusCode, String contentType, byte[] body) implements HttpResponse<byte[]> {
         @Override
         public HttpRequest request() {
             return HttpRequest.newBuilder(uri).build();
@@ -220,7 +220,7 @@ class ShareSummaryImageClientTest {
         @Override
         public HttpHeaders headers() {
             return HttpHeaders.of(Map.of(
-                    "Content-Type", List.of("application/json"),
+                    "Content-Type", List.of(contentType),
                     "x-request-id", List.of("req-test")
             ), (left, right) -> true);
         }

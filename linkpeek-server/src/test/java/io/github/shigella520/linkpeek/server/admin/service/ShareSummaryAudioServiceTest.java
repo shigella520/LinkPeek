@@ -50,7 +50,7 @@ class ShareSummaryAudioServiceTest {
     void publishesAudioFailedNotificationWhenGenerationThrows() throws Exception {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
                 .thenThrow(new IOException("provider failed"));
@@ -74,7 +74,7 @@ class ShareSummaryAudioServiceTest {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
         NotificationService notificationService = mock(NotificationService.class);
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         ShareSummaryAudioService service = service(
                 audioMapper,
@@ -100,7 +100,7 @@ class ShareSummaryAudioServiceTest {
     void audioFailureNotificationIncludesErrorTypeAndFallbackMessage() throws Exception {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
                 .thenThrow(new IOException());
@@ -139,10 +139,10 @@ class ShareSummaryAudioServiceTest {
         stale.setStartedAt(1L);
         audioMapper.audios.add(stale);
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
-                .thenReturn(new ShareSummaryAudioClient.AudioGenerationResult(new byte[]{1, 2}, "{}", 10));
+                .thenReturn(new ShareSummaryAudioProvider.AudioGenerationResult(new byte[]{1, 2}, "{}", 10));
         ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
 
         service.generateAudio(1, true);
@@ -156,11 +156,11 @@ class ShareSummaryAudioServiceTest {
     void testConfigWritesSingleCachedAudioFile() throws Exception {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         byte[] audioBytes = new byte[]{'I', 'D', '3', 1};
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), eq(TEST_AUDIO_TEXT)))
-                .thenReturn(new ShareSummaryAudioClient.AudioGenerationResult(audioBytes, "{}", 12));
+                .thenReturn(new ShareSummaryAudioProvider.AudioGenerationResult(audioBytes, "{}", 12));
         ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
         Path testAudioDir = cacheDir.resolve("share-summary/test-audio");
         Files.createDirectories(testAudioDir);
@@ -201,7 +201,7 @@ class ShareSummaryAudioServiceTest {
     void testConfigReturnsFailureWhenProviderThrows() throws Exception {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
                 .thenThrow(new IOException("provider failed"));
@@ -242,7 +242,7 @@ class ShareSummaryAudioServiceTest {
         config.setOutputFormat("wav");
         FakeAudioMapper audioMapper = new FakeAudioMapper(config);
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
 
@@ -266,7 +266,7 @@ class ShareSummaryAudioServiceTest {
         config.setOutputFormat("wav");
         FakeAudioMapper audioMapper = new FakeAudioMapper(config);
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
 
@@ -290,7 +290,7 @@ class ShareSummaryAudioServiceTest {
         config.setOutputFormat("wav");
         FakeAudioMapper audioMapper = new FakeAudioMapper(config);
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryAudioClient audioClient = mock(ShareSummaryAudioClient.class);
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
 
@@ -305,7 +305,7 @@ class ShareSummaryAudioServiceTest {
     private ShareSummaryAudioService service(
             FakeAudioMapper audioMapper,
             FakeShareSummaryMapper shareSummaryMapper,
-            ShareSummaryAudioClient audioClient,
+            OpenAiCompatibleAudioClient audioClient,
             ExecutorService executor,
             NotificationService notificationService
     ) {

@@ -7,5 +7,8 @@ import java.io.IOException;
 public interface ShareSummaryAudioProvider {
     boolean supports(String providerType);
 
-    ShareSummaryAudioClient.AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException;
+    AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException;
+
+    record AudioGenerationResult(byte[] audioBytes, String rawResponseSnapshot, long durationMs) {
+    }
 }

@@ -62,7 +62,7 @@ class ShareSummaryImageServiceTest {
         FakeImageMapper imageMapper = new FakeImageMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
         NotificationService notificationService = mock(NotificationService.class);
-        ShareSummaryImageClient imageClient = new ShareSummaryImageClient(
+        OpenAiCompatibleImageClient imageClient = new OpenAiCompatibleImageClient(
                 new ImageProviderHttpClient(200, """
                         {"data":[{"url":"http://93.184.216.34/image.png"}]}
                         """),
@@ -108,7 +108,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 imageMapper,
                 shareSummaryMapper,
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new RejectingExecutorService(),
                 notificationService,
@@ -133,7 +133,7 @@ class ShareSummaryImageServiceTest {
         FakeImageMapper imageMapper = new FakeImageMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
         NotificationService notificationService = mock(NotificationService.class);
-        ShareSummaryImageClient imageClient = mock(ShareSummaryImageClient.class);
+        OpenAiCompatibleImageClient imageClient = mock(OpenAiCompatibleImageClient.class);
         try {
             when(imageClient.generate(any(ShareSummaryImageConfigRecord.class), any(String.class)))
                     .thenThrow(new IOException());
@@ -183,9 +183,9 @@ class ShareSummaryImageServiceTest {
         stale.setStartedAt(1L);
         imageMapper.images.add(stale);
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryImageClient imageClient = mock(ShareSummaryImageClient.class);
+        OpenAiCompatibleImageClient imageClient = mock(OpenAiCompatibleImageClient.class);
         when(imageClient.generate(any(ShareSummaryImageConfigRecord.class), any(String.class)))
-                .thenReturn(new ShareSummaryImageClient.ImageGenerationResult(
+                .thenReturn(new OpenAiCompatibleImageClient.ImageGenerationResult(
                         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
                         null,
                         "{}",
@@ -217,7 +217,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 new FakeImageMapper(config()),
                 new FakeShareSummaryMapper(successfulRun()),
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
                 null,
@@ -239,7 +239,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 new FakeImageMapper(config()),
                 new FakeShareSummaryMapper(successfulRun()),
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
                 null,
@@ -269,7 +269,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 imageMapper,
                 new FakeShareSummaryMapper(successfulRun()),
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
                 null,
@@ -304,7 +304,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 imageMapper,
                 new FakeShareSummaryMapper(successfulRun()),
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
                 null,

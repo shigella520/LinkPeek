@@ -80,7 +80,7 @@ public class ShareSummaryAudioService {
             ShareSummaryAudioMapper audioMapper,
             ShareSummaryMapper shareSummaryMapper,
             ShareSummaryImageMapper imageMapper,
-            ShareSummaryAudioClient audioClient,
+            OpenAiCompatibleAudioClient audioClient,
             MimoTtsAudioProvider mimoTtsAudioProvider,
             @Qualifier("shareSummaryAudioExecutor") ExecutorService executor,
             NotificationService notificationService,
@@ -127,7 +127,7 @@ public class ShareSummaryAudioService {
         ShareSummaryAudioConfigRecord normalized = normalizeConfig(request, audioMapper.selectConfig());
         try {
             validateProviderConfig(normalized);
-            ShareSummaryAudioClient.AudioGenerationResult result = audioProvider(normalized).generate(normalized, TEST_AUDIO_TEXT);
+            ShareSummaryAudioProvider.AudioGenerationResult result = audioProvider(normalized).generate(normalized, TEST_AUDIO_TEXT);
             byte[] audioBytes = result.audioBytes();
             if (audioBytes == null || audioBytes.length == 0) {
                 throw new IOException("Audio response was empty.");
@@ -295,7 +295,7 @@ public class ShareSummaryAudioService {
         audioMapper.updateAudio(audio);
         try {
             ShareSummaryAudioConfigRecord config = configRecord();
-            ShareSummaryAudioClient.AudioGenerationResult result = audioProvider(config).generate(config, audio.getTextSnapshot());
+            ShareSummaryAudioProvider.AudioGenerationResult result = audioProvider(config).generate(config, audio.getTextSnapshot());
             byte[] bytes = result.audioBytes();
             if (bytes.length > MAX_AUDIO_BYTES) {
                 throw new IOException("Audio response exceeded 20 MB.");

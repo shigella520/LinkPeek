@@ -19,14 +19,14 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @Component
-public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
-    private static final Logger log = LoggerFactory.getLogger(ShareSummaryAudioClient.class);
+public class OpenAiCompatibleAudioClient implements ShareSummaryAudioProvider {
+    private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleAudioClient.class);
     private static final int MAX_BODY_LOG_CHARS = 2_000;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public ShareSummaryAudioClient(HttpClient httpClient, ObjectMapper objectMapper) {
+    public OpenAiCompatibleAudioClient(HttpClient httpClient, ObjectMapper objectMapper) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
     }
@@ -37,7 +37,7 @@ public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
     }
 
     @Override
-    public AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException {
+    public ShareSummaryAudioProvider.AudioGenerationResult generate(ShareSummaryAudioConfigRecord config, String input) throws IOException, InterruptedException {
         URI endpoint = endpointUri(config.getBaseUrl(), config.getEndpointPath());
         byte[] body = requestBody(config, input);
         Duration timeout = Duration.ofSeconds(Math.max(1, config.getRequestTimeoutSeconds()));
@@ -103,7 +103,7 @@ public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
                 requestId(response.headers()),
                 audioBytes.length
         );
-        return new AudioGenerationResult(audioBytes, responseSnapshot(response.statusCode(), contentType, audioBytes.length), durationMs);
+        return new ShareSummaryAudioProvider.AudioGenerationResult(audioBytes, responseSnapshot(response.statusCode(), contentType, audioBytes.length), durationMs);
     }
 
     private byte[] requestBody(ShareSummaryAudioConfigRecord config, String input) throws IOException {
@@ -190,8 +190,5 @@ public class ShareSummaryAudioClient implements ShareSummaryAudioProvider {
             result = result.substring(0, result.length() - 1);
         }
         return result;
-    }
-
-    public record AudioGenerationResult(byte[] audioBytes, String rawResponseSnapshot, long durationMs) {
     }
 }

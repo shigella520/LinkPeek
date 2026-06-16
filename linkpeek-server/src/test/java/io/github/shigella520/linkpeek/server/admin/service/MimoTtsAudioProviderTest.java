@@ -49,7 +49,7 @@ class MimoTtsAudioProviderTest {
                 """.formatted(Base64.getEncoder().encodeToString(audioBytes)).getBytes(StandardCharsets.UTF_8));
         MimoTtsAudioProvider provider = new MimoTtsAudioProvider(httpClient, objectMapper);
 
-        ShareSummaryAudioClient.AudioGenerationResult result = provider.generate(config(), "报告正文");
+        ShareSummaryAudioProvider.AudioGenerationResult result = provider.generate(config(), "报告正文");
 
         JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
         assertArrayEquals(audioBytes, result.audioBytes());

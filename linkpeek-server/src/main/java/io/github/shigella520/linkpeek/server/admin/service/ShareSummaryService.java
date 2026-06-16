@@ -13,7 +13,7 @@ import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryLinkM
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryMapper;
 import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
-import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -57,7 +57,7 @@ public class ShareSummaryService {
     private final ShareSummaryMapper shareSummaryMapper;
     private final ShareSummaryLinkMapper shareSummaryLinkMapper;
     private final AiProviderMapper aiProviderMapper;
-    private final AiTitleClient aiTitleClient;
+    private final OpenAiCompatibleTextClient textClient;
     private final ShareSummaryImageService shareSummaryImageService;
     private final ShareSummaryAudioService shareSummaryAudioService;
     private final AiProviderDowngradeService aiProviderDowngradeService;
@@ -68,7 +68,7 @@ public class ShareSummaryService {
             ShareSummaryMapper shareSummaryMapper,
             ShareSummaryLinkMapper shareSummaryLinkMapper,
             AiProviderMapper aiProviderMapper,
-            AiTitleClient aiTitleClient,
+            OpenAiCompatibleTextClient textClient,
             ShareSummaryImageService shareSummaryImageService,
             ShareSummaryAudioService shareSummaryAudioService,
             AiProviderDowngradeService aiProviderDowngradeService,
@@ -77,7 +77,7 @@ public class ShareSummaryService {
         this.shareSummaryMapper = shareSummaryMapper;
         this.shareSummaryLinkMapper = shareSummaryLinkMapper;
         this.aiProviderMapper = aiProviderMapper;
-        this.aiTitleClient = aiTitleClient;
+        this.textClient = textClient;
         this.shareSummaryImageService = shareSummaryImageService;
         this.shareSummaryAudioService = shareSummaryAudioService;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
@@ -496,7 +496,7 @@ public class ShareSummaryService {
         for (AiProviderRecord provider : providers) {
             long startedAt = System.nanoTime();
             try {
-                AiTitleClient.AiTextResult result = aiTitleClient.generateTextResult(
+                OpenAiCompatibleTextClient.TextResult result = textClient.generateTextResult(
                         providerWithShareSummaryTimeout(provider, shareSummaryTimeoutMultiplier),
                         prompt
                 );
@@ -562,7 +562,7 @@ public class ShareSummaryService {
     private int shareSummaryRequestTimeout(AiProviderRecord provider, double multiplier) {
         int baseTimeoutSeconds = provider.getRequestTimeoutSeconds() > 0
                 ? provider.getRequestTimeoutSeconds()
-                : AiTitleClient.DEFAULT_REQUEST_TIMEOUT_SECONDS;
+                : OpenAiCompatibleTextClient.DEFAULT_REQUEST_TIMEOUT_SECONDS;
         long timeoutSeconds = Math.round(baseTimeoutSeconds * multiplier);
         timeoutSeconds = Math.max(1L, Math.min(MAX_SHARE_SUMMARY_REQUEST_TIMEOUT_SECONDS, timeoutSeconds));
         return (int) timeoutSeconds;

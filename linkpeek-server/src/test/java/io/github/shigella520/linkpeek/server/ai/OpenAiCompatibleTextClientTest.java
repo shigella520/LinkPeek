@@ -1,8 +1,8 @@
-package io.github.shigella520.linkpeek.server.admin.service;
+package io.github.shigella520.linkpeek.server.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord;
+import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import org.junit.jupiter.api.Test;
 
 import javax.net.ssl.SSLContext;
@@ -32,103 +32,145 @@ import java.util.concurrent.Flow;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class ShareSummaryAudioClientTest {
+class OpenAiCompatibleTextClientTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void omitsBlankModelAndSendsWangwangitExtensionFields() throws Exception {
-        byte[] audioBytes = testMp3Bytes();
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, "audio/mpeg", audioBytes);
-        ShareSummaryAudioClient client = new ShareSummaryAudioClient(httpClient, objectMapper);
+    void sendsChatCompletionsRequestAndParsesMessageContent() throws Exception {
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, """
+                {"choices":[{"message":{"content":"AI 生成标题"}}]}
+                """);
+        OpenAiCompatibleTextClient client = new OpenAiCompatibleTextClient(httpClient, objectMapper);
 
-        ShareSummaryAudioClient.AudioGenerationResult result = client.generate(config(""), "测试文本");
+        Optional<String> title = client.generateTitle(
+                provider("https://api.example.com/v1", "CHAT_COMPLETIONS", "gpt-test", "low", "sk-test"),
+                prompt()
+        );
 
         JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
-        assertArrayEquals(audioBytes, result.audioBytes());
-        assertEquals("/v1/audio/speech", httpClient.lastRequestUri.getPath());
+        assertEquals(Optional.of("AI 生成标题"), title);
+        assertEquals("/v1/chat/completions", httpClient.lastRequestUri.getPath());
+        assertEquals("Bearer sk-test", httpClient.lastAuthorization);
+        assertEquals("gpt-test", body.path("model").asText());
+        assertEquals("system", body.path("messages").get(0).path("role").asText());
+        assertEquals("标题格式", body.path("messages").get(0).path("content").asText());
+        assertEquals("user", body.path("messages").get(1).path("role").asText());
+        assertEquals("Style Prompt\nUC 风格", body.path("messages").get(1).path("content").asText());
+        assertEquals("user", body.path("messages").get(2).path("role").asText());
+        assertEquals("Raw Content\n原文内容", body.path("messages").get(2).path("content").asText());
+        assertEquals("low", body.path("reasoning_effort").asText());
+        assertEquals(Optional.of(Duration.ofSeconds(45)), httpClient.lastRequestTimeout);
+    }
+
+    @Test
+    void sendsResponsesRequestAndParsesOutputText() throws Exception {
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, """
+                {"output":[{"content":[{"type":"output_text","text":"Responses 标题"}]}]}
+                """);
+        OpenAiCompatibleTextClient client = new OpenAiCompatibleTextClient(httpClient, objectMapper);
+
+        Optional<String> title = client.generateTitle(
+                provider("https://api.example.com/v1", "RESPONSES", "gpt-test", "medium", ""),
+                prompt()
+        );
+
+        JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
+        assertEquals(Optional.of("Responses 标题"), title);
+        assertEquals("/v1/responses", httpClient.lastRequestUri.getPath());
         assertEquals("", httpClient.lastAuthorization);
-        assertTrue(body.path("model").isMissingNode());
-        assertEquals("测试文本", body.path("input").asText());
-        assertEquals("zh-CN-YunhaoNeural", body.path("voice").asText());
-        assertEquals(1.2, body.path("speed").asDouble());
-        assertEquals(0, body.path("pitch").asInt());
-        assertEquals("newscast", body.path("style").asText());
+        assertEquals("gpt-test", body.path("model").asText());
+        assertEquals("标题格式", body.path("instructions").asText());
+        assertEquals("user", body.path("input").get(0).path("role").asText());
+        assertEquals("Style Prompt\nUC 风格", body.path("input").get(0).path("content").asText());
+        assertEquals("user", body.path("input").get(1).path("role").asText());
+        assertEquals("Raw Content\n原文内容", body.path("input").get(1).path("content").asText());
+        assertEquals("medium", body.path("reasoning").path("effort").asText());
+        assertEquals(Optional.of(Duration.ofSeconds(45)), httpClient.lastRequestTimeout);
     }
 
     @Test
-    void sendsConfiguredModelAndAuthorization() throws Exception {
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, "audio/mpeg", testMp3Bytes());
-        ShareSummaryAudioClient client = new ShareSummaryAudioClient(httpClient, objectMapper);
-        ShareSummaryAudioConfigRecord config = config("tts-1");
-        config.setApiKey("sk-audio");
+    void usesProviderRequestTimeoutWhenPresent() throws Exception {
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, """
+                {"choices":[{"message":{"content":"AI 生成标题"}}]}
+                """);
+        OpenAiCompatibleTextClient client = new OpenAiCompatibleTextClient(httpClient, objectMapper);
+        AiProviderRecord provider = provider("https://api.example.com/v1", "CHAT_COMPLETIONS", "gpt-test", "", "sk-test");
+        provider.setRequestTimeoutSeconds(12);
 
-        client.generate(config, "测试文本");
+        client.generateTitle(provider, prompt());
 
-        JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
-        assertEquals("tts-1", body.path("model").asText());
-        assertEquals("Bearer sk-audio", httpClient.lastAuthorization);
+        assertEquals(Optional.of(Duration.ofSeconds(12)), httpClient.lastRequestTimeout);
     }
 
     @Test
-    void failsWhenProviderReturnsNonAudio() {
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
-        ShareSummaryAudioClient client = new ShareSummaryAudioClient(httpClient, objectMapper);
-
-        IOException exception = assertThrows(IOException.class, () -> client.generate(config(""), "测试文本"));
-
-        assertTrue(exception.getMessage().contains("non-audio"));
+    void rejectsBaseUrlWithoutV1Path() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AiApiKind.normalizeBaseUrl("https://api.example.com/v1/completions")
+        );
     }
 
     @Test
-    void includesProviderErrorBody() {
-        CapturingHttpClient httpClient = new CapturingHttpClient(500, "application/json", "{\"error\":\"failed\"}".getBytes(StandardCharsets.UTF_8));
-        ShareSummaryAudioClient client = new ShareSummaryAudioClient(httpClient, objectMapper);
-
-        IOException exception = assertThrows(IOException.class, () -> client.generate(config(""), "测试文本"));
-
-        assertTrue(exception.getMessage().contains("HTTP 500"));
-        assertTrue(exception.getMessage().contains("failed"));
+    void rejectsBlankApiFormat() {
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> AiApiKind.fromValue("")
+        );
     }
 
-    private ShareSummaryAudioConfigRecord config(String model) {
-        ShareSummaryAudioConfigRecord config = new ShareSummaryAudioConfigRecord();
-        config.setEnabled(true);
-        config.setAutoGenerate(true);
-        config.setProviderType("OPENAI_COMPATIBLE");
-        config.setBaseUrl("https://tts.example.com");
-        config.setEndpointPath("/v1/audio/speech");
-        config.setApiKey("");
-        config.setModel(model);
-        config.setVoice("zh-CN-YunhaoNeural");
-        config.setSpeed(1.2);
-        config.setPitch(0);
-        config.setStyle("newscast");
-        config.setOutputFormat("mp3");
-        config.setRequestTimeoutSeconds(7);
-        return config;
+    @Test
+    void includesResponseBodySnippetWhenProviderReturnsHttpError() {
+        CapturingHttpClient httpClient = new CapturingHttpClient(503, """
+                {"error":{"message":"upstream overloaded","type":"service_unavailable"}}
+                """);
+        OpenAiCompatibleTextClient client = new OpenAiCompatibleTextClient(httpClient, objectMapper);
+
+        IOException exception = assertThrows(
+                IOException.class,
+                () -> client.generateTitle(
+                        provider("https://api.example.com/v1", "CHAT_COMPLETIONS", "gpt-test", "", "sk-test"),
+                        prompt()
+                )
+        );
+
+        assertTrue(exception.getMessage().contains("HTTP 503"));
+        assertTrue(exception.getMessage().contains("upstream overloaded"));
     }
 
-    private static byte[] testMp3Bytes() {
-        return new byte[]{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0, 0};
+    private AiProviderRecord provider(String baseUrl, String apiKind, String model, String effort, String apiKey) {
+        AiProviderRecord provider = new AiProviderRecord();
+        provider.setId(1L);
+        provider.setName("test");
+        provider.setEnabled(true);
+        provider.setSortOrder(1);
+        provider.setBaseUrl(baseUrl);
+        provider.setApiKind(apiKind);
+        provider.setModel(model);
+        provider.setEffort(effort);
+        provider.setApiKey(apiKey);
+        provider.setUpdatedAt(1L);
+        return provider;
+    }
+
+    private AiTitlePrompt prompt() {
+        return new AiTitlePrompt("标题格式", "UC 风格", "原文内容");
     }
 
     private static final class CapturingHttpClient extends HttpClient {
         private final int statusCode;
-        private final String contentType;
         private final byte[] responseBody;
         private URI lastRequestUri;
+        private Optional<Duration> lastRequestTimeout = Optional.empty();
         private String lastRequestBody = "";
         private String lastAuthorization = "";
 
-        private CapturingHttpClient(int statusCode, String contentType, byte[] responseBody) {
+        private CapturingHttpClient(int statusCode, String responseBody) {
             this.statusCode = statusCode;
-            this.contentType = contentType;
-            this.responseBody = responseBody;
+            this.responseBody = responseBody.getBytes(StandardCharsets.UTF_8);
         }
 
         @Override
@@ -186,9 +228,10 @@ class ShareSummaryAudioClientTest {
         @SuppressWarnings("unchecked")
         public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler) throws IOException {
             lastRequestUri = request.uri();
+            lastRequestTimeout = request.timeout();
             lastRequestBody = BodyCollector.collect(request);
             lastAuthorization = request.headers().firstValue("Authorization").orElse("");
-            return (HttpResponse<T>) new StubHttpResponse(request.uri(), statusCode, contentType, responseBody);
+            return (HttpResponse<T>) new StubHttpResponse(request.uri(), statusCode, responseBody);
         }
 
         @Override
@@ -206,7 +249,7 @@ class ShareSummaryAudioClientTest {
         }
     }
 
-    private record StubHttpResponse(URI uri, int statusCode, String contentType, byte[] body) implements HttpResponse<byte[]> {
+    private record StubHttpResponse(URI uri, int statusCode, byte[] body) implements HttpResponse<byte[]> {
         @Override
         public HttpRequest request() {
             return HttpRequest.newBuilder(uri).build();
@@ -220,7 +263,7 @@ class ShareSummaryAudioClientTest {
         @Override
         public HttpHeaders headers() {
             return HttpHeaders.of(Map.of(
-                    "Content-Type", List.of(contentType),
+                    "Content-Type", List.of("application/json"),
                     "x-request-id", List.of("req-test")
             ), (left, right) -> true);
         }
