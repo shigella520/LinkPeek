@@ -1774,8 +1774,8 @@
                 <button type="button" class="secondary" data-view-share-run="${escapeAttribute(run.id)}">详情</button>
                 ${renderShareSummaryImageActionButton(run, canGenerate, hasImage)}
                 ${renderShareSummaryAudioActionButton(run, canGenerate, hasAudio)}
-                <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG</button>
-                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图</button>
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG链接</button>
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图片</button>
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.audioUrl || "")}" ${run.audioUrl ? "" : "disabled"}>复制音频</button>
                 <button type="button" class="danger" data-delete-share-run="${escapeAttribute(run.id)}">删除</button>
             </div>
@@ -1784,13 +1784,13 @@
 
     function renderShareSummaryImageActionButton(run, canGenerate = run.status === "SUCCESS", hasImage = Boolean(run.ogImageUrl)) {
         const imageActionAttribute = hasImage ? "data-regenerate-share-image" : "data-generate-share-image";
-        const imageActionLabel = hasImage ? "重生成" : "生成图";
+        const imageActionLabel = hasImage ? "重新生成图片" : "生成图片";
         return `<button type="button" class="secondary" ${imageActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate ? "" : "disabled"}>${imageActionLabel}</button>`;
     }
 
     function renderShareSummaryAudioActionButton(run, canGenerate = run.status === "SUCCESS", hasAudio = Boolean(run.audioUrl)) {
         const audioActionAttribute = hasAudio ? "data-regenerate-share-audio" : "data-generate-share-audio";
-        const audioActionLabel = hasAudio ? "重生成音频" : "生成音频";
+        const audioActionLabel = hasAudio ? "重新生成音频" : "生成音频";
         return `<button type="button" class="secondary" ${audioActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate ? "" : "disabled"}>${audioActionLabel}</button>`;
     }
 
@@ -1977,7 +1977,7 @@
         if (!runId) {
             return;
         }
-        setFeedback("share-summary-history-feedback", regenerate ? "正在重新生成分享图..." : "正在生成分享图...", "");
+        setFeedback("share-summary-history-feedback", regenerate ? "正在重新生成图片..." : "正在生成图片...", "");
         try {
             const path = regenerate ? "image/regenerate" : "image";
             await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/${path}`, {method: "POST"});
@@ -1985,7 +1985,7 @@
             if (state.activeShareSummaryRunId && String(state.activeShareSummaryRunId) === String(runId)) {
                 await openShareSummaryRunDetail(runId);
             }
-            setFeedback("share-summary-history-feedback", "分享图任务已提交。", "is-success");
+            setFeedback("share-summary-history-feedback", "图片任务已提交。", "is-success");
         } catch (error) {
             setFeedback("share-summary-history-feedback", error.message, "is-error");
             setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
@@ -3316,8 +3316,8 @@
                     <h4>分享图</h4>
                     <div class="row-actions">
                         ${renderShareSummaryImageActionButton(run)}
-                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制 OG 分享链接</button>
-                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图片直链</button>
+                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG链接</button>
+                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图片链接</button>
                     </div>
                 </div>
                 ${renderShareSummaryImageDetail(run, images)}

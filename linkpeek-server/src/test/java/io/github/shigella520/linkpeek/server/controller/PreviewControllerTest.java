@@ -293,7 +293,7 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("/admin/styles.css?v=20260616-share-summary-timeout-multiplier")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
                 .andExpect(content().string(containsString("brand-text")))
-                .andExpect(content().string(containsString("/admin/app.js?v=20260616-share-summary-timeout-multiplier")))
+                .andExpect(content().string(containsString("/admin/app.js?v=20260616-share-summary-asset-labels")))
                 .andExpect(content().string(not(containsString("brand-copy"))))
                 .andExpect(content().string(containsString("provider-config")))
                 .andExpect(content().string(containsString("data-provider=\"bilibili\"")))
