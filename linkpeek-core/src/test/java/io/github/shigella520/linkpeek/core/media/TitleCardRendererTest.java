@@ -71,6 +71,33 @@ class TitleCardRendererTest {
     }
 
     @Test
+    void watermarkOffsetChangesRenderedCard() throws Exception {
+        String title = "标题卡片水印偏移测试";
+        String seed = "https://example.com/topic/1";
+        TitleCardRenderer.Watermark watermark =
+                TitleCardRenderer.Watermark.resource(TitleCardRendererTest.class, "test-watermark.svg");
+        Path first = tempDir.resolve("first-offset.jpg");
+        Path second = tempDir.resolve("second-offset.jpg");
+
+        try {
+            TitleCardRenderer.setWatermarkOffsetGeneratorForTesting((maxXExclusive, maxYExclusive) ->
+                    new TitleCardRenderer.WatermarkOffset(0, 0));
+            TitleCardRenderer.render(title, "Fallback", seed, "TEST", watermark, first);
+
+            TitleCardRenderer.setWatermarkOffsetGeneratorForTesting((maxXExclusive, maxYExclusive) ->
+                    new TitleCardRenderer.WatermarkOffset(maxXExclusive / 2, maxYExclusive / 2));
+            TitleCardRenderer.render(title, "Fallback", seed, "TEST", watermark, second);
+        } finally {
+            TitleCardRenderer.resetWatermarkOffsetGeneratorForTesting();
+        }
+
+        assertNotEquals(
+                Arrays.hashCode(Files.readAllBytes(first)),
+                Arrays.hashCode(Files.readAllBytes(second))
+        );
+    }
+
+    @Test
     void watermarkColorIsRemovedBeforeRendering() {
         BufferedImage source = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
         source.setRGB(0, 0, new java.awt.Color(255, 180, 0, 200).getRGB());

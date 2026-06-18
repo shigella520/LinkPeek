@@ -33,6 +33,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 public final class TitleCardRenderer {
     public static final int WIDTH = 1200;
@@ -65,6 +66,7 @@ public final class TitleCardRenderer {
             Font.SANS_SERIF
     );
     private static final String ELLIPSIS = "…";
+    private static volatile WatermarkOffsetGenerator watermarkOffsetGenerator = TitleCardRenderer::randomWatermarkOffset;
 
     private TitleCardRenderer() {
     }
@@ -154,17 +156,21 @@ public final class TitleCardRenderer {
         int drawHeight = Math.max(1, (int) Math.round(sourceHeight * scale));
         int cellWidth = watermark.tileWidth() + watermark.spacingX();
         int cellHeight = watermark.tileHeight() + watermark.spacingY();
+        WatermarkOffset offset = watermarkOffsetGenerator.generate(cellWidth, cellHeight);
+        int offsetX = Math.floorMod(offset.x(), cellWidth);
+        int offsetY = Math.floorMod(offset.y(), cellHeight);
+        int coveragePadding = watermarkCoveragePadding(cellWidth, cellHeight);
 
         Composite originalComposite = graphics.getComposite();
         AffineTransform originalTransform = graphics.getTransform();
         try {
             graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, watermark.alpha()));
             graphics.rotate(watermark.rotationRadians(), WIDTH / 2.0, HEIGHT / 2.0);
-            for (int y = -HEIGHT; y < HEIGHT * 2; y += cellHeight) {
-                int rowOffset = Math.floorMod(y / cellHeight, 2) * (cellWidth / 2);
-                for (int x = -WIDTH; x < WIDTH * 2; x += cellWidth) {
-                    int tileX = x + rowOffset + ((watermark.tileWidth() - drawWidth) / 2);
-                    int tileY = y + ((watermark.tileHeight() - drawHeight) / 2);
+            for (int y = -coveragePadding; y < HEIGHT + coveragePadding; y += cellHeight) {
+                int rowOffset = Math.floorMod(Math.floorDiv(y, cellHeight), 2) * (cellWidth / 2);
+                for (int x = -coveragePadding; x < WIDTH + coveragePadding; x += cellWidth) {
+                    int tileX = x + rowOffset + offsetX + ((watermark.tileWidth() - drawWidth) / 2);
+                    int tileY = y + offsetY + ((watermark.tileHeight() - drawHeight) / 2);
                     graphics.drawImage(watermarkImage, tileX, tileY, drawWidth, drawHeight, null);
                 }
             }
@@ -172,6 +178,28 @@ public final class TitleCardRenderer {
             graphics.setTransform(originalTransform);
             graphics.setComposite(originalComposite);
         }
+    }
+
+    private static WatermarkOffset randomWatermarkOffset(int maxXExclusive, int maxYExclusive) {
+        return new WatermarkOffset(
+                ThreadLocalRandom.current().nextInt(maxXExclusive),
+                ThreadLocalRandom.current().nextInt(maxYExclusive)
+        );
+    }
+
+    private static int watermarkCoveragePadding(int cellWidth, int cellHeight) {
+        return (int) Math.ceil(Math.hypot(WIDTH, HEIGHT)) + cellWidth + cellHeight;
+    }
+
+    static void setWatermarkOffsetGeneratorForTesting(WatermarkOffsetGenerator generator) {
+        if (generator == null) {
+            throw new IllegalArgumentException("Watermark offset generator must not be null.");
+        }
+        watermarkOffsetGenerator = generator;
+    }
+
+    static void resetWatermarkOffsetGeneratorForTesting() {
+        watermarkOffsetGenerator = TitleCardRenderer::randomWatermarkOffset;
     }
 
     private static void paintBadge(Graphics2D graphics, String badgeLabel) {
@@ -508,6 +536,14 @@ public final class TitleCardRenderer {
                     WATERMARK_ALPHA
             );
         }
+    }
+
+    @FunctionalInterface
+    interface WatermarkOffsetGenerator {
+        WatermarkOffset generate(int maxXExclusive, int maxYExclusive);
+    }
+
+    record WatermarkOffset(int x, int y) {
     }
 
     private static final class BufferedImageTranscoder extends ImageTranscoder {
