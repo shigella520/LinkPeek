@@ -1,20 +1,29 @@
 package io.github.shigella520.linkpeek.core.media;
 
 import io.github.shigella520.linkpeek.core.util.CardTextSanitizer;
+import org.apache.batik.transcoder.TranscoderException;
+import org.apache.batik.transcoder.TranscoderInput;
+import org.apache.batik.transcoder.TranscoderOutput;
+import org.apache.batik.transcoder.image.ImageTranscoder;
 
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageWriteParam;
 import javax.imageio.ImageWriter;
 import javax.imageio.stream.ImageOutputStream;
+import java.awt.AlphaComposite;
 import java.awt.Color;
+import java.awt.Composite;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.GradientPaint;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
 import java.awt.geom.Ellipse2D;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -37,6 +46,12 @@ public final class TitleCardRenderer {
     private static final int FONT_STEP = 4;
     private static final int BADGE_FONT_SIZE = 26;
     private static final int BADGE_TOP_OFFSET = 48;
+    private static final int WATERMARK_TILE_WIDTH = 250;
+    private static final int WATERMARK_TILE_HEIGHT = 140;
+    private static final int WATERMARK_SPACING_X = 200;
+    private static final int WATERMARK_SPACING_Y = 126;
+    private static final double WATERMARK_ROTATION_RADIANS = Math.toRadians(-21);
+    private static final float WATERMARK_ALPHA = 0.16f;
     private static final float JPEG_QUALITY = 0.92f;
     private static final int TITLE_FONT_STYLE = Font.PLAIN;
     private static final List<String> FONT_FAMILIES = List.of(
@@ -59,6 +74,17 @@ public final class TitleCardRenderer {
     }
 
     public static void render(String title, String fallbackTitle, String seed, String badgeLabel, Path targetPath) throws IOException {
+        render(title, fallbackTitle, seed, badgeLabel, null, targetPath);
+    }
+
+    public static void render(
+            String title,
+            String fallbackTitle,
+            String seed,
+            String badgeLabel,
+            Watermark watermark,
+            Path targetPath
+    ) throws IOException {
         Files.createDirectories(targetPath.getParent());
 
         BufferedImage image = new BufferedImage(WIDTH, HEIGHT, BufferedImage.TYPE_INT_RGB);
@@ -66,6 +92,7 @@ public final class TitleCardRenderer {
         try {
             applyQualityHints(graphics);
             paintBackground(graphics, seed);
+            paintWatermark(graphics, watermark);
             paintBadge(graphics, badgeLabel);
             paintTitle(graphics, displayTitle(title, fallbackTitle));
         } finally {
@@ -103,6 +130,48 @@ public final class TitleCardRenderer {
 
         graphics.setColor(new Color(255, 255, 255, 24));
         graphics.fill(new Ellipse2D.Double(WIDTH * 0.48, -110, 340, 340));
+    }
+
+    private static void paintWatermark(Graphics2D graphics, Watermark watermark) throws IOException {
+        if (watermark == null) {
+            return;
+        }
+        BufferedImage watermarkImage = removeWatermarkColor(loadWatermarkImage(watermark));
+        if (watermarkImage == null) {
+            return;
+        }
+        int sourceWidth = watermarkImage.getWidth();
+        int sourceHeight = watermarkImage.getHeight();
+        if (sourceWidth <= 0 || sourceHeight <= 0) {
+            return;
+        }
+
+        double scale = Math.min(
+                watermark.tileWidth() / (double) sourceWidth,
+                watermark.tileHeight() / (double) sourceHeight
+        );
+        int drawWidth = Math.max(1, (int) Math.round(sourceWidth * scale));
+        int drawHeight = Math.max(1, (int) Math.round(sourceHeight * scale));
+        int cellWidth = watermark.tileWidth() + watermark.spacingX();
+        int cellHeight = watermark.tileHeight() + watermark.spacingY();
+
+        Composite originalComposite = graphics.getComposite();
+        AffineTransform originalTransform = graphics.getTransform();
+        try {
+            graphics.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, watermark.alpha()));
+            graphics.rotate(watermark.rotationRadians(), WIDTH / 2.0, HEIGHT / 2.0);
+            for (int y = -HEIGHT; y < HEIGHT * 2; y += cellHeight) {
+                int rowOffset = Math.floorMod(y / cellHeight, 2) * (cellWidth / 2);
+                for (int x = -WIDTH; x < WIDTH * 2; x += cellWidth) {
+                    int tileX = x + rowOffset + ((watermark.tileWidth() - drawWidth) / 2);
+                    int tileY = y + ((watermark.tileHeight() - drawHeight) / 2);
+                    graphics.drawImage(watermarkImage, tileX, tileY, drawWidth, drawHeight, null);
+                }
+            }
+        } finally {
+            graphics.setTransform(originalTransform);
+            graphics.setComposite(originalComposite);
+        }
     }
 
     private static void paintBadge(Graphics2D graphics, String badgeLabel) {
@@ -343,8 +412,120 @@ public final class TitleCardRenderer {
         return CardTextSanitizer.displayTitle(title, fallbackTitle);
     }
 
+    private static BufferedImage loadWatermarkImage(Watermark watermark) throws IOException {
+        byte[] bytes;
+        try (InputStream inputStream = watermark.ownerType().getResourceAsStream(watermark.resourcePath())) {
+            if (inputStream == null) {
+                throw new IOException("Title card watermark resource was not found: "
+                        + watermark.ownerType().getName() + " " + watermark.resourcePath());
+            }
+            bytes = inputStream.readAllBytes();
+        }
+        String lowerPath = watermark.resourcePath().toLowerCase();
+        if (lowerPath.endsWith(".svg")) {
+            return readSvg(bytes);
+        }
+        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes)) {
+            BufferedImage image = ImageIO.read(inputStream);
+            if (image == null) {
+                throw new IOException("Unsupported title card watermark image: " + watermark.resourcePath());
+            }
+            return image;
+        }
+    }
+
+    private static BufferedImage readSvg(byte[] bytes) throws IOException {
+        BufferedImageTranscoder transcoder = new BufferedImageTranscoder();
+        try (ByteArrayInputStream inputStream = new ByteArrayInputStream(bytes)) {
+            transcoder.transcode(new TranscoderInput(inputStream), null);
+        } catch (TranscoderException exception) {
+            throw new IOException("Failed to render SVG title card watermark.", exception);
+        }
+        BufferedImage image = transcoder.image();
+        if (image == null) {
+            throw new IOException("SVG title card watermark did not produce an image.");
+        }
+        return image;
+    }
+
+    static BufferedImage removeWatermarkColor(BufferedImage source) {
+        BufferedImage grayscale = new BufferedImage(source.getWidth(), source.getHeight(), BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < source.getHeight(); y++) {
+            for (int x = 0; x < source.getWidth(); x++) {
+                int argb = source.getRGB(x, y);
+                int alpha = (argb >>> 24) & 0xFF;
+                if (alpha == 0) {
+                    continue;
+                }
+                int red = (argb >>> 16) & 0xFF;
+                int green = (argb >>> 8) & 0xFF;
+                int blue = argb & 0xFF;
+                int gray = Math.round((red * 0.299f) + (green * 0.587f) + (blue * 0.114f));
+                grayscale.setRGB(x, y, (alpha << 24) | (gray << 16) | (gray << 8) | gray);
+            }
+        }
+        return grayscale;
+    }
+
     private static Color withAlpha(Color color, int alpha) {
         return new Color(color.getRed(), color.getGreen(), color.getBlue(), alpha);
+    }
+
+    public record Watermark(
+            Class<?> ownerType,
+            String resourcePath,
+            int tileWidth,
+            int tileHeight,
+            int spacingX,
+            int spacingY,
+            double rotationRadians,
+            float alpha
+    ) {
+        public Watermark {
+            if (ownerType == null) {
+                throw new IllegalArgumentException("Watermark owner type must not be null.");
+            }
+            if (resourcePath == null || resourcePath.isBlank()) {
+                throw new IllegalArgumentException("Watermark resource path must not be blank.");
+            }
+            if (tileWidth <= 0 || tileHeight <= 0 || spacingX < 0 || spacingY < 0) {
+                throw new IllegalArgumentException("Watermark tile dimensions and spacing are invalid.");
+            }
+            if (alpha <= 0f || alpha > 1f) {
+                throw new IllegalArgumentException("Watermark alpha must be greater than 0 and no more than 1.");
+            }
+        }
+
+        public static Watermark resource(Class<?> ownerType, String resourcePath) {
+            return new Watermark(
+                    ownerType,
+                    resourcePath,
+                    WATERMARK_TILE_WIDTH,
+                    WATERMARK_TILE_HEIGHT,
+                    WATERMARK_SPACING_X,
+                    WATERMARK_SPACING_Y,
+                    WATERMARK_ROTATION_RADIANS,
+                    WATERMARK_ALPHA
+            );
+        }
+    }
+
+    private static final class BufferedImageTranscoder extends ImageTranscoder {
+        private BufferedImage image;
+
+        @Override
+        public BufferedImage createImage(int width, int height) {
+            return new BufferedImage(width, height, BufferedImage.TYPE_INT_ARGB);
+        }
+
+        @Override
+        public void writeImage(BufferedImage image, TranscoderOutput output) {
+            this.image = image;
+        }
+
+        BufferedImage image() {
+            return image;
+        }
     }
 
     private record GradientSpec(

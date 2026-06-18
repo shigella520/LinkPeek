@@ -46,6 +46,8 @@ public class NgaPreviewProvider implements PreviewProvider {
     private static final String TITLE_CARD_PREFIX = "generated://nga/thread-card/";
     private static final int CARD_WIDTH = TitleCardRenderer.WIDTH;
     private static final int CARD_HEIGHT = TitleCardRenderer.HEIGHT;
+    private static final TitleCardRenderer.Watermark TITLE_CARD_WATERMARK =
+            TitleCardRenderer.Watermark.resource(NgaPreviewProvider.class, "title-card-watermark.svg");
     private static final int MAX_RAW_CONTENT_LENGTH = 12_000;
     private static final String ELLIPSIS = "…";
 
@@ -170,7 +172,7 @@ public class NgaPreviewProvider implements PreviewProvider {
     @Override
     public Path downloadThumbnail(PreviewMetadata metadata, Path targetPath) throws IOException {
         Files.createDirectories(targetPath.getParent());
-        TitleCardRenderer.render(metadata.title(), SITE_NAME, metadata.canonicalUrl(), SITE_NAME, targetPath);
+        TitleCardRenderer.render(metadata.title(), SITE_NAME, metadata.canonicalUrl(), SITE_NAME, TITLE_CARD_WATERMARK, targetPath);
         return targetPath;
     }
 

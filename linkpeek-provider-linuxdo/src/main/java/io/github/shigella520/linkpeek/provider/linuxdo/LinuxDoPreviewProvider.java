@@ -47,6 +47,8 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
     private static final String TITLE_CARD_PREFIX = "generated://linuxdo/topic-card/";
     private static final int CARD_WIDTH = TitleCardRenderer.WIDTH;
     private static final int CARD_HEIGHT = TitleCardRenderer.HEIGHT;
+    private static final TitleCardRenderer.Watermark TITLE_CARD_WATERMARK =
+            TitleCardRenderer.Watermark.resource(LinuxDoPreviewProvider.class, "title-card-watermark.svg");
     private static final int MAX_DESCRIPTION_LENGTH = 280;
     private static final int MAX_RAW_CONTENT_LENGTH = 12_000;
     private static final int MAX_ERROR_BODY_LOG_CHARS = 1_000;
@@ -227,7 +229,7 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
         if (parent != null) {
             Files.createDirectories(parent);
         }
-        TitleCardRenderer.render(metadata.title(), SITE_NAME, metadata.canonicalUrl(), SITE_NAME, targetPath);
+        TitleCardRenderer.render(metadata.title(), SITE_NAME, metadata.canonicalUrl(), SITE_NAME, TITLE_CARD_WATERMARK, targetPath);
         return targetPath;
     }
 

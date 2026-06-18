@@ -1,17 +1,25 @@
 package io.github.shigella520.linkpeek.core.media;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.awt.FontMetrics;
 import java.awt.Graphics2D;
 import java.awt.image.BufferedImage;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Arrays;
 
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TitleCardRendererTest {
     private static final int AVAILABLE_WIDTH = 1016;
     private static final int AVAILABLE_HEIGHT = 486;
+
+    @TempDir
+    Path tempDir;
 
     @Test
     void cjkTitleCanBreakAfterCharactersInsteadOfStoppingAtEarlyPunctuation() {
@@ -37,5 +45,41 @@ class TitleCardRendererTest {
         } finally {
             graphics.dispose();
         }
+    }
+
+    @Test
+    void watermarkChangesRenderedCard() throws Exception {
+        String title = "标题卡片水印测试";
+        String seed = "https://example.com/topic/1";
+        Path plain = tempDir.resolve("plain.jpg");
+        Path watermarked = tempDir.resolve("watermarked.jpg");
+
+        TitleCardRenderer.render(title, "Fallback", seed, "TEST", plain);
+        TitleCardRenderer.render(
+                title,
+                "Fallback",
+                seed,
+                "TEST",
+                TitleCardRenderer.Watermark.resource(TitleCardRendererTest.class, "test-watermark.svg"),
+                watermarked
+        );
+
+        assertNotEquals(
+                Arrays.hashCode(Files.readAllBytes(plain)),
+                Arrays.hashCode(Files.readAllBytes(watermarked))
+        );
+    }
+
+    @Test
+    void watermarkColorIsRemovedBeforeRendering() {
+        BufferedImage source = new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB);
+        source.setRGB(0, 0, new java.awt.Color(255, 180, 0, 200).getRGB());
+
+        BufferedImage grayscale = TitleCardRenderer.removeWatermarkColor(source);
+        java.awt.Color color = new java.awt.Color(grayscale.getRGB(0, 0), true);
+
+        assertEquals(color.getRed(), color.getGreen());
+        assertEquals(color.getGreen(), color.getBlue());
+        assertEquals(200, color.getAlpha());
     }
 }
