@@ -56,7 +56,10 @@
         loadingPanels: new Map(),
         adminNavHoverOpen: false,
         adminNavHoverCloseTimer: null,
-        adminNavLastPointer: null
+        adminNavLastPointer: null,
+        shareSummaryImageViewer: {
+            orientationLocked: false
+        }
     };
 
     function init() {
@@ -570,6 +573,18 @@
             state.shareSummaryRuns.page += 1;
             await loadShareSummaryRuns();
         });
+        document.getElementById("share-summary-image-viewer-close").addEventListener("click", closeShareSummaryImageViewer);
+        document.getElementById("share-summary-image-viewer").addEventListener("click", (event) => {
+            if (event.target === event.currentTarget) {
+                closeShareSummaryImageViewer();
+            }
+        });
+        document.addEventListener("fullscreenchange", () => {
+            const viewer = document.getElementById("share-summary-image-viewer");
+            if (!document.fullscreenElement && viewer && !viewer.hidden) {
+                closeShareSummaryImageViewer();
+            }
+        });
     }
 
     function bindNotifications() {
@@ -643,6 +658,10 @@
         });
         document.addEventListener("keydown", (event) => {
             if (event.key !== "Escape") {
+                return;
+            }
+            if (!document.getElementById("share-summary-image-viewer").hidden) {
+                closeShareSummaryImageViewer();
                 return;
             }
             if (!document.getElementById("prompt-modal").hidden) {
@@ -1750,10 +1769,15 @@
 
     function renderShareSummaryImageCell(run) {
         const status = run.imageStatus || "NOT_GENERATED";
-        const image = run.latestImageUrl
-                ? `<img class="share-summary-thumb" src="${escapeAttribute(run.latestImageUrl)}" alt="">`
-                : `<div class="share-summary-thumb share-summary-thumb-placeholder">-</div>`;
+        const imageUrl = run.latestImageUrl || "";
         const title = run.ogTitle || "暂无分享图";
+        const image = run.latestImageUrl
+                ? `
+                    <button type="button" class="share-summary-image-button" data-view-share-image="${escapeAttribute(imageUrl)}" data-view-share-image-title="${escapeAttribute(title)}" aria-label="全屏查看分享图">
+                        <img class="share-summary-thumb" src="${escapeAttribute(imageUrl)}" alt="">
+                    </button>
+                `
+                : `<div class="share-summary-thumb share-summary-thumb-placeholder">-</div>`;
         return `
             <div class="share-summary-image-cell">
                 <div class="share-summary-image-thumb-slot">${image}</div>
@@ -1971,6 +1995,80 @@
         root.querySelectorAll("[data-copy-url]").forEach((button) => {
             button.addEventListener("click", () => copyShareSummaryUrl(button.dataset.copyUrl));
         });
+        root.querySelectorAll("[data-view-share-image]").forEach((button) => {
+            button.addEventListener("click", () => {
+                openShareSummaryImageViewer(button.dataset.viewShareImage, button.dataset.viewShareImageTitle || "分享图");
+            });
+        });
+    }
+
+    async function openShareSummaryImageViewer(imageUrl, title) {
+        if (!imageUrl) {
+            return;
+        }
+        const viewer = document.getElementById("share-summary-image-viewer");
+        const image = document.getElementById("share-summary-image-viewer-img");
+        const titleNode = document.getElementById("share-summary-image-viewer-title");
+        image.src = imageUrl;
+        image.alt = title || "分享图";
+        titleNode.textContent = title || "分享图";
+        viewer.hidden = false;
+        document.body.classList.add("modal-open");
+        document.body.classList.add("share-summary-image-viewer-open");
+        await requestShareSummaryImageViewerFullscreen(viewer);
+        document.getElementById("share-summary-image-viewer-close").focus({preventScroll: true});
+    }
+
+    async function requestShareSummaryImageViewerFullscreen(viewer) {
+        if (!viewer.requestFullscreen) {
+            return;
+        }
+        try {
+            await viewer.requestFullscreen();
+            await lockShareSummaryImageViewerLandscape();
+        } catch (error) {
+            // Fullscreen and orientation lock are user-agent dependent.
+        }
+    }
+
+    async function lockShareSummaryImageViewerLandscape() {
+        const orientation = screen.orientation;
+        if (!orientation || !orientation.lock) {
+            return;
+        }
+        try {
+            await orientation.lock("landscape");
+            state.shareSummaryImageViewer.orientationLocked = true;
+        } catch (error) {
+            state.shareSummaryImageViewer.orientationLocked = false;
+        }
+    }
+
+    async function closeShareSummaryImageViewer() {
+        const viewer = document.getElementById("share-summary-image-viewer");
+        const image = document.getElementById("share-summary-image-viewer-img");
+        viewer.hidden = true;
+        image.removeAttribute("src");
+        image.alt = "";
+        document.body.classList.remove("share-summary-image-viewer-open");
+        if (state.shareSummaryImageViewer.orientationLocked && screen.orientation && screen.orientation.unlock) {
+            try {
+                screen.orientation.unlock();
+            } catch (error) {
+                // Some browsers unlock automatically on fullscreen exit.
+            }
+        }
+        state.shareSummaryImageViewer.orientationLocked = false;
+        if (document.fullscreenElement === viewer) {
+            try {
+                await document.exitFullscreen();
+            } catch (error) {
+                // Ignore user-agent fullscreen exit failures.
+            }
+        }
+        if (document.querySelectorAll(".modal-shell:not([hidden]), .share-summary-image-viewer:not([hidden])").length === 0) {
+            document.body.classList.remove("modal-open");
+        }
     }
 
     async function generateShareSummaryImage(runId, regenerate) {
@@ -3346,8 +3444,14 @@
 
     function renderShareSummaryImageDetail(run, images) {
         const attempts = Array.isArray(images) ? images : [];
+        const imageUrl = run.latestImageUrl || "";
+        const title = run.ogTitle || "分享图";
         const preview = run.latestImageUrl
-                ? `<img class="share-summary-preview" src="${escapeAttribute(run.latestImageUrl)}" alt="">`
+                ? `
+                    <button type="button" class="share-summary-preview-button" data-view-share-image="${escapeAttribute(imageUrl)}" data-view-share-image-title="${escapeAttribute(title)}" aria-label="全屏查看分享图">
+                        <img class="share-summary-preview" src="${escapeAttribute(imageUrl)}" alt="">
+                    </button>
+                `
                 : `<div class="share-summary-preview-placeholder">暂无分享图</div>`;
         const meta = `
             <div class="summary-detail-grid">

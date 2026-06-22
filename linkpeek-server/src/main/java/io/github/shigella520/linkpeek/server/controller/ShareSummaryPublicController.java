@@ -110,6 +110,7 @@ public class ShareSummaryPublicController {
                         .report-topbar { margin-bottom: 24px; }
                         .project-link { width: 48px; height: 48px; background: rgba(255, 255, 255, 0.9); box-shadow: 0 20px 42px rgba(18, 22, 28, 0.14); }
                         .project-link svg { width: 21px; height: 21px; }
+                        body.report-image-viewer-open { overflow: hidden; }
                         .report-hero {
                             position: relative;
                             z-index: 1;
@@ -127,6 +128,8 @@ public class ShareSummaryPublicController {
                             -webkit-backdrop-filter: blur(26px);
                         }
                         .report-visual { position: relative; min-height: 0; overflow: hidden; border-radius: 38px; box-shadow: var(--shadow-soft); }
+                        .report-image-button { display: block; width: 100%%; height: 100%%; padding: 0; border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; line-height: 0; cursor: zoom-in; }
+                        .report-image-button:focus-visible { outline: 3px solid rgba(10, 132, 255, 0.54); outline-offset: 4px; }
                         .report-cover { display: block; width: 100%%; height: 100%%; min-height: 320px; aspect-ratio: 1200 / 630; object-fit: cover; background: rgba(255, 255, 255, 0.74); }
                         .report-visual::after {
                             content: "";
@@ -191,9 +194,27 @@ public class ShareSummaryPublicController {
                         .report-content pre { overflow-x: auto; margin: 0 0 18px; padding: 16px; border-radius: 20px; background: rgba(255, 255, 255, 0.72); border: 1px solid rgba(20, 20, 20, 0.06); }
                         .report-content code { padding: 2px 6px; border-radius: 8px; background: rgba(10, 132, 255, 0.1); }
                         .report-content pre code { padding: 0; background: transparent; }
+                        .report-image-viewer[hidden] { display: none !important; }
+                        .report-image-viewer { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); background: rgba(8, 12, 18, 0.94); }
+                        .report-image-viewer:fullscreen { background: #080c12; }
+                        .report-image-viewer-chrome { position: absolute; top: max(14px, env(safe-area-inset-top)); left: max(14px, env(safe-area-inset-left)); right: max(14px, env(safe-area-inset-right)); z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; pointer-events: none; }
+                        .report-image-viewer-chrome p { min-width: 0; margin: 0; overflow: hidden; color: rgba(255, 255, 255, 0.86); font-size: 14px; font-weight: 650; line-height: 1.3; text-overflow: ellipsis; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42); white-space: nowrap; }
+                        .report-image-viewer-close { position: relative; flex: 0 0 auto; width: 42px; height: 42px; min-height: 42px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 999px; background: rgba(255, 255, 255, 0.14); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24); pointer-events: auto; cursor: pointer; }
+                        .report-image-viewer-close::before, .report-image-viewer-close::after { content: ""; position: absolute; top: 50%%; left: 50%%; width: 18px; height: 2px; border-radius: 999px; background: #ffffff; }
+                        .report-image-viewer-close::before { transform: translate(-50%%, -50%%) rotate(45deg); }
+                        .report-image-viewer-close::after { transform: translate(-50%%, -50%%) rotate(-45deg); }
+                        .report-image-viewer-close:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.54); outline-offset: 3px; }
+                        .report-image-viewer-img { display: block; width: min(100%%, calc((100vh - 48px) * 1200 / 630)); max-width: calc(100vw - 36px); max-height: calc(100vh - 36px); aspect-ratio: 1200 / 630; object-fit: contain; border-radius: 8px; background: rgba(255, 255, 255, 0.04); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42); }
                         @media (max-width: 860px) {
                             .report-hero { grid-template-columns: 1fr; border-radius: 34px; padding: 22px; }
                             .report-cover { height: auto; min-height: 0; }
+                        }
+                        @media (max-width: 720px) and (orientation: portrait) {
+                            .report-image-viewer { padding: 0; }
+                            .report-image-viewer-chrome { top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); right: max(10px, env(safe-area-inset-right)); }
+                            .report-image-viewer-chrome p { max-width: calc(100vw - 76px); font-size: 13px; }
+                            .report-image-viewer-close { width: 38px; height: 38px; min-height: 38px; }
+                            .report-image-viewer-img { width: calc(100vh - 24px); max-width: none; max-height: calc(100vw - 24px); transform: rotate(90deg); }
                         }
                         @media (max-width: 520px) {
                             .page-shell { padding: 12px 10px 40px; }
@@ -267,7 +288,9 @@ public class ShareSummaryPublicController {
 
                         <section class="report-hero">
                             <div class="report-visual">
-                                <img class="report-cover" src="%s" alt="%s">
+                                <button type="button" class="report-image-button" data-report-image-open aria-label="全屏查看分享图">
+                                    <img class="report-cover" src="%s" alt="%s">
+                                </button>
                             </div>
                             <div class="report-copy">
                                 <p class="eyebrow">Share Summary</p>
@@ -329,7 +352,103 @@ public class ShareSummaryPublicController {
                             <article class="content-card report-content" data-reader-content>%s</article>
                         </main>
                     </div>
+                    <div class="report-image-viewer" data-report-image-viewer role="dialog" aria-modal="true" aria-labelledby="report-image-viewer-title" hidden>
+                        <div class="report-image-viewer-chrome">
+                            <p id="report-image-viewer-title" data-report-image-title>分享图</p>
+                            <button type="button" class="report-image-viewer-close" data-report-image-close aria-label="关闭全屏预览"></button>
+                        </div>
+                        <img class="report-image-viewer-img" data-report-image alt="">
+                    </div>
                     <script>
+                        (() => {
+                            const trigger = document.querySelector("[data-report-image-open]");
+                            const cover = document.querySelector(".report-cover");
+                            const viewer = document.querySelector("[data-report-image-viewer]");
+                            const image = document.querySelector("[data-report-image]");
+                            const title = document.querySelector("[data-report-image-title]");
+                            const closeButton = document.querySelector("[data-report-image-close]");
+                            let orientationLocked = false;
+
+                            if (!trigger || !cover || !viewer || !image || !closeButton) {
+                                return;
+                            }
+
+                            async function lockLandscape() {
+                                const orientation = screen.orientation;
+                                if (!orientation || !orientation.lock) {
+                                    return;
+                                }
+                                try {
+                                    await orientation.lock("landscape");
+                                    orientationLocked = true;
+                                } catch (error) {
+                                    orientationLocked = false;
+                                }
+                            }
+
+                            async function requestViewerFullscreen() {
+                                if (!viewer.requestFullscreen) {
+                                    return;
+                                }
+                                try {
+                                    await viewer.requestFullscreen();
+                                    await lockLandscape();
+                                } catch (error) {
+                                    // Fullscreen and orientation lock availability depends on the browser.
+                                }
+                            }
+
+                            async function openViewer() {
+                                image.src = cover.currentSrc || cover.src;
+                                image.alt = cover.alt || "分享图";
+                                title.textContent = cover.alt || "分享图";
+                                viewer.hidden = false;
+                                document.body.classList.add("report-image-viewer-open");
+                                await requestViewerFullscreen();
+                                closeButton.focus({preventScroll: true});
+                            }
+
+                            async function closeViewer() {
+                                viewer.hidden = true;
+                                image.removeAttribute("src");
+                                image.alt = "";
+                                document.body.classList.remove("report-image-viewer-open");
+                                if (orientationLocked && screen.orientation && screen.orientation.unlock) {
+                                    try {
+                                        screen.orientation.unlock();
+                                    } catch (error) {
+                                        // Browsers may unlock automatically when fullscreen exits.
+                                    }
+                                }
+                                orientationLocked = false;
+                                if (document.fullscreenElement === viewer) {
+                                    try {
+                                        await document.exitFullscreen();
+                                    } catch (error) {
+                                        // Ignore fullscreen exit failures.
+                                    }
+                                }
+                            }
+
+                            trigger.addEventListener("click", openViewer);
+                            closeButton.addEventListener("click", closeViewer);
+                            viewer.addEventListener("click", (event) => {
+                                if (event.target === viewer) {
+                                    closeViewer();
+                                }
+                            });
+                            document.addEventListener("keydown", (event) => {
+                                if (event.key === "Escape" && !viewer.hidden) {
+                                    closeViewer();
+                                }
+                            });
+                            document.addEventListener("fullscreenchange", () => {
+                                if (!document.fullscreenElement && !viewer.hidden) {
+                                    closeViewer();
+                                }
+                            });
+                        })();
+
                         (() => {
                             const audioRoot = document.querySelector("[data-audio-reader]");
                             const systemRoot = document.querySelector("[data-reader]");

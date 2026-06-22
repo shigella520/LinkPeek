@@ -33,6 +33,10 @@ body.modal-open {
     overflow: hidden;
 }
 
+body.share-summary-image-viewer-open {
+    overflow: hidden;
+}
+
 body.admin-nav-open {
     overflow: hidden;
 }
@@ -1529,6 +1533,32 @@ td .share-summary-task-actions {
     min-width: 0;
 }
 
+.share-summary-image-button,
+.share-summary-preview-button {
+    display: block;
+    width: fit-content;
+    min-width: 0;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 16px;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    line-height: 0;
+}
+
+.share-summary-image-button:hover:not(:disabled),
+.share-summary-preview-button:hover:not(:disabled),
+.share-summary-image-button:focus-visible,
+.share-summary-preview-button:focus-visible {
+    transform: none;
+    outline: 2px solid rgba(10, 132, 255, 0.42);
+    outline-offset: 3px;
+    box-shadow: none;
+}
+
 .share-summary-image-meta {
     display: flex;
     align-items: center;
@@ -1605,6 +1635,14 @@ td .share-summary-task-actions {
     background: #f4f6f9;
 }
 
+.share-summary-preview-button {
+    width: min(100%, 720px);
+}
+
+.share-summary-preview-button .share-summary-preview {
+    width: 100%;
+}
+
 .share-summary-preview-placeholder {
     display: grid;
     place-items: center;
@@ -1620,6 +1658,100 @@ td .share-summary-task-actions {
     display: grid;
     gap: 16px;
     margin-bottom: 16px;
+}
+
+.share-summary-image-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    display: grid;
+    place-items: center;
+    padding: max(18px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left));
+    background: rgba(8, 12, 18, 0.94);
+}
+
+.share-summary-image-viewer:fullscreen {
+    background: #080c12;
+}
+
+.share-summary-image-viewer-chrome {
+    position: absolute;
+    top: max(14px, env(safe-area-inset-top));
+    left: max(14px, env(safe-area-inset-left));
+    right: max(14px, env(safe-area-inset-right));
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    pointer-events: none;
+}
+
+.share-summary-image-viewer-chrome p {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42);
+    white-space: nowrap;
+}
+
+.share-summary-image-viewer-close {
+    position: relative;
+    flex: 0 0 auto;
+    width: 42px;
+    height: 42px;
+    min-height: 42px;
+    padding: 0;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24);
+    pointer-events: auto;
+}
+
+.share-summary-image-viewer-close::before,
+.share-summary-image-viewer-close::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 18px;
+    height: 2px;
+    border-radius: 999px;
+    background: #ffffff;
+}
+
+.share-summary-image-viewer-close::before {
+    transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.share-summary-image-viewer-close::after {
+    transform: translate(-50%, -50%) rotate(-45deg);
+}
+
+.share-summary-image-viewer-close:hover:not(:disabled),
+.share-summary-image-viewer-close:focus-visible {
+    transform: none;
+    outline: 2px solid rgba(255, 255, 255, 0.54);
+    outline-offset: 3px;
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.share-summary-image-viewer-img {
+    display: block;
+    width: min(100%, calc((100vh - 48px) * 1200 / 630));
+    max-width: calc(100vw - 36px);
+    max-height: calc(100vh - 36px);
+    aspect-ratio: 1200 / 630;
+    object-fit: contain;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
 }
 
 .nowrap {
@@ -2719,6 +2851,11 @@ fieldset,
     background: rgba(255, 255, 255, 0.68);
 }
 
+.share-summary-image-button,
+.share-summary-preview-button {
+    border-radius: 16px;
+}
+
 .login-main {
     width: min(560px, calc(100vw - 40px));
 }
@@ -3366,6 +3503,10 @@ fieldset,
         border-radius: 10px;
     }
 
+    .share-summary-image-button {
+        border-radius: 10px;
+    }
+
     .pagination-bar {
         margin-top: 10px;
     }
@@ -3374,6 +3515,36 @@ fieldset,
         min-height: 32px;
         padding: 0 10px;
         font-size: 12px;
+    }
+}
+
+@media (max-width: 720px) and (orientation: portrait) {
+    .share-summary-image-viewer {
+        padding: 0;
+    }
+
+    .share-summary-image-viewer-chrome {
+        top: max(10px, env(safe-area-inset-top));
+        left: max(10px, env(safe-area-inset-left));
+        right: max(10px, env(safe-area-inset-right));
+    }
+
+    .share-summary-image-viewer-chrome p {
+        max-width: calc(100vw - 76px);
+        font-size: 13px;
+    }
+
+    .share-summary-image-viewer-close {
+        width: 38px;
+        height: 38px;
+        min-height: 38px;
+    }
+
+    .share-summary-image-viewer-img {
+        width: calc(100vh - 24px);
+        max-width: none;
+        max-height: calc(100vw - 24px);
+        transform: rotate(90deg);
     }
 }
 
@@ -3638,4 +3809,36 @@ body.admin-nav-hover-open .admin-drawer-backdrop {
 .inline-threshold-input:focus {
     border-bottom-color: rgba(10, 132, 255, 0.58);
     outline: none;
+}
+
+.share-summary-image-button,
+.share-summary-preview-button {
+    min-width: 0;
+    height: auto;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    color: inherit;
+    line-height: 0;
+}
+
+.share-summary-image-button {
+    width: fit-content;
+}
+
+.share-summary-preview-button {
+    width: min(100%, 720px);
+}
+
+.share-summary-image-button:hover:not(:disabled),
+.share-summary-preview-button:hover:not(:disabled),
+.share-summary-image-button:focus,
+.share-summary-preview-button:focus,
+.share-summary-image-button:focus-visible,
+.share-summary-preview-button:focus-visible {
+    background: transparent;
+    box-shadow: none;
+    transform: none;
 }

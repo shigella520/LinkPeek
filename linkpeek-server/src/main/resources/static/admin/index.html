@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260616-share-summary-timeout-multiplier">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260622-share-summary-image-viewer">
 </head>
 <body>
 <header class="topbar">
@@ -1083,6 +1083,14 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260616-share-summary-asset-labels"></script>
+<div class="share-summary-image-viewer" id="share-summary-image-viewer" role="dialog" aria-modal="true" aria-labelledby="share-summary-image-viewer-title" hidden>
+    <div class="share-summary-image-viewer-chrome">
+        <p id="share-summary-image-viewer-title">分享图</p>
+        <button type="button" class="share-summary-image-viewer-close" id="share-summary-image-viewer-close" aria-label="关闭全屏预览"></button>
+    </div>
+    <img id="share-summary-image-viewer-img" class="share-summary-image-viewer-img" alt="">
+</div>
+
+<script src="/admin/app.js?v=20260622-share-summary-image-viewer"></script>
 </body>
 </html>
