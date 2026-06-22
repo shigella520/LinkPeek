@@ -3533,15 +3533,21 @@ fieldset,
         min-height: 38px;
     }
 
+    .share-summary-image-viewer-stage {
+        position: relative;
+    }
+
     .share-summary-image-viewer-img {
-        width: min(calc(100vh - 96px), calc(190.48vw - 38px));
-        width: min(calc(100svh - 96px), calc(190.48vw - 38px));
-        width: min(calc(100dvh - 96px), calc(190.48vw - 38px));
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: var(--share-summary-image-viewer-mobile-width, 100%);
         height: auto;
         max-width: none;
         max-height: none;
         border-radius: 6px;
-        transform: rotate(90deg);
+        transform: translate(-50%, -50%) rotate(90deg);
+        transform-origin: center;
     }
 }
 

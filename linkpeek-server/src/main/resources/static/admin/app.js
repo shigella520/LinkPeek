@@ -576,6 +576,8 @@
                 closeShareSummaryImageViewer();
             }
         });
+        document.getElementById("share-summary-image-viewer-img").addEventListener("load", updateShareSummaryImageViewerLayout);
+        window.addEventListener("resize", updateShareSummaryImageViewerLayout);
     }
 
     function bindNotifications() {
@@ -2006,6 +2008,7 @@
         viewer.hidden = false;
         document.body.classList.add("modal-open");
         document.body.classList.add("share-summary-image-viewer-open");
+        updateShareSummaryImageViewerLayout();
         document.getElementById("share-summary-image-viewer-close").focus({preventScroll: true});
     }
 
@@ -2019,6 +2022,23 @@
         if (document.querySelectorAll(".modal-shell:not([hidden]), .share-summary-image-viewer:not([hidden])").length === 0) {
             document.body.classList.remove("modal-open");
         }
+    }
+
+    function updateShareSummaryImageViewerLayout() {
+        const viewer = document.getElementById("share-summary-image-viewer");
+        if (!viewer || viewer.hidden || !window.matchMedia("(max-width: 720px) and (orientation: portrait)").matches) {
+            return;
+        }
+        const stage = viewer.querySelector(".share-summary-image-viewer-stage");
+        if (!stage) {
+            return;
+        }
+        const stageRect = stage.getBoundingClientRect();
+        if (!stageRect.width || !stageRect.height) {
+            return;
+        }
+        const imageWidth = Math.min(stageRect.height, stageRect.width * 1200 / 630);
+        stage.style.setProperty("--share-summary-image-viewer-mobile-width", `${Math.floor(imageWidth)}px`);
     }
 
     async function generateShareSummaryImage(runId, regenerate) {

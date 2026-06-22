@@ -213,7 +213,8 @@ public class ShareSummaryPublicController {
                             .report-image-viewer { gap: 10px; padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
                             .report-image-viewer-chrome p { font-size: 13px; }
                             .report-image-viewer-close { width: 38px; height: 38px; min-height: 38px; }
-                            .report-image-viewer-img { width: min(calc(100vh - 96px), calc(190.48vw - 38px)); width: min(calc(100svh - 96px), calc(190.48vw - 38px)); width: min(calc(100dvh - 96px), calc(190.48vw - 38px)); height: auto; max-width: none; max-height: none; border-radius: 6px; transform: rotate(90deg); }
+                            .report-image-viewer-stage { position: relative; }
+                            .report-image-viewer-img { position: absolute; top: 50%%; left: 50%%; width: var(--report-image-viewer-mobile-width, 100%%); height: auto; max-width: none; max-height: none; border-radius: 6px; transform: translate(-50%%, -50%%) rotate(90deg); transform-origin: center; }
                         }
                         @media (max-width: 520px) {
                             .page-shell { padding: 12px 10px 40px; }
@@ -379,6 +380,7 @@ public class ShareSummaryPublicController {
                                 title.textContent = cover.alt || "分享图";
                                 viewer.hidden = false;
                                 document.body.classList.add("report-image-viewer-open");
+                                updateViewerLayout();
                                 closeButton.focus({preventScroll: true});
                             }
 
@@ -389,7 +391,25 @@ public class ShareSummaryPublicController {
                                 document.body.classList.remove("report-image-viewer-open");
                             }
 
+                            function updateViewerLayout() {
+                                if (viewer.hidden || !window.matchMedia("(max-width: 720px) and (orientation: portrait)").matches) {
+                                    return;
+                                }
+                                const stage = viewer.querySelector(".report-image-viewer-stage");
+                                if (!stage) {
+                                    return;
+                                }
+                                const stageRect = stage.getBoundingClientRect();
+                                if (!stageRect.width || !stageRect.height) {
+                                    return;
+                                }
+                                const imageWidth = Math.min(stageRect.height, stageRect.width * 1200 / 630);
+                                stage.style.setProperty("--report-image-viewer-mobile-width", `${Math.floor(imageWidth)}px`);
+                            }
+
                             trigger.addEventListener("click", openViewer);
+                            image.addEventListener("load", updateViewerLayout);
+                            window.addEventListener("resize", updateViewerLayout);
                             closeButton.addEventListener("click", closeViewer);
                             viewer.addEventListener("click", (event) => {
                                 if (event.target === viewer) {
