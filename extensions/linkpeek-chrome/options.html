@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LinkPeek Helper 设置</title>
+    <link rel="stylesheet" href="src/options.css">
+</head>
+<body>
+<main class="shell">
+    <header class="topbar">
+        <div class="topbar-brand brand-mark">
+            <span class="brand-dot" aria-hidden="true"></span>
+            <span class="brand-text">LinkPeek Helper</span>
+        </div>
+        <div class="topbar-actions">
+            <button type="button" id="open-admin-button" class="secondary">打开 Admin</button>
+        </div>
+    </header>
+
+    <form id="options-form" class="options-layout">
+        <section class="panel setup-panel">
+            <div class="panel-head">
+                <div>
+                    <p class="panel-kicker">Setup</p>
+                    <h2>配置引导</h2>
+                </div>
+            </div>
+
+            <fieldset class="mode-selector">
+                <legend>使用场景</legend>
+                <label class="mode-card">
+                    <input type="radio" name="setupMode" value="cookie-sync">
+                    <span>
+                        <strong>使用 Cookie 同步</strong>
+                        <small>定时把 LinuxDo/NGA Cookie 写入 LinkPeek Admin Provider 配置。</small>
+                    </span>
+                </label>
+                <label class="mode-card">
+                    <input type="radio" name="setupMode" value="shortcut-only">
+                    <span>
+                        <strong>仅使用快捷键生成链接</strong>
+                        <small>只配置 Base URL、Style、快捷键和 URL Scheme，不保存 Admin 密码。</small>
+                    </span>
+                </label>
+            </fieldset>
+
+            <ol id="setup-steps" class="setup-steps"></ol>
+        </section>
+
+        <div class="settings-stack">
+            <section class="panel">
+                <div class="panel-head">
+                    <div>
+                        <p class="panel-kicker">Service</p>
+                        <h2>LinkPeek 服务</h2>
+                    </div>
+                    <span id="permission-state" class="state-pill">未授权</span>
+                </div>
+                <label>
+                    <span>Base URL</span>
+                    <input id="base-url" name="baseUrl" type="text" placeholder="https://preview.example.com" autocomplete="url">
+                    <small class="field-hint">填写 LinkPeek 服务根地址。保存时会自动规范为 origin。</small>
+                </label>
+                <div class="button-row">
+                    <button type="button" id="request-permission-button" class="secondary">授权域名</button>
+                    <button type="button" id="test-connection-button" class="secondary">测试服务连接</button>
+                </div>
+            </section>
+
+            <section class="panel">
+                <div class="panel-head">
+                    <div>
+                        <p class="panel-kicker">Preview</p>
+                        <h2>快捷键生成链接</h2>
+                    </div>
+                </div>
+                <div class="shortcut-status">
+                    <span>当前快捷键</span>
+                    <strong id="shortcut-value">加载中...</strong>
+                    <button type="button" id="shortcut-settings-button" class="secondary">设置快捷键</button>
+                </div>
+                <label>
+                    <span>默认 Style</span>
+                    <input id="default-style" name="defaultStyle" type="text" list="style-list" placeholder="留空则不追加 style">
+                    <datalist id="style-list"></datalist>
+                    <small class="field-hint">可点击加载 Style，也可以手动输入自定义 Style，例如 FREESTYLE。</small>
+                </label>
+                <div class="button-row">
+                    <button type="button" id="load-styles-button" class="secondary">加载 Style</button>
+                    <button type="button" id="generate-link-button" class="secondary">生成当前页链接</button>
+                </div>
+                <label class="checkbox-row">
+                    <input id="launch-app-enabled" name="launchAppEnabled" type="checkbox">
+                    <span>执行快捷键后调起应用</span>
+                </label>
+                <label>
+                    <span>URL Scheme</span>
+                    <input id="app-launch-url" name="appLaunchUrl" type="text" autocomplete="off">
+                    <small class="field-hint">默认调起 macOS Shortcuts 的 LinkPeek联动打开 快捷指令。</small>
+                </label>
+                <label>
+                    <span>跳转页自动关闭延迟（秒）</span>
+                    <input id="launcher-close-delay-seconds" name="launcherCloseDelaySeconds" type="number" min="1" max="120" step="1">
+                    <small class="field-hint">后台调起页一直没有获得焦点，或获得焦点后再次失焦，会按这个延迟自动关闭。</small>
+                </label>
+                <div class="button-row">
+                    <button type="button" id="test-app-launch-button" class="secondary">测试 URL Scheme</button>
+                </div>
+            </section>
+
+            <section class="panel cookie-sync-section" data-cookie-sync-section>
+                <div class="panel-head">
+                    <div>
+                        <p class="panel-kicker">Providers</p>
+                        <h2>Cookie 同步</h2>
+                    </div>
+                </div>
+                <label class="checkbox-row">
+                    <input id="linuxdo-sync-enabled" name="linuxDoSyncEnabled" type="checkbox">
+                    <span>同步 LinuxDo Cookie</span>
+                </label>
+                <label class="checkbox-row">
+                    <input id="nga-sync-enabled" name="ngaSyncEnabled" type="checkbox">
+                    <span>同步 NGA Cookie</span>
+                </label>
+                <label>
+                    <span>Admin 密码</span>
+                    <input id="admin-password" name="adminPassword" type="password" autocomplete="current-password">
+                    <small class="field-hint">仅 Cookie 同步需要。密码保存在 Chrome 本地扩展存储中。</small>
+                </label>
+                <label>
+                    <span>同步间隔（分钟）</span>
+                    <input id="sync-interval-minutes" name="syncIntervalMinutes" type="number" min="1" max="1440" step="1">
+                </label>
+                <div class="button-row">
+                    <button type="button" id="test-admin-connection-button" class="secondary">测试 Admin 连接</button>
+                    <button type="button" id="manual-sync-button" class="secondary">立即同步</button>
+                </div>
+            </section>
+
+            <div class="actions">
+                <button type="submit">保存设置</button>
+            </div>
+        </div>
+    </form>
+
+    <section class="panel status-panel">
+        <div class="panel-head">
+            <div>
+                <p class="panel-kicker">Status</p>
+                <h2>状态</h2>
+            </div>
+        </div>
+        <p id="feedback" class="feedback" role="status" aria-live="polite"></p>
+        <pre id="status-output"></pre>
+    </section>
+</main>
+
+<script type="module" src="src/options.mjs"></script>
+</body>
+</html>

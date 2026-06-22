@@ -12,6 +12,8 @@ LinkPeek 是一个面向聊天分享场景的链接预览代理服务。它用 J
 
 [快捷指令 Shortcut](https://www.icloud.com/shortcuts/5cce870e64ff48e0853bd77485191fa7)
 
+[Chrome 扩展配置文档](docs/chrome-extension.md)
+
 ## 功能特点
 
 - 统一预览入口：`/preview` 对爬虫返回 Open Graph HTML，对普通浏览器记录打开事件后跳转原始链接。

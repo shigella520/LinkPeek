@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>LinkPeek 调起应用</title>
+    <link rel="stylesheet" href="src/options.css">
+</head>
+<body>
+<main class="shell launcher-shell">
+    <section class="panel launcher-panel">
+        <div class="panel-head">
+            <div>
+                <p class="panel-kicker">Launch</p>
+                <h2>调起联动应用</h2>
+            </div>
+        </div>
+        <p class="feedback" id="launcher-feedback">正在调起配置的 URL Scheme...</p>
+        <div class="button-row">
+            <button type="button" id="launch-button">重新调起</button>
+            <button type="button" id="close-button" class="secondary">关闭</button>
+        </div>
+        <pre id="launcher-target"></pre>
+    </section>
+</main>
+<script type="module" src="src/launcher.mjs"></script>
+</body>
+</html>
