@@ -56,10 +56,7 @@
         loadingPanels: new Map(),
         adminNavHoverOpen: false,
         adminNavHoverCloseTimer: null,
-        adminNavLastPointer: null,
-        shareSummaryImageViewer: {
-            orientationLocked: false
-        }
+        adminNavLastPointer: null
     };
 
     function init() {
@@ -576,12 +573,6 @@
         document.getElementById("share-summary-image-viewer-close").addEventListener("click", closeShareSummaryImageViewer);
         document.getElementById("share-summary-image-viewer").addEventListener("click", (event) => {
             if (event.target === event.currentTarget) {
-                closeShareSummaryImageViewer();
-            }
-        });
-        document.addEventListener("fullscreenchange", () => {
-            const viewer = document.getElementById("share-summary-image-viewer");
-            if (!document.fullscreenElement && viewer && !viewer.hidden) {
                 closeShareSummaryImageViewer();
             }
         });
@@ -1773,7 +1764,7 @@
         const title = run.ogTitle || "暂无分享图";
         const image = run.latestImageUrl
                 ? `
-                    <button type="button" class="share-summary-image-button" data-view-share-image="${escapeAttribute(imageUrl)}" data-view-share-image-title="${escapeAttribute(title)}" aria-label="全屏查看分享图">
+                    <button type="button" class="share-summary-image-button" data-view-share-image="${escapeAttribute(imageUrl)}" data-view-share-image-title="${escapeAttribute(title)}" aria-label="查看分享图">
                         <img class="share-summary-thumb" src="${escapeAttribute(imageUrl)}" alt="">
                     </button>
                 `
@@ -2002,7 +1993,7 @@
         });
     }
 
-    async function openShareSummaryImageViewer(imageUrl, title) {
+    function openShareSummaryImageViewer(imageUrl, title) {
         if (!imageUrl) {
             return;
         }
@@ -2015,57 +2006,16 @@
         viewer.hidden = false;
         document.body.classList.add("modal-open");
         document.body.classList.add("share-summary-image-viewer-open");
-        await requestShareSummaryImageViewerFullscreen(viewer);
         document.getElementById("share-summary-image-viewer-close").focus({preventScroll: true});
     }
 
-    async function requestShareSummaryImageViewerFullscreen(viewer) {
-        if (!viewer.requestFullscreen) {
-            return;
-        }
-        try {
-            await viewer.requestFullscreen();
-            await lockShareSummaryImageViewerLandscape();
-        } catch (error) {
-            // Fullscreen and orientation lock are user-agent dependent.
-        }
-    }
-
-    async function lockShareSummaryImageViewerLandscape() {
-        const orientation = screen.orientation;
-        if (!orientation || !orientation.lock) {
-            return;
-        }
-        try {
-            await orientation.lock("landscape");
-            state.shareSummaryImageViewer.orientationLocked = true;
-        } catch (error) {
-            state.shareSummaryImageViewer.orientationLocked = false;
-        }
-    }
-
-    async function closeShareSummaryImageViewer() {
+    function closeShareSummaryImageViewer() {
         const viewer = document.getElementById("share-summary-image-viewer");
         const image = document.getElementById("share-summary-image-viewer-img");
         viewer.hidden = true;
         image.removeAttribute("src");
         image.alt = "";
         document.body.classList.remove("share-summary-image-viewer-open");
-        if (state.shareSummaryImageViewer.orientationLocked && screen.orientation && screen.orientation.unlock) {
-            try {
-                screen.orientation.unlock();
-            } catch (error) {
-                // Some browsers unlock automatically on fullscreen exit.
-            }
-        }
-        state.shareSummaryImageViewer.orientationLocked = false;
-        if (document.fullscreenElement === viewer) {
-            try {
-                await document.exitFullscreen();
-            } catch (error) {
-                // Ignore user-agent fullscreen exit failures.
-            }
-        }
         if (document.querySelectorAll(".modal-shell:not([hidden]), .share-summary-image-viewer:not([hidden])").length === 0) {
             document.body.classList.remove("modal-open");
         }
@@ -3448,7 +3398,7 @@
         const title = run.ogTitle || "分享图";
         const preview = run.latestImageUrl
                 ? `
-                    <button type="button" class="share-summary-preview-button" data-view-share-image="${escapeAttribute(imageUrl)}" data-view-share-image-title="${escapeAttribute(title)}" aria-label="全屏查看分享图">
+                    <button type="button" class="share-summary-preview-button" data-view-share-image="${escapeAttribute(imageUrl)}" data-view-share-image-title="${escapeAttribute(title)}" aria-label="查看分享图">
                         <img class="share-summary-preview" src="${escapeAttribute(imageUrl)}" alt="">
                     </button>
                 `
