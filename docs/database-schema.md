@@ -1,95 +1,56 @@
 # 数据库表结构
 
-LinkPeek 运行时使用一个 SQLite 数据库，默认路径由 `STATS_DB_PATH` 指定为 `/data/stats/linkpeek.db`。
+LinkPeek 运行时使用 SQLite，默认路径由 `STATS_DB_PATH` 指定为 `/data/stats/linkpeek.db`。
 
-数据库同时承载两类数据：
+当前 schema 的代码来源是：
 
-- 统计数据：预览事件、链接聚合记录、Dashboard 查询数据来源。
-- 管理后台运行配置：Style Prompt、论坛 Cookie、AI Provider 列表、AI 标题格式和 AI Provider 自动降级配置。
+```text
+linkpeek-server/src/main/resources/db/stats-schema.sql
+linkpeek-server/src/main/java/io/github/shigella520/linkpeek/server/config/StatisticsConfiguration.java
+```
 
-当前 schema 的代码来源是 `linkpeek-server/src/main/resources/db/stats-schema.sql`。启动时会执行该 schema，并由 `StatisticsConfiguration` 做少量幂等迁移。
+启动时会先执行 `stats-schema.sql`，再由 `StatisticsConfiguration` 做幂等列迁移、索引补齐和少量兼容性重建。当前 SQLite 配置使用 WAL、`synchronous=NORMAL`、5 秒 busy timeout，并关闭 foreign key enforcement。因此下文的关系是代码层逻辑关系，不是数据库物理外键。
 
 ## 总览
 
+数据库承载四类数据：
+
+- 预览统计：预览事件、链接维表和 Dashboard 聚合来源。
+- 管理配置：Prompt、论坛 Cookie、AI Provider、AI Provider 降级配置。
+- 分享总结：任务、执行记录、AI 分享图配置/记录、TTS 音频配置/记录。
+- 通知系统：Webhook 渠道、通知任务、任务渠道关联和发送记录。
+
 ```mermaid
 erDiagram
-    stats_link {
-        TEXT preview_key PK
-        TEXT provider_id
-        TEXT canonical_url
-        TEXT title
-        TEXT site_name
-        INTEGER first_seen_at
-        INTEGER last_seen_at
-    }
-
-    stats_event {
-        INTEGER id PK
-        INTEGER occurred_at
-        TEXT event_type
-        TEXT preview_key
-        TEXT provider_id
-        INTEGER http_status
-        INTEGER cache_hit
-        INTEGER ai_requested
-        INTEGER ai_succeeded
-        INTEGER duration_ms
-        TEXT client_type
-        TEXT error_code
-    }
-
-    admin_prompt {
-        TEXT style PK
-        TEXT prompt
-        INTEGER updated_at
-    }
-
-    provider_config {
-        TEXT provider_id PK
-        TEXT config_key PK
-        TEXT config_value
-        INTEGER updated_at
-    }
-
-    ai_provider {
-        INTEGER id PK
-        TEXT name
-        INTEGER enabled
-        INTEGER sort_order
-        TEXT base_url
-        TEXT api_kind
-        TEXT model
-        TEXT effort
-        INTEGER request_timeout_seconds
-        TEXT api_key
-        INTEGER updated_at
-    }
-
-    stats_link ||--o{ stats_event : "logical preview_key"
+    stats_link ||--o{ stats_event : "preview_key"
+    share_summary_task ||--o{ share_summary_run : "task_id"
+    share_summary_run ||--o{ share_summary_image : "run_id"
+    share_summary_run ||--o{ share_summary_audio : "run_id"
+    notification_task ||--o{ notification_task_channel : "task_id"
+    notification_channel ||--o{ notification_task_channel : "channel_id"
 ```
 
-注意：当前 SQLite schema 没有声明物理外键，运行配置中也关闭了 foreign key enforcement。上图表达的是代码层面的逻辑关系。
-
-## 约定
+## 通用约定
 
 - 所有时间字段都是 epoch milliseconds。
 - SQLite 没有布尔类型，代码使用 `INTEGER` 保存布尔值：`0=false`，`1=true`。
-- `provider_id` 有两种含义：
+- `provider_id` 有两种语义：
   - 统计表中的 `provider_id` 是内容 provider，例如 `bilibili`、`gaphub`、`v2ex`、`linuxdo`、`nga`。
   - `provider_config.provider_id` 是配置命名空间，例如 `linuxdo`、`nga`、`ai_title`、`ai_provider`。
-- AI Provider 是管理后台配置的上游 AI 服务，保存在 `ai_provider` 表；它和内容 provider 不是同一个概念。
+- AI Provider 是后台配置的上游 AI 服务，保存在 `ai_provider` 表；它和内容 provider 不是同一个概念。
+- Secret、Cookie、API Key、Prompt 等配置当前保存在 SQLite 中，应保护数据库文件权限和后台访问权限。
 
 ## stats_link
 
-链接聚合维表，用于 Dashboard 的热门链接、标题展示、首次/最近出现时间等查询。
+链接聚合维表，用于 Dashboard 热门链接、标题展示、首次/最近出现时间等查询。
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
 | `preview_key` | `TEXT` | PK | 预览资源稳定标识。基础预览来自 canonical URL；AI styled 预览来自 canonical URL、style 和 prompt hash。 |
-| `provider_id` | `TEXT` | 可空 | 内容 provider ID。失败事件或极早期记录可能为空。 |
+| `provider_id` | `TEXT` | 可空 | 内容 provider ID。失败事件或早期记录可能为空。 |
 | `canonical_url` | `TEXT` | NOT NULL | provider 归一化后的目标 URL。 |
-| `title` | `TEXT` | NOT NULL | 展示标题。事件只记录打开但尚无元数据时可能先写空字符串，后续 upsert 会用真实标题补齐。 |
-| `site_name` | `TEXT` | NOT NULL | 站点名，例如 `Bilibili`、`V2EX`。 |
+| `title` | `TEXT` | NOT NULL | 展示标题。事件先写入空标题时，后续 upsert 会用真实标题补齐。 |
+| `site_name` | `TEXT` | NOT NULL | 站点名。 |
 | `first_seen_at` | `INTEGER` | NOT NULL | 首次出现时间。 |
 | `last_seen_at` | `INTEGER` | NOT NULL | 最近出现时间。 |
 
@@ -101,25 +62,31 @@ erDiagram
 
 - 通过 `StatsLinkMapper.upsertLink` 写入。
 - 冲突时保留更早的 `first_seen_at`，更新更晚的 `last_seen_at`。
-- 新写入的标题或站点名为空时，不覆盖已有非空值。
+- 新标题或站点名为空时，不覆盖已有非空值。
 
 ## stats_event
 
-统计事件事实表，记录预览创建、打开、失败和缩略图服务事件。
+统计事件事实表，记录预览创建、打开、失败和媒体服务事件。
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
 | `id` | `INTEGER` | PK AUTOINCREMENT | 自增事件 ID。 |
 | `occurred_at` | `INTEGER` | NOT NULL | 事件发生时间。 |
-| `event_type` | `TEXT` | NOT NULL | 事件类型。当前包括 `PREVIEW_CREATED`、`PREVIEW_OPENED`、`PREVIEW_FAILED`、`THUMBNAIL_SERVED`。 |
+| `event_type` | `TEXT` | NOT NULL | 当前包括 `PREVIEW_CREATED`、`PREVIEW_OPENED`、`PREVIEW_FAILED`、`THUMBNAIL_SERVED`。 |
 | `preview_key` | `TEXT` | 可空 | 逻辑关联 `stats_link.preview_key`。URL 非法等场景可能为空。 |
 | `provider_id` | `TEXT` | 可空 | 内容 provider ID。 |
 | `http_status` | `INTEGER` | NOT NULL | 本次服务响应状态码。 |
-| `cache_hit` | `INTEGER` | NOT NULL | 是否命中元数据或缩略图缓存。 |
+| `cache_hit` | `INTEGER` | NOT NULL | 是否命中元数据、缩略图或视频缓存。 |
 | `ai_requested` | `INTEGER` | NOT NULL DEFAULT 0 | 本次预览创建是否请求过 AI 标题。 |
 | `ai_succeeded` | `INTEGER` | NOT NULL DEFAULT 0 | 本次 AI 标题是否成功生成并用于预览。 |
-| `duration_ms` | `INTEGER` | NOT NULL | 服务端处理耗时。 |
-| `client_type` | `TEXT` | NOT NULL | 客户端类型，例如 crawler、browser、media 等枚举值。 |
+| `source_url` | `TEXT` | 可空 | 用户请求中的原始 URL。 |
+| `requested_style` | `TEXT` | 可空 | 请求中的 style。 |
+| `actual_style` | `TEXT` | 可空 | 实际命中的 style，`FREESTYLE` 会记录随机到的真实 style。 |
+| `ai_provider_names` | `TEXT` | 可空 | 本次 AI 请求实际尝试过的 Provider 名称，按 `/` 拼接。 |
+| `ai_duration_ms` | `INTEGER` | NOT NULL DEFAULT 0 | AI 标题请求总耗时。 |
+| `crawl_duration_ms` | `INTEGER` | NOT NULL DEFAULT 0 | 上游抓取或 provider 解析耗时。 |
+| `duration_ms` | `INTEGER` | NOT NULL | 本次服务端处理总耗时。 |
+| `client_type` | `TEXT` | NOT NULL | 客户端类型，例如 crawler、browser、media。 |
 | `error_code` | `TEXT` | 可空 | 失败分类，例如 `INVALID_URL`、`UNSUPPORTED_URL`、`UPSTREAM_ERROR`、`OTHER`。 |
 
 索引：
@@ -128,9 +95,8 @@ erDiagram
 - `idx_stats_event_type_occurred_at(event_type, occurred_at)`
 - `idx_stats_event_preview_key(preview_key)`
 
-关系和清理：
+清理规则：
 
-- `preview_key` 逻辑关联 `stats_link.preview_key`，但不强制外键。
 - 统计过期清理会先删除旧事件，再删除没有事件引用的孤儿 `stats_link`。
 - 管理后台清理全部统计数据会删除 `stats_event` 和 `stats_link`，不会删除后台配置。
 
@@ -144,60 +110,53 @@ Style Prompt 表，管理后台通过它维护 `style -> prompt`。
 | `prompt` | `TEXT` | NOT NULL | 该 style 对应的风格提示词。 |
 | `updated_at` | `INTEGER` | NOT NULL | 最近更新时间。 |
 
-使用方式：
-
-- `/preview?url=...&style=...` 会先根据 `style` 查找该表。
-- 命中后，Style Prompt 作为独立 user message 发送给 AI Provider。
-- 公开接口 `/api/preview/styles` 只返回 style 名称，不返回 prompt 内容。
+`/api/preview/styles` 只返回 style 名称，不返回 prompt 内容。
 
 ## provider_config
 
-通用运行配置 KV 表。主键是 `(provider_id, config_key)`。
+通用运行配置 KV 表，主键为 `(provider_id, config_key)`。
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| `provider_id` | `TEXT` | PK | 配置命名空间，不一定是内容 provider。 |
+| `provider_id` | `TEXT` | PK | 配置命名空间。 |
 | `config_key` | `TEXT` | PK | 配置项 key。 |
-| `config_value` | `TEXT` | NOT NULL | 配置值，统一按字符串存储。 |
+| `config_value` | `TEXT` | NOT NULL | 配置值，按字符串保存。 |
 | `updated_at` | `INTEGER` | NOT NULL | 最近更新时间。 |
 
-当前代码会写入和读取的配置命名空间与 key：
+当前主要配置：
 
-| provider_id | config_key | 写入入口 | 含义和读取逻辑 |
-| --- | --- | --- | --- |
-| `bilibili` | `ai_title_enabled` | 管理后台 Provider 配置，`PUT /api/admin/provider-config/bilibili`。 | Bilibili 是否启用 AI 标题，字符串 `true`/`false`。`ProviderConfigService.bilibiliAiTitleEnabled()` 读取；没有记录或空值时默认启用。关闭后 Bilibili 仍使用上游原始标题和原图封面。 |
-| `linuxdo` | `_t` | 管理后台论坛配置，`PUT /api/admin/provider-config/linuxdo`。 | LinuxDo Cookie `_t`。`ProviderConfigService.linuxDoCookieHeader()` 读取后拼入上游请求 Cookie。保存值会 `strip()`；生成 Cookie header 时允许用户粘贴完整 `_t=...; Path=...`，代码会截取第一个分号前的真实 cookie 值。 |
-| `linuxdo` | `cf_clearance` | 管理后台论坛配置，`PUT /api/admin/provider-config/linuxdo`。 | LinuxDo Cloudflare Cookie `cf_clearance`。读取和清洗逻辑同 `_t`。 |
-| `linuxdo` | `_forum_session` | 管理后台论坛配置，`PUT /api/admin/provider-config/linuxdo`。 | LinuxDo Cookie `_forum_session`。读取和清洗逻辑同 `_t`。 |
-| `nga` | `NGA_PASSPORT_UID` | 管理后台论坛配置，`PUT /api/admin/provider-config/nga`。 | NGA 登录态 UID。`ProviderConfigService.ngaPassportUid()` 读取，空字符串视为未配置。 |
-| `nga` | `NGA_PASSPORT_CID` | 管理后台论坛配置，`PUT /api/admin/provider-config/nga`。 | NGA 登录态 CID。`ProviderConfigService.ngaPassportCid()` 读取，空字符串视为未配置。 |
-| `ai_title` | `title_format_prompt` | AI 标题格式配置，`PUT /api/admin/ai-title-config`。 | AI 标题输出格式提示词。`AiTitleConfigService.titleFormatPrompt()` 读取后作为 AI 标题生成的 system/instructions；没有记录时使用代码内置默认提示词。 |
-| `ai_provider` | `auto_downgrade_enabled` | AI Provider 自动降级配置，`PUT /api/admin/ai-provider-downgrade-config`。 | AI Provider 自动降级全局开关，字符串 `true`/`false`。`AiProviderDowngradeService.config()` 读取；没有记录或空值时默认为 `false`。 |
-| `ai_provider` | `auto_downgrade_failure_threshold` | AI Provider 自动降级配置，`PUT /api/admin/ai-provider-downgrade-config`。 | AI Provider 失败阈值降级的全局连续失败阈值。`AiProviderDowngradeService.config()` 读取；默认 `3`，允许 `1..100`，非法数字读取时回退默认值，保存时越界会返回 400。 |
+| provider_id | config_key | 说明 |
+| --- | --- | --- |
+| `bilibili` | `ai_title_enabled` | Bilibili 是否启用 AI 标题；无记录或空值时默认启用。 |
+| `linuxdo` | `_t` / `cf_clearance` / `_forum_session` | LinuxDo 上游请求 Cookie。 |
+| `nga` | `NGA_PASSPORT_UID` / `NGA_PASSPORT_CID` | NGA 登录态。 |
+| `ai_title` | `title_format_prompt` | AI 标题输出格式提示词；无记录时使用代码默认值。 |
+| `ai_provider` | `auto_downgrade_enabled` | AI Provider 自动降级全局开关。 |
+| `ai_provider` | `auto_downgrade_failure_threshold` | 触发自动降级的连续失败阈值，允许 `1..100`。 |
+| `ai_provider` | `share_summary_timeout_multiplier` | 分享总结复用 AI Provider 时的超时倍数。 |
 
 注意：
 
-- 通用接口 `PUT /api/admin/provider-config/{providerId}` 没有 key 白名单，传入的 `values` 会逐项 upsert 到 `provider_config`。当前后台 UI 固定写入上表中的 Bilibili AI 标题开关和 LinuxDo/NGA Cookie key；如果 API 额外写入 `linuxdo` 下的其他 key，`linuxDoCookieHeader()` 会把它们作为额外 Cookie 附加到 header。
-- `auto_downgrade_enabled` 和 `auto_downgrade_failure_threshold` 是全局配置，不是 `ai_provider` 表字段。
-- 自动降级的连续处理失败计数保存在进程内存中，服务重启后会清空。
-- Cookie 和提示词以明文保存，应保护 SQLite 文件权限和后台访问权限。
+- 自动降级失败计数保存在进程内存中，服务重启后清空。
+- 通用 Provider 配置接口没有 key 白名单；后台 UI 固定写入当前支持的 key。
+- 旧的 AI Provider 超时降级配置会在启动迁移中删除。
 
 ## ai_provider
 
-AI Provider 列表，用于 AI 标题生成。代码会按 `enabled=1`、`sort_order ASC`、`id ASC` 依次尝试。
+AI Provider 列表，用于 AI 标题和分享总结。代码按 `enabled=1`、`sort_order ASC`、`id ASC` 依次尝试。
 
 | 字段 | 类型 | 约束 | 说明 |
 | --- | --- | --- | --- |
-| `id` | `INTEGER` | PK AUTOINCREMENT | AI Provider 自增 ID。 |
+| `id` | `INTEGER` | PK AUTOINCREMENT | 自增 ID。 |
 | `name` | `TEXT` | NOT NULL | 管理后台展示名。 |
-| `enabled` | `INTEGER` | NOT NULL | 是否启用。列表页可直接启用/禁用。 |
-| `sort_order` | `INTEGER` | NOT NULL | 排序号。后台拖拽排序会重写为 `100, 200, 300...`。 |
-| `base_url` | `TEXT` | NOT NULL | AI API 基础地址，通常填到 `/v1`，例如 `https://api.openai.com/v1`。 |
-| `api_kind` | `TEXT` | NOT NULL DEFAULT `CHAT_COMPLETIONS` | API 格式。当前支持 `CHAT_COMPLETIONS` 和 `RESPONSES`。 |
+| `enabled` | `INTEGER` | NOT NULL | 是否启用。 |
+| `sort_order` | `INTEGER` | NOT NULL | 排序号。 |
+| `base_url` | `TEXT` | NOT NULL | AI API 基础地址，通常填到 `/v1`。 |
+| `api_kind` | `TEXT` | NOT NULL DEFAULT `CHAT_COMPLETIONS` | API 格式，当前支持 Chat Completions 和 Responses 文本请求。 |
 | `model` | `TEXT` | NOT NULL | 模型名。 |
-| `effort` | `TEXT` | 可空 | 推理 effort。Responses 写入 `reasoning.effort`，Chat Completions 写入 `reasoning_effort`。 |
-| `request_timeout_seconds` | `INTEGER` | NOT NULL DEFAULT 45 | 该 AI Provider 的请求超时秒数，管理后台限制 `1..600`。 |
-| `api_key` | `TEXT` | NOT NULL | API Key，当前按后台要求明文返回和保存。 |
+| `effort` | `TEXT` | 可空 | 推理 effort。 |
+| `request_timeout_seconds` | `INTEGER` | NOT NULL DEFAULT 45 | 单个 Provider 请求超时秒数，管理后台限制 `1..600`。 |
+| `api_key` | `TEXT` | NOT NULL | API Key。 |
 | `updated_at` | `INTEGER` | NOT NULL | 最近更新时间。 |
 
 索引：
@@ -207,61 +166,295 @@ AI Provider 列表，用于 AI 标题生成。代码会按 `enabled=1`、`sort_o
 排序规则：
 
 - 新建 Provider 默认追加到当前最大 `sort_order + 100`。
-- 手工拖拽排序和自动降级都会重写列表排序为 `100, 200, 300...`。
-- 失败阈值降级触发时，对应 Provider 会被移动到列表最后；即使已经在最后，也会写入明显 WARN 日志。
+- 手工拖拽排序和自动降级都会重写为 `100, 200, 300...`。
+- 失败阈值降级触发时，Provider 会移动到列表最后；即使已经在最后，也会记录明显 WARN 日志和通知事件。
 
-## 逻辑关系
+## share_summary_task
 
-### stats_event -> stats_link
+分享总结任务配置表。
 
-- `stats_event.preview_key` 逻辑关联 `stats_link.preview_key`。
-- 写事件时，如果有 `preview_key` 和 `canonical_url`，代码会先 upsert `stats_link`，再 insert `stats_event`。
-- 失败事件可能没有 `preview_key`，因此该字段可空。
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `INTEGER` | PK AUTOINCREMENT | 任务 ID。 |
+| `name` | `TEXT` | NOT NULL | 任务名称。 |
+| `enabled` | `INTEGER` | NOT NULL | 是否启用定时执行。 |
+| `period_type` | `TEXT` | NOT NULL | `DAILY`、`WEEKLY`、`MONTHLY`。 |
+| `period_selection_mode` | `TEXT` | NOT NULL DEFAULT `CURRENT` | `CURRENT` 或 `PREVIOUS`，决定窗口取当前周期截至触发点还是上一完整周期。 |
+| `run_time` | `TEXT` | NOT NULL | `HH:mm`。 |
+| `day_of_week` | `INTEGER` | 可空 | 周任务使用，`1..7` 表示周一到周日。 |
+| `prompt` | `TEXT` | NOT NULL | 分享总结提示词。 |
+| `max_links` | `INTEGER` | NOT NULL | 输入 AI 的最大去重链接数，允许 `1..2000`。 |
+| `min_links` | `INTEGER` | NOT NULL DEFAULT 1 | 触发 AI 总结所需的最小去重链接数，允许 `1..2000`。 |
+| `deleted` | `INTEGER` | NOT NULL DEFAULT 0 | 逻辑删除标记。 |
+| `deleted_at` | `INTEGER` | 可空 | 逻辑删除时间。 |
+| `created_at` | `INTEGER` | NOT NULL | 创建时间。 |
+| `updated_at` | `INTEGER` | NOT NULL | 更新时间。 |
 
-### admin_prompt -> styled PreviewKey
+索引：
 
-- `admin_prompt.style` 被 `/preview` 的 `style` 参数引用。
-- Style Prompt 不直接关联统计表。
-- AI styled 元数据使用独立 `PreviewKey`，所以 styled preview 的统计会进入独立的 `stats_link.preview_key`。
+- `idx_share_summary_task_enabled(enabled, deleted, period_type)`
 
-### provider_config -> 运行模块
+月任务没有单独的“几号”字段。`MONTHLY + CURRENT` 在月末指定时间执行，窗口是本月 1 日到触发时间；`MONTHLY + PREVIOUS` 在每月 1 日指定时间执行，窗口是上一完整自然月。
 
-- `provider_config` 是通用 KV 表，没有固定外键。
-- `linuxdo` 和 `nga` 命名空间由内容 provider 读取，用于上游论坛登录态。
-- `ai_title` 命名空间由 AI 标题配置读取。
-- `ai_provider` 命名空间由 AI Provider 自动降级服务读取。
+## share_summary_run
 
-### ai_provider -> AI 请求
+分享总结执行记录表。
 
-- `ai_provider` 不和 `stats_event.provider_id` 建立关系。
-- `stats_event.provider_id` 记录的是内容 provider；AI Provider 的使用情况目前通过运行日志观测。
-- AI Provider 失败阈值降级只改 `ai_provider.sort_order`，不会禁用 Provider，也不会写统计事件。
+| 字段 | 类型 | 约束 | 说明 |
+| --- | --- | --- | --- |
+| `id` | `INTEGER` | PK AUTOINCREMENT | 执行记录 ID。 |
+| `task_id` | `INTEGER` | NOT NULL | 任务 ID。 |
+| `task_name` | `TEXT` | NOT NULL | 执行时任务名称快照。 |
+| `trigger_type` | `TEXT` | NOT NULL | `SCHEDULED`、`MANUAL`、`RETRY`。 |
+| `period_type` | `TEXT` | NOT NULL | 执行时周期类型快照。 |
+| `window_start` | `INTEGER` | NOT NULL | 总结窗口开始。 |
+| `window_end` | `INTEGER` | NOT NULL | 总结窗口结束。 |
+| `status` | `TEXT` | NOT NULL | `RUNNING`、`SUCCESS`、`EMPTY`、`FAILED`、`SKIPPED`。 |
+| `link_count` | `INTEGER` | NOT NULL DEFAULT 0 | 窗口内原始创建事件数。 |
+| `unique_link_count` | `INTEGER` | NOT NULL DEFAULT 0 | 去重后的链接标题数。 |
+| `input_link_count` | `INTEGER` | NOT NULL DEFAULT 0 | 实际输入 AI 的标题数。 |
+| `prompt_snapshot` | `TEXT` | NOT NULL | 执行时 Prompt 快照。 |
+| `ai_provider_names` | `TEXT` | 可空 | 实际尝试或成功的 AI Provider 名称。 |
+| `ai_duration_ms` | `INTEGER` | NOT NULL DEFAULT 0 | AI 总结耗时。 |
+| `report` | `TEXT` | 可空 | 报告正文。 |
+| `error_message` | `TEXT` | 可空 | 失败或 EMPTY 原因。 |
+| `started_at` | `INTEGER` | NOT NULL | 开始时间。 |
+| `finished_at` | `INTEGER` | 可空 | 结束时间。 |
+
+索引：
+
+- `idx_share_summary_run_task_window(task_id, window_start, window_end)`
+- `idx_share_summary_run_started_at(started_at)`
+- `idx_share_summary_run_status(status)`
+
+同一任务同一窗口的定时记录如果已经是 `SUCCESS`、`EMPTY` 或 `RUNNING`，调度会跳过。手动执行不支持自定义窗口。
+
+## share_summary_image_config
+
+分享总结 AI 生图单例配置表，固定使用 `id=1`。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `INTEGER` | 单例主键。 |
+| `enabled` | `INTEGER` | 是否启用生图。 |
+| `auto_generate` | `INTEGER` | 报告成功后是否自动生成图片。 |
+| `provider_type` | `TEXT` | 当前为 `OPENAI_COMPATIBLE`。 |
+| `base_url` | `TEXT` | 上游 API Base URL。 |
+| `endpoint_path` | `TEXT` | 默认 `/v1/images/generations`。 |
+| `api_key` | `TEXT` | API Key，后台读取时不明文回显。 |
+| `model` | `TEXT` | 生图模型。 |
+| `image_size` | `TEXT` | 上游请求尺寸：`auto`、`1024x1024`、`1536x1024`、`1024x1536`。 |
+| `quality` | `TEXT` | 图片质量，默认 `auto`。 |
+| `output_format` | `TEXT` | 最终输出格式：`png` 或 `jpg`。 |
+| `style_prompt` | `TEXT` | 全局风格提示词。 |
+| `request_timeout_seconds` | `INTEGER` | 请求超时，允许 `1..1800`。 |
+| `updated_at` | `INTEGER` | 更新时间。 |
+
+## share_summary_image
+
+分享总结图片生成记录表。每次生成或重新生成都会新增一条记录。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `INTEGER` | 主键。 |
+| `run_id` | `INTEGER` | 关联分享总结执行记录。 |
+| `attempt_no` | `INTEGER` | 同一报告的第几次生图。 |
+| `status` | `TEXT` | `NOT_GENERATED`、`PENDING`、`GENERATING`、`SUCCESS`、`FAILED`、`TIMEOUT`。 |
+| `provider_type` | `TEXT` | Provider 类型快照。 |
+| `model` | `TEXT` | 模型快照。 |
+| `image_size` | `TEXT` | 上游尺寸快照。 |
+| `output_format` | `TEXT` | 输出格式快照。 |
+| `quality` | `TEXT` | 图片质量快照。 |
+| `style_prompt_snapshot` | `TEXT` | 风格提示词快照。 |
+| `prompt_snapshot` | `TEXT` | 最终 prompt 快照。 |
+| `storage_key` | `TEXT` | 内部文件路径 key。 |
+| `public_token` | `TEXT` | 公开访问 token。 |
+| `image_url` | `TEXT` | 图片 URL。 |
+| `og_image_url` | `TEXT` | 可用于 `og:image` 的公开图片 URL。 |
+| `og_page_url` | `TEXT` | 公开分享页 URL。 |
+| `og_title` | `TEXT` | OG 标题。 |
+| `og_description` | `TEXT` | OG 描述。 |
+| `raw_response_snapshot` | `TEXT` | 上游响应摘要。 |
+| `error_message` | `TEXT` | 失败原因。 |
+| `duration_ms` | `INTEGER` | 生图耗时。 |
+| `created_at` | `INTEGER` | 创建时间。 |
+| `started_at` | `INTEGER` | 开始时间。 |
+| `finished_at` | `INTEGER` | 结束时间。 |
+
+索引：
+
+- `idx_share_summary_image_run_id(run_id)`
+- `idx_share_summary_image_status(status)`
+- `idx_share_summary_image_created_at(created_at)`
+- `idx_share_summary_image_public_token(public_token)` unique
+
+## share_summary_audio_config
+
+分享总结 TTS 音频单例配置表，固定使用 `id=1`。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `INTEGER` | 单例主键。 |
+| `enabled` | `INTEGER` | 是否启用音频生成。 |
+| `auto_generate` | `INTEGER` | 报告成功后是否自动生成音频。 |
+| `provider_type` | `TEXT` | `OPENAI_COMPATIBLE` 或 `MIMO_TTS`。 |
+| `base_url` | `TEXT` | 上游 API Base URL。 |
+| `endpoint_path` | `TEXT` | 默认 `/v1/audio/speech`。 |
+| `api_key` | `TEXT` | API Key。 |
+| `model` | `TEXT` | 音频模型。 |
+| `voice` | `TEXT` | 声音。 |
+| `speed` | `REAL` | 语速。 |
+| `pitch` | `INTEGER` | 音调。 |
+| `style` | `TEXT` | 朗读风格。 |
+| `output_format` | `TEXT` | 输出格式，当前返回 `mp3` 或 `wav`。 |
+| `request_timeout_seconds` | `INTEGER` | 请求超时。 |
+| `updated_at` | `INTEGER` | 更新时间。 |
+
+## share_summary_audio
+
+分享总结音频生成记录表。每次生成或重新生成都会新增一条记录。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `INTEGER` | 主键。 |
+| `run_id` | `INTEGER` | 关联分享总结执行记录。 |
+| `attempt_no` | `INTEGER` | 同一报告的第几次音频生成。 |
+| `status` | `TEXT` | `NOT_GENERATED`、`PENDING`、`GENERATING`、`SUCCESS`、`FAILED`。 |
+| `provider_type` | `TEXT` | Provider 类型快照。 |
+| `model` | `TEXT` | 模型快照。 |
+| `voice` | `TEXT` | 声音快照。 |
+| `speed` | `REAL` | 语速快照。 |
+| `pitch` | `INTEGER` | 音调快照。 |
+| `style` | `TEXT` | 风格快照。 |
+| `output_format` | `TEXT` | 输出格式快照。 |
+| `text_snapshot` | `TEXT` | 生成音频使用的文本快照。 |
+| `storage_key` | `TEXT` | 内部文件路径 key。 |
+| `audio_url` | `TEXT` | 公开音频 URL。 |
+| `raw_response_snapshot` | `TEXT` | 上游响应摘要。 |
+| `error_message` | `TEXT` | 失败原因。 |
+| `duration_ms` | `INTEGER` | 耗时。 |
+| `created_at` | `INTEGER` | 创建时间。 |
+| `started_at` | `INTEGER` | 开始时间。 |
+| `finished_at` | `INTEGER` | 结束时间。 |
+
+索引：
+
+- `idx_share_summary_audio_run_id(run_id)`
+- `idx_share_summary_audio_status(status)`
+- `idx_share_summary_audio_created_at(created_at)`
+
+## notification_channel
+
+Webhook 通知渠道表。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `INTEGER` | 主键。 |
+| `name` | `TEXT` | 渠道名称。 |
+| `enabled` | `INTEGER` | 是否启用。 |
+| `type` | `TEXT` | 当前固定为 `WEBHOOK`。 |
+| `url` | `TEXT` | Webhook URL。 |
+| `method` | `TEXT` | 当前固定为 `POST`。 |
+| `headers_json` | `TEXT` | 自定义 Header JSON 对象。 |
+| `body_template` | `TEXT` | 渠道 Body 模板，默认 `{{message.bodyJson}}`。 |
+| `secret` | `TEXT` | 可选签名密钥。 |
+| `timeout_seconds` | `INTEGER` | 请求超时，允许 `1..60`。 |
+| `created_at` | `INTEGER` | 创建时间。 |
+| `updated_at` | `INTEGER` | 更新时间。 |
+
+索引：
+
+- `idx_notification_channel_enabled(enabled, type)`
+
+## notification_task
+
+通知任务表。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `INTEGER` | 主键。 |
+| `name` | `TEXT` | 任务名称。 |
+| `enabled` | `INTEGER` | 是否启用。 |
+| `event_type` | `TEXT` | 事件类型。 |
+| `filters_json` | `TEXT` | 匹配条件 JSON。当前只有图片成功事件会使用分享总结过滤条件。 |
+| `template_json` | `TEXT` | 消息正文模板，保存时按事件 Schema 校验占位符。 |
+| `created_at` | `INTEGER` | 创建时间。 |
+| `updated_at` | `INTEGER` | 更新时间。 |
+
+索引：
+
+- `idx_notification_task_event_enabled(event_type, enabled)`
+
+## notification_task_channel
+
+通知任务与渠道的多对多关联表。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `task_id` | `INTEGER` | 通知任务 ID。 |
+| `channel_id` | `INTEGER` | 通知渠道 ID。 |
+
+主键：
+
+- `(task_id, channel_id)`
+
+## notification_delivery
+
+通知发送记录表。每个“事件 + 通知任务 + 通知渠道”会创建一条发送记录。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `INTEGER` | 主键。 |
+| `event_type` | `TEXT` | 事件类型。 |
+| `event_key` | `TEXT` | 事件业务键，例如 `SHARE_SUMMARY_IMAGE_SUCCESS:{imageId}`。 |
+| `notification_task_id` | `INTEGER` | 通知任务 ID。 |
+| `notification_task_name` | `TEXT` | 发送时任务名称快照。 |
+| `channel_id` | `INTEGER` | 渠道 ID。 |
+| `channel_name` | `TEXT` | 发送时渠道名称快照。 |
+| `status` | `TEXT` | `PENDING`、`SUCCESS`、`FAILED`。 |
+| `attempt_count` | `INTEGER` | 尝试次数。 |
+| `request_url` | `TEXT` | 请求 URL 快照。 |
+| `request_body` | `TEXT` | 完整请求体，用于重试。 |
+| `request_body_snapshot` | `TEXT` | 请求体摘要，当前限制 8000 字符。 |
+| `response_status` | `INTEGER` | HTTP 状态码。 |
+| `response_body_snapshot` | `TEXT` | 响应体摘要。 |
+| `error_message` | `TEXT` | 失败原因。 |
+| `duration_ms` | `INTEGER` | 最后一次请求耗时。 |
+| `created_at` | `INTEGER` | 创建时间。 |
+| `finished_at` | `INTEGER` | 完成时间。 |
+
+索引：
+
+- `idx_notification_delivery_event_key(event_key)`
+- `idx_notification_delivery_status_created(status, created_at)`
+- `idx_notification_delivery_task_created(notification_task_id, created_at)`
+- `idx_notification_delivery_channel_created(channel_id, created_at)`
+
+重试规则：
+
+- 后台重试会优先使用 `request_body`。
+- 如果只有 snapshot 且 snapshot 可能被截断，重试会拒绝执行。
 
 ## 迁移策略
 
-当前项目没有版本化 migration 工具。启动时会做两步：
+项目当前没有 Flyway/Liquibase。启动时执行：
 
-1. 执行 `db/stats-schema.sql` 中的 `CREATE TABLE IF NOT EXISTS` 和 `CREATE INDEX IF NOT EXISTS`。
-2. 执行 `StatisticsConfiguration` 里的幂等列迁移。
+1. 如检测到旧分享总结任务结构，会重建分享总结任务和执行记录相关表，使其使用当前周期选择模型。
+2. 执行 `db/stats-schema.sql` 中的 `CREATE TABLE IF NOT EXISTS` 和 `CREATE INDEX IF NOT EXISTS`。
+3. 补齐新增列、索引和通知/分享资产表。
+4. 删除旧的 AI Provider 超时降级配置 key。
 
-当前幂等迁移包括：
-
-| 表 | 字段 | 定义 |
-| --- | --- | --- |
-| `stats_event` | `ai_requested` | `INTEGER NOT NULL DEFAULT 0` |
-| `stats_event` | `ai_succeeded` | `INTEGER NOT NULL DEFAULT 0` |
-| `ai_provider` | `request_timeout_seconds` | `INTEGER NOT NULL DEFAULT 45` |
-
-添加新字段时，应同时更新：
+新增字段或表时，应同步更新：
 
 - `linkpeek-server/src/main/resources/db/stats-schema.sql`
-- `StatisticsConfiguration` 中的幂等迁移逻辑
+- `StatisticsConfiguration` 的幂等迁移逻辑
 - 对应 MyBatis mapper、model 和测试
 - 本文档
 
 ## 维护注意事项
 
-- 不要把 AI Provider 自动降级开关和失败阈值加到 `ai_provider` 表；它们是全局策略，属于 `provider_config(provider_id='ai_provider')`。
-- 不要把内容 provider ID 和 AI Provider ID 混用。前者是字符串平台标识，后者是 `ai_provider.id` 自增数字。
-- 新增统计事件类型或错误码时，要同步检查 Dashboard 聚合 SQL 和前端展示。
-- 新增后台运行配置时，优先复用 `provider_config`；只有需要列表、排序或复杂字段时再考虑新表。
+- 不要混用内容 provider ID 和 AI Provider ID。
+- 新增统计事件类型或错误码时，要同步检查 Dashboard 聚合 SQL、后台预览事件页面和本文档。
+- 新增通知事件时，要同步更新 `NotificationEventType`、事件 Schema、通知值组装、前端占位符面板和本文档。
+- 新增分享资产字段时，要同步更新公开接口、后台详情、清理逻辑和表结构文档。
+- 新增后台运行配置时，优先复用 `provider_config`；需要列表、排序或复杂字段时再使用独立表。
