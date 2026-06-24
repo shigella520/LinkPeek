@@ -1040,38 +1040,16 @@ textarea:focus {
     margin-bottom: 18px;
 }
 
+.provider-cookie-shell {
+    margin-top: 0;
+}
+
 .provider-cookie-table {
-    display: grid;
-    overflow: hidden;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-}
-
-.provider-cookie-header,
-.provider-cookie-row {
-    display: grid;
-    grid-template-columns: minmax(150px, 0.7fr) minmax(320px, 1.8fr) 116px;
-    align-items: center;
-    gap: 16px;
-    padding: 12px 16px;
-}
-
-.provider-cookie-header {
-    border-bottom: 1px solid var(--line);
-    background: #fafbfc;
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
-.provider-cookie-row + .provider-cookie-row {
-    border-top: 1px solid var(--line);
+    min-width: 0;
+    table-layout: fixed;
 }
 
 .provider-cookie-name {
-    min-width: 0;
-    overflow-wrap: anywhere;
     color: var(--text);
     font-family: "SFMono-Regular", "SF Mono", Consolas, "Liberation Mono", monospace;
     font-size: 13px;
@@ -1081,6 +1059,16 @@ textarea:focus {
 .provider-cookie-toggle {
     justify-self: start;
     white-space: nowrap;
+}
+
+.provider-cookie-table th:nth-child(1),
+.provider-cookie-table td:nth-child(1) {
+    width: 24%;
+}
+
+.provider-cookie-table th:nth-child(3),
+.provider-cookie-table td:nth-child(3) {
+    width: 116px;
 }
 
 .provider-secondary-grid {
@@ -2392,19 +2380,6 @@ td button.danger {
     .header-pair-row,
     .notification-filter-grid {
         grid-template-columns: 1fr;
-    }
-
-    .provider-cookie-header {
-        display: none;
-    }
-
-    .provider-cookie-row {
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 10px 14px;
-    }
-
-    .provider-cookie-row input[type="text"] {
-        grid-column: 1 / -1;
     }
 
     .provider-secondary-grid,
