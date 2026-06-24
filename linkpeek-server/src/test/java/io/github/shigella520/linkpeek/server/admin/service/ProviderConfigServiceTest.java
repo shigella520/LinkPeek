@@ -33,6 +33,35 @@ class ProviderConfigServiceTest {
     }
 
     @Test
+    void linuxDoCookieHeaderSkipsDisabledCookieKeys() {
+        FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
+        ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("_t", "token");
+        values.put("cf_clearance", "clear");
+        values.put("_forum_session", "session");
+        values.put("_t_enabled", "true");
+        values.put("cf_clearance_enabled", "false");
+        values.put("_forum_session_enabled", "false");
+
+        service.saveProviderConfigs(ProviderConfigService.PROVIDER_LINUXDO, values);
+
+        assertEquals("_t=token", service.linuxDoCookieHeader());
+    }
+
+    @Test
+    void linuxDoCookieEnabledFlagsDefaultToEnabledInConfigResponse() {
+        FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
+        ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
+
+        Map<String, String> linuxDoConfigs = service.allProviderConfigs().get(ProviderConfigService.PROVIDER_LINUXDO);
+
+        assertEquals("true", linuxDoConfigs.get("_t_enabled"));
+        assertEquals("true", linuxDoConfigs.get("cf_clearance_enabled"));
+        assertEquals("true", linuxDoConfigs.get("_forum_session_enabled"));
+    }
+
+    @Test
     void ngaCredentialsAreReadFromProviderConfig() {
         FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
         ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());

@@ -110,15 +110,30 @@ test("buildProviderPayload maps NGA cookie names to LinkPeek config keys", () =>
     });
 });
 
-test("buildProviderPayload reports missing cookies without empty values", () => {
+test("buildProviderPayload keeps LinuxDo non-token cookies optional", () => {
     const payload = buildProviderPayload("linuxdo", {
         _t: "token",
         cf_clearance: "",
+        _forum_session: ""
+    });
+    assert.deepEqual(payload, {
+        providerId: "linuxdo",
+        values: {
+            _t: "token"
+        },
+        missing: []
+    });
+});
+
+test("buildProviderPayload reports missing required cookies without empty values", () => {
+    const payload = buildProviderPayload("linuxdo", {
+        _t: "",
+        cf_clearance: "clearance",
         _forum_session: "session"
     });
     assert.equal(payload.providerId, "linuxdo");
     assert.equal(payload.values, null);
-    assert.deepEqual(payload.missing, ["cf_clearance"]);
+    assert.deepEqual(payload.missing, ["_t"]);
 });
 
 test("configWithDefaults keeps URL scheme default and launch switch explicit", () => {

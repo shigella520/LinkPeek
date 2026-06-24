@@ -26,6 +26,7 @@ export const PROVIDER_COOKIE_DEFINITIONS = Object.freeze({
     linuxdo: Object.freeze({
         providerId: "linuxdo",
         cookieNames: LINUXDO_COOKIE_NAMES,
+        requiredCookieNames: Object.freeze(["_t"]),
         fieldByCookie: Object.freeze({
             _t: "_t",
             cf_clearance: "cf_clearance",
@@ -162,7 +163,8 @@ export function buildProviderPayload(providerKey, cookieValues) {
         throw new Error(`Unknown provider cookie definition: ${providerKey}`);
     }
 
-    const missing = definition.cookieNames.filter((name) => !String((cookieValues || {})[name] || "").trim());
+    const requiredCookieNames = definition.requiredCookieNames || definition.cookieNames;
+    const missing = requiredCookieNames.filter((name) => !String((cookieValues || {})[name] || "").trim());
     if (missing.length > 0) {
         return {
             providerId: definition.providerId,
@@ -173,7 +175,10 @@ export function buildProviderPayload(providerKey, cookieValues) {
 
     const values = {};
     for (const cookieName of definition.cookieNames) {
-        values[definition.fieldByCookie[cookieName]] = String(cookieValues[cookieName]).trim();
+        const value = String((cookieValues || {})[cookieName] || "").trim();
+        if (value) {
+            values[definition.fieldByCookie[cookieName]] = value;
+        }
     }
     return {
         providerId: definition.providerId,

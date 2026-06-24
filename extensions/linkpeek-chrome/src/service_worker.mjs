@@ -25,6 +25,8 @@ const LAUNCHER_PAGE_PATH = "launcher.html";
 const BADGE_RESET_DELAY_MS = 1800;
 const ADMIN_SYNC_TAB_TIMEOUT_MS = 30000;
 const ADMIN_SYNC_SCRIPT_TIMEOUT_MS = 20000;
+const LINUXDO_COOKIE_DOMAIN = "linux.do";
+const LINUXDO_PARTITION_KEY = Object.freeze({topLevelSite: "https://linux.do"});
 
 chrome.runtime.onInstalled.addListener(() => {
     bootstrap({sync: true}).catch((error) => recordFailure("初始化失败", error));
@@ -232,7 +234,7 @@ async function syncProviderCookies(trigger) {
     const skipped = [];
 
     if (config.linuxDoSyncEnabled) {
-        const cookies = await chrome.cookies.getAll({url: "https://linux.do/"});
+        const cookies = await readLinuxDoCookies();
         const values = selectCookieValues(cookies, LINUXDO_COOKIE_NAMES);
         const payload = buildProviderPayload("linuxdo", values);
         if (payload.values) {
@@ -274,6 +276,14 @@ async function syncProviderCookies(trigger) {
     };
 }
 
+async function readLinuxDoCookies() {
+    const cookieGroups = await Promise.all([
+        chrome.cookies.getAll({domain: LINUXDO_COOKIE_DOMAIN}),
+        readPartitionedCookies({domain: LINUXDO_COOKIE_DOMAIN}, LINUXDO_PARTITION_KEY)
+    ]);
+    return cookieGroups.flat();
+}
+
 async function readNgaCookies() {
     const cookieGroups = await Promise.all([
         chrome.cookies.getAll({url: "https://bbs.nga.cn/"}),
@@ -281,6 +291,18 @@ async function readNgaCookies() {
         chrome.cookies.getAll({url: "https://ngabbs.com/"})
     ]);
     return cookieGroups.flat();
+}
+
+async function readPartitionedCookies(details, partitionKey) {
+    try {
+        return await chrome.cookies.getAll({
+            ...details,
+            partitionKey
+        });
+    } catch (error) {
+        console.debug("partitioned_cookie_read_failed", messageFromError(error));
+        return [];
+    }
 }
 
 async function saveProviderPayloadsInAdminContext(config, payloads) {

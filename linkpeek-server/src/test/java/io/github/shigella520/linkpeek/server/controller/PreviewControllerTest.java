@@ -378,7 +378,7 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("backdrop-filter: none")))
                 .andExpect(content().string(containsString(".checkbox-row > input[type=\"checkbox\"] + span::before")))
                 .andExpect(content().string(containsString(".inline-threshold-input:focus")))
-                .andExpect(content().string(containsString(".provider-card-linuxdo")))
+                .andExpect(content().string(containsString(".provider-cookie-table")))
                 .andExpect(content().string(containsString(".provider-actions button")))
                 .andExpect(content().string(containsString(".ai-provider-table .ai-provider-base-url-cell::before")));
 
@@ -2116,10 +2116,12 @@ class PreviewControllerTest {
         mockMvc.perform(put("/api/admin/provider-config/linuxdo")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"values\":{\"_t\":\"token\",\"cf_clearance\":\"clear\",\"_forum_session\":\"session\"}}"))
+                        .content("{\"values\":{\"_t\":\"token\",\"cf_clearance\":\"clear\",\"_forum_session\":\"session\",\"cf_clearance_enabled\":\"false\",\"_forum_session_enabled\":\"false\"}}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.configs.linuxdo._t").value("token"));
-        org.junit.jupiter.api.Assertions.assertEquals("_t=token; cf_clearance=clear; _forum_session=session", providerConfigService.linuxDoCookieHeader());
+                .andExpect(jsonPath("$.configs.linuxdo._t").value("token"))
+                .andExpect(jsonPath("$.configs.linuxdo.cf_clearance_enabled").value("false"))
+                .andExpect(jsonPath("$.configs.linuxdo._forum_session_enabled").value("false"));
+        org.junit.jupiter.api.Assertions.assertEquals("_t=token", providerConfigService.linuxDoCookieHeader());
 
         mockMvc.perform(put("/api/admin/provider-config/nga")
                         .cookie(cookie)

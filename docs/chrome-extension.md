@@ -56,12 +56,12 @@ Chrome 扩展不能直接替用户写入快捷键。Options 页面会显示当�
 
 扩展读取浏览器里的登录 Cookie，并写入 LinkPeek 现有 Admin Provider 配置：
 
-- LinuxDo：读取 `_t`、`cf_clearance`、`_forum_session`，写入 `linuxdo`。
+- LinuxDo：读取 `_t`、`cf_clearance`、`_forum_session`，写入 `linuxdo`。其中 `_t` 缺失时会跳过 LinuxDo；`cf_clearance` 和 `_forum_session` 有则同步，缺失时不阻断登录 Cookie 写入。
 - NGA：读取 `ngaPassportUid`、`ngaPassportCid`，写入 `nga` 的 `NGA_PASSPORT_UID`、`NGA_PASSPORT_CID`。
 
 第一版不修改 LinkPeek 后端。同步时扩展会打开一个非激活的临时 LinkPeek Admin 标签页，在同源上下文里完成登录和保存配置，然后关闭标签页。
 
-如果某个平台缺少任一必需 Cookie，扩展会跳过该平台，不会用空值覆盖 LinkPeek 现有配置。
+如果某个平台缺少任一必需 Cookie，扩展会跳过该平台，不会用空值覆盖 LinkPeek 现有配置。LinuxDo 的 `cf_clearance` 可能是分区 Cookie，扩展会同时读取未分区 Cookie 和 `https://linux.do` 顶级站点下的分区 Cookie。
 
 ## 生成预览链接
 

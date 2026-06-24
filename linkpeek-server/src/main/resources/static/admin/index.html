@@ -473,42 +473,71 @@
                     </div>
                 </div>
                 <form id="provider-form" class="provider-grid">
-                    <fieldset class="provider-card provider-card-bilibili">
-                        <legend>Bilibili</legend>
-                        <label class="checkbox-row provider-toggle-row">
-                            <input data-provider="bilibili" data-key="ai_title_enabled" type="checkbox" value="true">
-                            <span>
-                                启用 AI 标题
-                                <span class="keyline">关闭后保留原始标题，封面仍使用原图。</span>
-                            </span>
-                        </label>
+                    <fieldset class="provider-section provider-section-linuxdo">
+                        <legend class="sr-only">LinuxDo Cookie</legend>
+                        <h3 class="provider-section-title">LinuxDo Cookie</h3>
+                        <div class="provider-cookie-table">
+                            <div class="provider-cookie-header" aria-hidden="true">
+                                <span>字段</span>
+                                <span>值</span>
+                                <span>发送</span>
+                            </div>
+                            <div class="provider-cookie-row">
+                                <div class="provider-cookie-name">_t</div>
+                                <input data-provider="linuxdo" data-key="_t" type="text" autocomplete="off" aria-label="LinuxDo _t">
+                                <label class="checkbox-row provider-cookie-toggle">
+                                    <input data-provider="linuxdo" data-key="_t_enabled" type="checkbox" value="true">
+                                    <span>启用</span>
+                                </label>
+                            </div>
+                            <div class="provider-cookie-row">
+                                <div class="provider-cookie-name">cf_clearance</div>
+                                <input data-provider="linuxdo" data-key="cf_clearance" type="text" autocomplete="off" aria-label="LinuxDo cf_clearance">
+                                <label class="checkbox-row provider-cookie-toggle">
+                                    <input data-provider="linuxdo" data-key="cf_clearance_enabled" type="checkbox" value="true">
+                                    <span>启用</span>
+                                </label>
+                            </div>
+                            <div class="provider-cookie-row">
+                                <div class="provider-cookie-name">_forum_session</div>
+                                <input data-provider="linuxdo" data-key="_forum_session" type="text" autocomplete="off" aria-label="LinuxDo _forum_session">
+                                <label class="checkbox-row provider-cookie-toggle">
+                                    <input data-provider="linuxdo" data-key="_forum_session_enabled" type="checkbox" value="true">
+                                    <span>启用</span>
+                                </label>
+                            </div>
+                        </div>
                     </fieldset>
-                    <fieldset class="provider-card provider-card-linuxdo">
-                        <legend>LinuxDo Cookie</legend>
-                        <label>
-                            <span>_t</span>
-                            <input data-provider="linuxdo" data-key="_t" type="text" autocomplete="off">
-                        </label>
-                        <label>
-                            <span>cf_clearance</span>
-                            <input data-provider="linuxdo" data-key="cf_clearance" type="text" autocomplete="off">
-                        </label>
-                        <label>
-                            <span>_forum_session</span>
-                            <input data-provider="linuxdo" data-key="_forum_session" type="text" autocomplete="off">
-                        </label>
-                    </fieldset>
-                    <fieldset class="provider-card provider-card-nga">
-                        <legend>NGA Cookie</legend>
-                        <label>
-                            <span>NGA_PASSPORT_UID</span>
-                            <input data-provider="nga" data-key="NGA_PASSPORT_UID" type="text" autocomplete="off">
-                        </label>
-                        <label>
-                            <span>NGA_PASSPORT_CID</span>
-                            <input data-provider="nga" data-key="NGA_PASSPORT_CID" type="text" autocomplete="off">
-                        </label>
-                    </fieldset>
+                    <div class="provider-secondary-grid">
+                        <fieldset class="provider-section provider-section-bilibili">
+                            <legend class="sr-only">Bilibili</legend>
+                            <h3 class="provider-section-title">Bilibili</h3>
+                            <div class="provider-setting-row">
+                                <div class="provider-setting-copy">
+                                    <strong>AI 标题</strong>
+                                    <span class="keyline">关闭后保留原始标题，封面仍使用原图。</span>
+                                </div>
+                                <label class="checkbox-row provider-cookie-toggle">
+                                    <input data-provider="bilibili" data-key="ai_title_enabled" type="checkbox" value="true">
+                                    <span>启用</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                        <fieldset class="provider-section provider-section-nga">
+                            <legend class="sr-only">NGA Cookie</legend>
+                            <h3 class="provider-section-title">NGA Cookie</h3>
+                            <div class="provider-field-grid">
+                                <label>
+                                    <span>NGA_PASSPORT_UID</span>
+                                    <input data-provider="nga" data-key="NGA_PASSPORT_UID" type="text" autocomplete="off">
+                                </label>
+                                <label>
+                                    <span>NGA_PASSPORT_CID</span>
+                                    <input data-provider="nga" data-key="NGA_PASSPORT_CID" type="text" autocomplete="off">
+                                </label>
+                            </div>
+                        </fieldset>
+                    </div>
                     <div class="provider-actions">
                         <button type="submit">保存 Provider 配置</button>
                     </div>
