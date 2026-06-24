@@ -36,6 +36,7 @@ import java.util.Optional;
 import java.util.Queue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -242,6 +243,48 @@ class LinuxDoPreviewProviderTest {
         cookieProvider.resolve(URI.create("https://linux.do/t/topic/2009020"));
 
         assertEquals(Optional.of("_t=secret; _forum_session=session"), httpClient.lastRequest.headers().firstValue("Cookie"));
+    }
+
+    @Test
+    void fallsBackToCurlWhenCloudflareChallengesJavaHttpClient() {
+        httpClient.statusCode = 403;
+        httpClient.responseBody = """
+                <html>
+                <head><title>Just a moment...</title></head>
+                <body>Checking your browser before accessing linux.do</body>
+                </html>
+                """.getBytes(StandardCharsets.UTF_8);
+        AtomicBoolean fallbackCalled = new AtomicBoolean(false);
+        LinuxDoPreviewProvider fallbackProvider = new LinuxDoPreviewProvider(
+                httpClient,
+                URI.create("https://linux.do"),
+                Duration.ofSeconds(3),
+                "LinkPeek-Test/1.0",
+                () -> "_t=secret; cf_clearance=clearance",
+                null,
+                (requestUri, requestTimeout, userAgent, acceptHeader, acceptLanguageHeader, referer, cookieHeader) -> {
+                    fallbackCalled.set(true);
+                    assertEquals(URI.create("https://linux.do/t/topic/2009020"), requestUri);
+                    assertEquals(Duration.ofSeconds(3), requestTimeout);
+                    assertEquals("LinkPeek-Test/1.0", userAgent);
+                    assertEquals("https://linux.do", referer);
+                    assertEquals("_t=secret; cf_clearance=clearance", cookieHeader);
+                    return Optional.of(new LinuxDoPreviewProvider.CurlHttpResponse(200, """
+                            <!doctype html>
+                            <html>
+                            <head>
+                              <meta property="og:title" content="Linux.do Curl 回退测试">
+                              <meta property="og:description" content="摘要">
+                            </head>
+                            </html>
+                            """.getBytes(StandardCharsets.UTF_8)));
+                }
+        );
+
+        PreviewMetadata metadata = fallbackProvider.resolve(URI.create("https://linux.do/t/topic/2009020"));
+
+        assertTrue(fallbackCalled.get());
+        assertEquals("Linux.do Curl 回退测试", metadata.title());
     }
 
     @Test

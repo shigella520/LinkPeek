@@ -15,6 +15,7 @@ import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLHandshakeException;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -26,6 +27,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -52,6 +54,10 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
     private static final int MAX_DESCRIPTION_LENGTH = 280;
     private static final int MAX_RAW_CONTENT_LENGTH = 12_000;
     private static final int MAX_ERROR_BODY_LOG_CHARS = 1_000;
+    private static final String HTML_ACCEPT_HEADER = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
+    private static final String ACCEPT_LANGUAGE_HEADER = "zh-CN,zh;q=0.9,en;q=0.8";
+    private static final String CLOUDFLARE_CHALLENGE_MARKER = "Just a moment";
+    private static final String CURL_STATUS_MARKER = "__LINKPEEK_CURL_HTTP_STATUS__:";
     private static final String ELLIPSIS = "…";
 
     private final HttpClient httpClient;
@@ -60,6 +66,7 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
     private final String userAgent;
     private final Supplier<String> cookieHeaderSupplier;
     private final ObjectMapper objectMapper;
+    private final CurlHttpFetcher curlHttpFetcher;
 
     public LinuxDoPreviewProvider(
             HttpClient httpClient,
@@ -98,12 +105,25 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
             Supplier<String> cookieHeaderSupplier,
             ObjectMapper objectMapper
     ) {
+        this(httpClient, pageBaseUri, requestTimeout, userAgent, cookieHeaderSupplier, objectMapper, new ProcessCurlHttpFetcher());
+    }
+
+    LinuxDoPreviewProvider(
+            HttpClient httpClient,
+            URI pageBaseUri,
+            Duration requestTimeout,
+            String userAgent,
+            Supplier<String> cookieHeaderSupplier,
+            ObjectMapper objectMapper,
+            CurlHttpFetcher curlHttpFetcher
+    ) {
         this.httpClient = httpClient;
         this.pageBaseUri = pageBaseUri;
         this.requestTimeout = requestTimeout;
         this.userAgent = userAgent;
         this.cookieHeaderSupplier = cookieHeaderSupplier == null ? () -> null : cookieHeaderSupplier;
         this.objectMapper = objectMapper == null ? new ObjectMapper() : objectMapper;
+        this.curlHttpFetcher = curlHttpFetcher == null ? new ProcessCurlHttpFetcher() : curlHttpFetcher;
     }
 
     @Override
@@ -146,8 +166,8 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
                 .timeout(requestTimeout)
                 .header("Referer", pageBaseUri.toString())
                 .header("User-Agent", userAgent)
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
-                .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8");
+                .header("Accept", HTML_ACCEPT_HEADER)
+                .header("Accept-Language", ACCEPT_LANGUAGE_HEADER);
         if (cookieHeader != null) {
             requestBuilder.header("Cookie", cookieHeader);
         }
@@ -155,20 +175,35 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
 
         try {
             HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            byte[] responseBody = response.body();
             if (response.statusCode() >= 400) {
-                log.warn(
-                        "linuxdo_topic_page_http_error requestUri={} status={} cookieConfigured={} responseBody={}",
-                        requestUri,
-                        response.statusCode(),
-                        cookieHeader != null,
-                        responseBodySnippet(response.body())
-                );
-                throw new UpstreamFetchException(upstreamHttpErrorMessage(response.statusCode(), cookieHeader));
+                Optional<byte[]> curlFallbackBody = curlFallbackTopicPageBody(requestUri, response.statusCode(), response.version(), responseBody, cookieHeader);
+                if (curlFallbackBody.isPresent()) {
+                    responseBody = curlFallbackBody.get();
+                } else {
+                    log.warn(
+                            "linuxdo_topic_page_http_error requestUri={} status={} version={} cookieConfigured={} responseBody={}",
+                            requestUri,
+                            response.statusCode(),
+                            response.version(),
+                            cookieHeader != null,
+                            responseBodySnippet(responseBody)
+                    );
+                    throw new UpstreamFetchException(upstreamHttpErrorMessage(response.statusCode(), cookieHeader));
+                }
             }
 
-            String html = new String(response.body(), StandardCharsets.UTF_8);
+            String html = new String(responseBody, StandardCharsets.UTF_8);
             String title = extractTitle(html);
             if (title.isBlank()) {
+                log.warn(
+                        "linuxdo_topic_page_title_missing requestUri={} status={} version={} cookieConfigured={} responseBody={}",
+                        requestUri,
+                        response.statusCode(),
+                        response.version(),
+                        cookieHeader != null,
+                        responseBodySnippet(responseBody)
+                );
                 throw new UpstreamFetchException("Failed to parse Linux.do topic title from the page.");
             }
             String rawContent = extractRawContent(title, html);
@@ -198,6 +233,51 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
             );
             throw translateIOException(exception, "Failed to fetch or parse the Linux.do topic page.");
         }
+    }
+
+    private Optional<byte[]> curlFallbackTopicPageBody(
+            URI requestUri,
+            int statusCode,
+            HttpClient.Version responseVersion,
+            byte[] responseBody,
+            String cookieHeader
+    ) throws IOException, InterruptedException {
+        if (!shouldUseCurlFallback(statusCode, responseBody)) {
+            return Optional.empty();
+        }
+
+        log.warn(
+                "linuxdo_topic_page_cloudflare_challenge requestUri={} status={} version={} cookieConfigured={} fallback=curl",
+                requestUri,
+                statusCode,
+                responseVersion,
+                cookieHeader != null
+        );
+        Optional<CurlHttpResponse> fallbackResponse = curlHttpFetcher.fetch(
+                requestUri,
+                requestTimeout,
+                userAgent,
+                HTML_ACCEPT_HEADER,
+                ACCEPT_LANGUAGE_HEADER,
+                pageBaseUri.toString(),
+                cookieHeader
+        );
+        if (fallbackResponse.isEmpty()) {
+            log.warn("linuxdo_topic_page_curl_fallback_unavailable requestUri={}", requestUri);
+            return Optional.empty();
+        }
+        CurlHttpResponse curlResponse = fallbackResponse.get();
+        if (curlResponse.statusCode() >= 400 || curlResponse.body().length == 0) {
+            log.warn(
+                    "linuxdo_topic_page_curl_fallback_failed requestUri={} status={} responseBody={}",
+                    requestUri,
+                    curlResponse.statusCode(),
+                    responseBodySnippet(curlResponse.body())
+            );
+            return Optional.empty();
+        }
+        log.info("linuxdo_topic_page_curl_fallback_success requestUri={} status={}", requestUri, curlResponse.statusCode());
+        return Optional.of(curlResponse.body());
     }
 
     @Override
@@ -546,6 +626,10 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
         return text.substring(0, MAX_ERROR_BODY_LOG_CHARS).stripTrailing() + ELLIPSIS;
     }
 
+    private boolean shouldUseCurlFallback(int statusCode, byte[] body) {
+        return statusCode == 403 && responseBodySnippet(body).contains(CLOUDFLARE_CHALLENGE_MARKER);
+    }
+
     private UpstreamFetchException translateIOException(IOException exception, String fallbackMessage) {
         if (isCausedBy(exception, SSLHandshakeException.class)) {
             return new UpstreamFetchException(
@@ -573,5 +657,154 @@ public class LinuxDoPreviewProvider implements PreviewProvider {
         }
         String trimmed = value.strip();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    @FunctionalInterface
+    interface CurlHttpFetcher {
+        Optional<CurlHttpResponse> fetch(
+                URI requestUri,
+                Duration requestTimeout,
+                String userAgent,
+                String acceptHeader,
+                String acceptLanguageHeader,
+                String referer,
+                String cookieHeader
+        ) throws IOException, InterruptedException;
+    }
+
+    record CurlHttpResponse(int statusCode, byte[] body) {
+    }
+
+    private static final class ProcessCurlHttpFetcher implements CurlHttpFetcher {
+        @Override
+        public Optional<CurlHttpResponse> fetch(
+                URI requestUri,
+                Duration requestTimeout,
+                String userAgent,
+                String acceptHeader,
+                String acceptLanguageHeader,
+                String referer,
+                String cookieHeader
+        ) throws InterruptedException {
+            Path bodyPath = null;
+            Process process = null;
+            try {
+                bodyPath = Files.createTempFile("linkpeek-linuxdo-curl-", ".body");
+                process = new ProcessBuilder(
+                        "curl",
+                        "--http2",
+                        "--silent",
+                        "--show-error",
+                        "--location",
+                        "--max-time",
+                        String.valueOf(Math.max(1L, requestTimeout.toSeconds())),
+                        "--config",
+                        "-",
+                        "--output",
+                        bodyPath.toString(),
+                        "--write-out",
+                        "\n" + CURL_STATUS_MARKER + "%{http_code}\n"
+                )
+                        .redirectErrorStream(true)
+                        .start();
+
+                try (OutputStream stdin = process.getOutputStream()) {
+                    stdin.write(curlConfig(requestUri, userAgent, acceptHeader, acceptLanguageHeader, referer, cookieHeader)
+                            .getBytes(StandardCharsets.UTF_8));
+                }
+
+                long waitSeconds = Math.max(1L, requestTimeout.toSeconds() + 5L);
+                if (!process.waitFor(waitSeconds, TimeUnit.SECONDS)) {
+                    process.destroyForcibly();
+                    log.warn("linuxdo_topic_page_curl_fallback_timeout requestUri={} timeoutSeconds={}", requestUri, waitSeconds);
+                    return Optional.empty();
+                }
+
+                String commandOutput = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+                Optional<Integer> statusCode = parseCurlStatus(commandOutput);
+                if (process.exitValue() != 0 || statusCode.isEmpty()) {
+                    log.warn(
+                            "linuxdo_topic_page_curl_fallback_process_failed requestUri={} exitCode={} output={}",
+                            requestUri,
+                            process.exitValue(),
+                            cleanCommandOutput(commandOutput)
+                    );
+                    return Optional.empty();
+                }
+
+                return Optional.of(new CurlHttpResponse(statusCode.get(), Files.readAllBytes(bodyPath)));
+            } catch (IOException exception) {
+                log.debug("linuxdo_topic_page_curl_fallback_io_failed requestUri={}", requestUri, exception);
+                return Optional.empty();
+            } finally {
+                if (process != null && process.isAlive()) {
+                    process.destroyForcibly();
+                }
+                if (bodyPath != null) {
+                    try {
+                        Files.deleteIfExists(bodyPath);
+                    } catch (IOException exception) {
+                        log.debug("linuxdo_topic_page_curl_fallback_cleanup_failed path={}", bodyPath, exception);
+                    }
+                }
+            }
+        }
+
+        private static String curlConfig(
+                URI requestUri,
+                String userAgent,
+                String acceptHeader,
+                String acceptLanguageHeader,
+                String referer,
+                String cookieHeader
+        ) {
+            StringBuilder config = new StringBuilder();
+            appendCurlConfig(config, "url", requestUri.toString());
+            appendCurlConfig(config, "user-agent", userAgent);
+            appendCurlConfig(config, "header", "Referer: " + referer);
+            appendCurlConfig(config, "header", "Accept: " + acceptHeader);
+            appendCurlConfig(config, "header", "Accept-Language: " + acceptLanguageHeader);
+            if (cookieHeader != null) {
+                appendCurlConfig(config, "header", "Cookie: " + cookieHeader);
+            }
+            return config.toString();
+        }
+
+        private static void appendCurlConfig(StringBuilder config, String name, String value) {
+            config.append(name)
+                    .append(" = \"")
+                    .append(escapeCurlConfigValue(value))
+                    .append("\"\n");
+        }
+
+        private static String escapeCurlConfigValue(String value) {
+            return value.replace("\\", "\\\\")
+                    .replace("\"", "\\\"")
+                    .replace("\r", "")
+                    .replace("\n", "");
+        }
+
+        private static Optional<Integer> parseCurlStatus(String output) {
+            int markerIndex = output.lastIndexOf(CURL_STATUS_MARKER);
+            if (markerIndex < 0) {
+                return Optional.empty();
+            }
+            int valueStart = markerIndex + CURL_STATUS_MARKER.length();
+            int valueEnd = output.indexOf('\n', valueStart);
+            String value = (valueEnd < 0 ? output.substring(valueStart) : output.substring(valueStart, valueEnd)).strip();
+            try {
+                return Optional.of(Integer.parseInt(value));
+            } catch (NumberFormatException exception) {
+                return Optional.empty();
+            }
+        }
+
+        private static String cleanCommandOutput(String output) {
+            String cleanOutput = output == null ? "" : output.replace('\r', ' ').replace('\n', ' ').replaceAll("\\s+", " ").strip();
+            if (cleanOutput.length() <= MAX_ERROR_BODY_LOG_CHARS) {
+                return cleanOutput;
+            }
+            return cleanOutput.substring(0, MAX_ERROR_BODY_LOG_CHARS).stripTrailing() + ELLIPSIS;
+        }
     }
 }
