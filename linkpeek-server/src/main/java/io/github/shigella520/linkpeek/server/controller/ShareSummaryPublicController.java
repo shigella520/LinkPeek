@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -73,6 +74,18 @@ public class ShareSummaryPublicController {
         }
     }
 
+    @PostMapping("/audios/{publicToken}.{ext}/plays")
+    public ShareSummaryAudioService.PlayCountResponse recordAudioPlay(
+            @PathVariable String publicToken,
+            @PathVariable String ext
+    ) {
+        try {
+            return shareSummaryAudioService.recordPublicPlay(publicToken, ext);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
+        }
+    }
+
     private String reportHtml(ShareSummaryImageRecord image, ShareSummaryRunRecord run) {
         String title = image.getOgTitle();
         String description = image.getOgDescription();
@@ -82,6 +95,7 @@ public class ShareSummaryPublicController {
         String audioUrl = audioSummary == null ? "" : audioSummary.audioUrl();
         String audioMediaType = audioSummary == null || !StringUtils.hasText(audioSummary.audioMediaType()) ? "audio/mpeg" : audioSummary.audioMediaType();
         boolean hasAudio = StringUtils.hasText(audioUrl);
+        String audioPlayUrl = hasAudio ? audioUrl + "/plays" : "";
         String audioMeta = audioMeta(audioUrl, audioMediaType);
         String report = StringUtils.hasText(run.getReport()) ? run.getReport() : "";
         return """
@@ -296,7 +310,7 @@ public class ShareSummaryPublicController {
                                 <p class="eyebrow">Share Summary</p>
                                 <h1 data-reader-title>%s</h1>
                                 <p class="report-description" data-reader-description>%s</p>
-                                <section class="reader reader-audio" data-audio-reader data-audio-src="%s" %s aria-label="报告音频播放">
+                                <section class="reader reader-audio" data-audio-reader data-audio-src="%s" data-audio-play-url="%s" %s aria-label="报告音频播放">
                                     <audio data-audio-element preload="metadata" src="%s"></audio>
                                     <div class="reader-main">
                                         <button class="reader-play" type="button" data-audio-action="toggle" aria-label="播放"></button>
@@ -439,6 +453,7 @@ public class ShareSummaryPublicController {
                                 const action = audioRoot.querySelector('[data-audio-action="toggle"]');
                                 const status = audioRoot.querySelector("[data-audio-status]");
                                 const progress = audioRoot.querySelector("[data-audio-progress]");
+                                let playRecordedForCurrentPlayback = false;
                                 audioRoot.hidden = false;
 
                                 function setAudioStatus(message, playing) {
@@ -453,10 +468,26 @@ public class ShareSummaryPublicController {
                                     progress.style.width = `${percent}%%`;
                                 }
 
+                                function recordAudioPlay() {
+                                    const playUrl = audioRoot.dataset.audioPlayUrl;
+                                    if (playRecordedForCurrentPlayback || !playUrl) {
+                                        return;
+                                    }
+                                    playRecordedForCurrentPlayback = true;
+                                    fetch(playUrl, {
+                                        method: "POST",
+                                        credentials: "same-origin",
+                                        keepalive: true
+                                    }).catch(() => {
+                                        // Playback should not depend on analytics delivery.
+                                    });
+                                }
+
                                 action.addEventListener("click", async () => {
                                     if (audio.paused) {
                                         try {
                                             await audio.play();
+                                            recordAudioPlay();
                                         } catch (error) {
                                             audioRoot.hidden = true;
                                             enableSystemReader();
@@ -469,6 +500,7 @@ public class ShareSummaryPublicController {
                                 audio.addEventListener("pause", () => setAudioStatus(audio.ended ? "播放完成" : "已暂停", false));
                                 audio.addEventListener("ended", () => {
                                     updateAudioProgress();
+                                    playRecordedForCurrentPlayback = false;
                                     setAudioStatus("播放完成", false);
                                 });
                                 audio.addEventListener("timeupdate", updateAudioProgress);
@@ -788,6 +820,7 @@ public class ShareSummaryPublicController {
                 escapeHtml(title),
                 escapeHtml(description),
                 escapeAttribute(audioUrl),
+                escapeAttribute(audioPlayUrl),
                 hasAudio ? "" : "hidden",
                 escapeAttribute(audioUrl),
                 ShareSummaryMarkdownRenderer.toHtml(report)

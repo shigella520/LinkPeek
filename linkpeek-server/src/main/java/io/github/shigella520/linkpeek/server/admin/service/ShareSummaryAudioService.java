@@ -238,26 +238,22 @@ public class ShareSummaryAudioService {
     }
 
     public PublicAudio publicAudio(String publicToken, String ext) {
-        if (!StringUtils.hasText(publicToken)) {
-            throw new IllegalArgumentException("Share summary audio token is required.");
-        }
-        ShareSummaryImageRecord image = imageMapper.selectImageByPublicToken(publicToken.strip());
-        if (image == null) {
-            throw new IllegalArgumentException("Share summary audio was not found.");
-        }
-        ShareSummaryAudioRecord audio = audioMapper.selectLatestSuccessfulAudio(image.getRunId());
-        if (audio == null || !ShareSummaryAudioStatus.SUCCESS.name().equals(audio.getStatus()) || !StringUtils.hasText(audio.getStorageKey())) {
-            throw new IllegalArgumentException("Share summary audio is not available.");
-        }
-        String expectedExt = audio.getOutputFormat();
-        if (StringUtils.hasText(ext) && StringUtils.hasText(expectedExt) && !expectedExt.equalsIgnoreCase(ext)) {
-            throw new IllegalArgumentException("Share summary audio extension does not match.");
-        }
+        ShareSummaryAudioRecord audio = publicSuccessfulAudio(publicToken, ext);
         Path path = storageRoot().resolve(audio.getStorageKey()).normalize();
         if (!path.startsWith(storageRoot()) || !Files.isRegularFile(path)) {
             throw new IllegalArgumentException("Share summary audio file was not found.");
         }
         return new PublicAudio(new FileSystemResource(path), mediaTypeFor(audio.getOutputFormat()));
+    }
+
+    public PlayCountResponse recordPublicPlay(String publicToken, String ext) {
+        ShareSummaryAudioRecord audio = publicSuccessfulAudio(publicToken, ext);
+        if (audio.getId() == null || audioMapper.incrementPlayCount(audio.getId()) == 0) {
+            throw new IllegalArgumentException("Share summary audio is not available.");
+        }
+        ShareSummaryAudioRecord updated = audioMapper.selectAudio(audio.getId());
+        long playCount = updated == null ? audio.getPlayCount() + 1 : updated.getPlayCount();
+        return new PlayCountResponse(playCount);
     }
 
     public TestAudio testAudio(String ext) {
@@ -656,6 +652,25 @@ public class ShareSummaryAudioService {
         return properties.getCacheDir().toAbsolutePath().normalize();
     }
 
+    private ShareSummaryAudioRecord publicSuccessfulAudio(String publicToken, String ext) {
+        if (!StringUtils.hasText(publicToken)) {
+            throw new IllegalArgumentException("Share summary audio token is required.");
+        }
+        ShareSummaryImageRecord image = imageMapper.selectImageByPublicToken(publicToken.strip());
+        if (image == null) {
+            throw new IllegalArgumentException("Share summary audio was not found.");
+        }
+        ShareSummaryAudioRecord audio = audioMapper.selectLatestSuccessfulAudio(image.getRunId());
+        if (audio == null || !ShareSummaryAudioStatus.SUCCESS.name().equals(audio.getStatus()) || !StringUtils.hasText(audio.getStorageKey())) {
+            throw new IllegalArgumentException("Share summary audio is not available.");
+        }
+        String expectedExt = audio.getOutputFormat();
+        if (StringUtils.hasText(ext) && StringUtils.hasText(expectedExt) && !expectedExt.equalsIgnoreCase(ext)) {
+            throw new IllegalArgumentException("Share summary audio extension does not match.");
+        }
+        return audio;
+    }
+
     private Path testAudioPath(String outputFormat) {
         return storageRoot()
                 .resolve(TEST_AUDIO_STORAGE_DIR)
@@ -869,6 +884,7 @@ public class ShareSummaryAudioService {
             String style,
             String outputFormat,
             String audioUrl,
+            long playCount,
             String errorMessage,
             long durationMs,
             long createdAt,
@@ -889,6 +905,7 @@ public class ShareSummaryAudioService {
                     record.getStyle(),
                     record.getOutputFormat(),
                     StringUtils.hasText(publicAudioUrl) ? publicAudioUrl : record.getAudioUrl(),
+                    record.getPlayCount(),
                     record.getErrorMessage(),
                     record.getDurationMs(),
                     record.getCreatedAt(),
@@ -901,21 +918,26 @@ public class ShareSummaryAudioService {
     public record AudioSummary(
             String audioStatus,
             String audioUrl,
+            long playCount,
             String audioErrorMessage,
             String audioMediaType
     ) {
         static AudioSummary empty() {
-            return new AudioSummary(ShareSummaryAudioStatus.NOT_GENERATED.name(), null, null, null);
+            return new AudioSummary(ShareSummaryAudioStatus.NOT_GENERATED.name(), null, 0, null, null);
         }
 
         static AudioSummary fromRecord(ShareSummaryAudioRecord record, String latestStatus, String latestError, String audioUrl, String audioMediaType) {
             return new AudioSummary(
                     StringUtils.hasText(latestStatus) ? latestStatus : record.getStatus(),
                     ShareSummaryAudioStatus.SUCCESS.name().equals(record.getStatus()) ? audioUrl : null,
+                    ShareSummaryAudioStatus.SUCCESS.name().equals(record.getStatus()) ? record.getPlayCount() : 0,
                     latestError,
                     ShareSummaryAudioStatus.SUCCESS.name().equals(record.getStatus()) ? audioMediaType : null
             );
         }
+    }
+
+    public record PlayCountResponse(long playCount) {
     }
 
     public record PublicAudio(Resource resource, MediaType mediaType) {

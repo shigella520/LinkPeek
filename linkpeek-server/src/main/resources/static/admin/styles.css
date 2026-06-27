@@ -1425,11 +1425,16 @@ table {
 
 .share-summary-run-table th:nth-child(7),
 .share-summary-run-table td:nth-child(7) {
-    width: 218px;
+    width: 206px;
 }
 
 .share-summary-run-table th:nth-child(8),
 .share-summary-run-table td:nth-child(8) {
+    width: 104px;
+}
+
+.share-summary-run-table th:nth-child(9),
+.share-summary-run-table td:nth-child(9) {
     width: 198px;
 }
 
@@ -1665,7 +1670,8 @@ td .share-summary-task-actions {
 .summary-window-cell,
 .share-summary-run-table td:nth-child(1),
 .share-summary-run-table td:nth-child(5),
-.share-summary-run-table td:nth-child(6) {
+.share-summary-run-table td:nth-child(6),
+.share-summary-run-table td:nth-child(8) {
     overflow-wrap: normal;
     word-break: normal;
 }

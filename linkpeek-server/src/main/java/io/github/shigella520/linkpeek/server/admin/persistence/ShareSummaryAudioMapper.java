@@ -17,6 +17,8 @@ public interface ShareSummaryAudioMapper {
 
     int updateAudio(ShareSummaryAudioRecord audio);
 
+    int incrementPlayCount(@Param("id") long id);
+
     int markStaleActiveAudiosFailed(
             @Param("threshold") long threshold,
             @Param("finishedAt") long finishedAt,

@@ -175,6 +175,7 @@ public class StatisticsConfiguration {
                         text_snapshot TEXT NOT NULL,
                         storage_key TEXT,
                         audio_url TEXT,
+                        play_count INTEGER NOT NULL DEFAULT 0,
                         raw_response_snapshot TEXT,
                         error_message TEXT,
                         duration_ms INTEGER NOT NULL DEFAULT 0,
@@ -186,6 +187,7 @@ public class StatisticsConfiguration {
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_run_id ON share_summary_audio (run_id)");
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_status ON share_summary_audio (status)");
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_created_at ON share_summary_audio (created_at)");
+            ensureColumn(jdbcTemplate, "share_summary_audio", "play_count", "INTEGER NOT NULL DEFAULT 0");
             ensureNotificationTables(jdbcTemplate);
         }
 

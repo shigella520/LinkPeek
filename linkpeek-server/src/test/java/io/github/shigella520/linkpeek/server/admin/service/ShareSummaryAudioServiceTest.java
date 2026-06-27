@@ -231,6 +231,39 @@ class ShareSummaryAudioServiceTest {
     }
 
     @Test
+    void recordPublicPlayIncrementsLatestSuccessfulAudio() throws Exception {
+        ShareSummaryAudioConfigRecord config = config();
+        FakeAudioMapper audioMapper = new FakeAudioMapper(config);
+        ShareSummaryAudioRecord audio = new ShareSummaryAudioRecord();
+        audio.setId(9L);
+        audio.setRunId(1L);
+        audio.setAttemptNo(1);
+        audio.setStatus(ShareSummaryAudioStatus.SUCCESS.name());
+        audio.setProviderType(config.getProviderType());
+        audio.setModel(config.getModel());
+        audio.setVoice(config.getVoice());
+        audio.setSpeed(config.getSpeed());
+        audio.setPitch(config.getPitch());
+        audio.setStyle(config.getStyle());
+        audio.setOutputFormat(config.getOutputFormat());
+        audio.setTextSnapshot("text");
+        audio.setStorageKey("share-summary/audios/1/9.mp3");
+        audio.setCreatedAt(1L);
+        audioMapper.audios.add(audio);
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
+        when(audioClient.supports(any(String.class))).thenReturn(true);
+        ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), null);
+        Files.createDirectories(cacheDir.resolve("share-summary/audios/1"));
+        Files.write(cacheDir.resolve("share-summary/audios/1/9.mp3"), new byte[]{1, 2});
+
+        ShareSummaryAudioService.PlayCountResponse response = service.recordPublicPlay("public-token", "mp3");
+
+        assertEquals(1, response.playCount());
+        assertEquals(1, audio.getPlayCount());
+    }
+
+    @Test
     void keepsMimoSunWukongOnPresetModel() {
         ShareSummaryAudioConfigRecord config = config();
         config.setProviderType("MIMO_TTS");
@@ -385,6 +418,16 @@ class ShareSummaryAudioServiceTest {
 
         @Override
         public int updateAudio(ShareSummaryAudioRecord audio) {
+            return 1;
+        }
+
+        @Override
+        public int incrementPlayCount(long id) {
+            ShareSummaryAudioRecord audio = selectAudio(id);
+            if (audio == null || !ShareSummaryAudioStatus.SUCCESS.name().equals(audio.getStatus())) {
+                return 0;
+            }
+            audio.setPlayCount(audio.getPlayCount() + 1);
             return 1;
         }
 
@@ -582,7 +625,15 @@ class ShareSummaryAudioServiceTest {
 
         @Override
         public ShareSummaryImageRecord selectImageByPublicToken(String publicToken) {
-            return null;
+            if (!"public-token".equals(publicToken)) {
+                return null;
+            }
+            ShareSummaryImageRecord image = new ShareSummaryImageRecord();
+            image.setId(7L);
+            image.setRunId(1L);
+            image.setPublicToken(publicToken);
+            image.setStatus("SUCCESS");
+            return image;
         }
 
         @Override
@@ -592,7 +643,12 @@ class ShareSummaryAudioServiceTest {
 
         @Override
         public ShareSummaryImageRecord selectLatestSuccessfulImage(long runId) {
-            return null;
+            ShareSummaryImageRecord image = new ShareSummaryImageRecord();
+            image.setId(7L);
+            image.setRunId(runId);
+            image.setPublicToken("public-token");
+            image.setStatus("SUCCESS");
+            return image;
         }
 
         @Override

@@ -330,6 +330,7 @@ AI Provider 列表，用于 AI 标题和分享总结。代码按 `enabled=1`、`
 | `text_snapshot` | `TEXT` | 生成音频使用的文本快照。 |
 | `storage_key` | `TEXT` | 内部文件路径 key。 |
 | `audio_url` | `TEXT` | 公开音频 URL。 |
+| `play_count` | `INTEGER` | 公开报告页音频播放次数，默认 `0`。 |
 | `raw_response_snapshot` | `TEXT` | 上游响应摘要。 |
 | `error_message` | `TEXT` | 失败原因。 |
 | `duration_ms` | `INTEGER` | 耗时。 |

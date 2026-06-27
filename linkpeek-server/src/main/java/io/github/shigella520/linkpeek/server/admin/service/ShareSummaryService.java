@@ -752,6 +752,7 @@ public class ShareSummaryService {
             ShareSummaryAudioService.AudioSummary summary = shareSummaryAudioService.audioSummary(run.getId());
             run.setAudioStatus(summary.audioStatus());
             run.setAudioUrl(summary.audioUrl());
+            run.setAudioPlayCount(summary.playCount());
             run.setAudioErrorMessage(summary.audioErrorMessage());
         }
         return run;

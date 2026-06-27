@@ -1706,7 +1706,7 @@
         const items = Array.isArray(payload.items) ? payload.items : [];
         const body = document.getElementById("share-summary-run-table");
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="8" class="muted">暂无分享总结记录</td></tr>`;
+            body.innerHTML = `<tr><td colspan="9" class="muted">暂无分享总结记录</td></tr>`;
         } else {
             body.innerHTML = items.map((run) => `
                 <tr class="share-summary-run-row">
@@ -1717,6 +1717,7 @@
                     <td class="share-summary-run-count-cell">${escapeHtml(run.inputLinkCount || 0)}</td>
                     <td class="share-summary-run-ai-cell">${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
                     <td class="share-summary-run-image-cell">${renderShareSummaryImageCell(run)}</td>
+                    <td class="share-summary-run-audio-cell">${renderShareSummaryAudioCell(run)}</td>
                     <td class="share-summary-run-action-cell">${renderShareSummaryRunActions(run)}</td>
                 </tr>
             `).join("");
@@ -1778,6 +1779,17 @@
                     ${renderImageStatusCompact(status)}
                 </div>
                 <div class="share-summary-image-title" title="${escapeAttribute(title)}">${escapeHtml(title)}</div>
+            </div>
+        `;
+    }
+
+    function renderShareSummaryAudioCell(run) {
+        const status = run.audioStatus || "NOT_GENERATED";
+        const playCount = Number(run.audioPlayCount || 0);
+        return `
+            <div class="share-summary-audio-cell">
+                ${renderAudioStatus(status)}
+                <div class="keyline">${escapeHtml(playCount)} 次播放</div>
             </div>
         `;
     }
@@ -3474,6 +3486,7 @@
         const meta = `
             <div class="summary-detail-grid">
                 <div><b>音频状态</b><span>${renderAudioStatus(run.audioStatus || "NOT_GENERATED")}</span></div>
+                <div><b>播放次数</b><span>${escapeHtml(run.audioPlayCount || 0)}</span></div>
                 <div><b>音频链接</b><span class="url-cell">${escapeHtml(run.audioUrl || "-")}</span></div>
                 <div><b>错误</b><span>${escapeHtml(run.audioErrorMessage || "-")}</span></div>
             </div>
@@ -3483,11 +3496,12 @@
                 <td>${escapeHtml(audio.attemptNo || "-")}</td>
                 <td>${renderAudioStatus(audio.status)}</td>
                 <td>${escapeHtml(audio.voice || "-")}<div class="keyline">${escapeHtml(audioMetaLine(audio))}</div></td>
+                <td>${escapeHtml(audio.playCount || 0)}</td>
                 <td>${escapeHtml(formatDuration(audio.durationMs))}</td>
                 <td>${escapeHtml(formatTimestamp(audio.createdAt))}</td>
                 <td>${escapeHtml(audio.errorMessage || "-")}</td>
             </tr>
-        `).join("") : `<tr><td colspan="6" class="muted">暂无生成记录</td></tr>`;
+        `).join("") : `<tr><td colspan="7" class="muted">暂无生成记录</td></tr>`;
         return `
             <div class="share-summary-image-detail">
                 ${player}
@@ -3500,6 +3514,7 @@
                         <th>次数</th>
                         <th>状态</th>
                         <th>语音</th>
+                        <th>播放</th>
                         <th>耗时</th>
                         <th>创建时间</th>
                         <th>错误</th>
