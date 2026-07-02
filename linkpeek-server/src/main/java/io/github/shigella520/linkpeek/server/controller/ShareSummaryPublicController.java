@@ -6,6 +6,9 @@ import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioServ
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageService;
 import io.github.shigella520.linkpeek.server.render.ShareSummaryMarkdownRenderer;
 import io.swagger.v3.oas.annotations.Hidden;
+import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
@@ -25,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 @RequestMapping("/share-summary")
 @Hidden
 public class ShareSummaryPublicController {
+    private static final Logger log = LoggerFactory.getLogger(ShareSummaryPublicController.class);
+
     private final ShareSummaryImageService shareSummaryImageService;
     private final ShareSummaryAudioService shareSummaryAudioService;
 
@@ -62,14 +68,20 @@ public class ShareSummaryPublicController {
     }
 
     @GetMapping("/audios/{publicToken}.{ext}")
-    public ResponseEntity<Resource> audio(@PathVariable String publicToken, @PathVariable String ext) {
+    public ResponseEntity<Resource> audio(
+            @PathVariable String publicToken,
+            @PathVariable String ext,
+            HttpServletRequest request
+    ) {
         try {
             ShareSummaryAudioService.PublicAudio audio = shareSummaryAudioService.publicAudio(publicToken, ext);
+            logAudioRequest(request, publicToken, ext, audio);
             return ResponseEntity.ok()
                     .contentType(audio.mediaType())
                     .cacheControl(CacheControl.maxAge(30, TimeUnit.DAYS).cachePublic())
                     .body(audio.resource());
         } catch (IllegalArgumentException exception) {
+            logAudioRequestNotFound(request, publicToken, ext, exception);
             return ResponseEntity.notFound().build();
         }
     }
@@ -825,6 +837,71 @@ public class ShareSummaryPublicController {
                 escapeAttribute(audioUrl),
                 ShareSummaryMarkdownRenderer.toHtml(report)
         );
+    }
+
+    private void logAudioRequest(
+            HttpServletRequest request,
+            String publicToken,
+            String ext,
+            ShareSummaryAudioService.PublicAudio audio
+    ) {
+        log.info(
+                "share_summary_public_audio_request tokenSuffix={} ext={} mediaType={} contentLength={} range={} ifRange={} userAgent={} referer={} accept={} forwardedFor={} realIp={} remoteAddr={}",
+                tokenSuffix(publicToken),
+                ext,
+                audio.mediaType(),
+                contentLength(audio.resource()),
+                header(request, "Range"),
+                header(request, "If-Range"),
+                header(request, "User-Agent"),
+                header(request, "Referer"),
+                header(request, "Accept"),
+                header(request, "X-Forwarded-For"),
+                header(request, "X-Real-IP"),
+                request.getRemoteAddr()
+        );
+    }
+
+    private void logAudioRequestNotFound(
+            HttpServletRequest request,
+            String publicToken,
+            String ext,
+            IllegalArgumentException exception
+    ) {
+        log.info(
+                "share_summary_public_audio_not_found tokenSuffix={} ext={} range={} userAgent={} referer={} accept={} forwardedFor={} realIp={} remoteAddr={} message={}",
+                tokenSuffix(publicToken),
+                ext,
+                header(request, "Range"),
+                header(request, "User-Agent"),
+                header(request, "Referer"),
+                header(request, "Accept"),
+                header(request, "X-Forwarded-For"),
+                header(request, "X-Real-IP"),
+                request.getRemoteAddr(),
+                exception.getMessage()
+        );
+    }
+
+    private long contentLength(Resource resource) {
+        try {
+            return resource.contentLength();
+        } catch (IOException exception) {
+            return -1L;
+        }
+    }
+
+    private String header(HttpServletRequest request, String name) {
+        String value = request.getHeader(name);
+        return StringUtils.hasText(value) ? value : "-";
+    }
+
+    private String tokenSuffix(String publicToken) {
+        if (!StringUtils.hasText(publicToken)) {
+            return "-";
+        }
+        String value = publicToken.strip();
+        return value.length() <= 8 ? value : value.substring(value.length() - 8);
     }
 
     private String audioMeta(String audioUrl, String audioMediaType) {
