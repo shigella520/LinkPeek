@@ -138,7 +138,14 @@ function bindEvents() {
             await saveCurrentConfigForAction();
             const result = await sendMessage({type: "generate-current-tab-link"});
             renderStatus(result.status || await lastStatus());
-            if (result.copied) {
+            if (result.copied && !result.supported) {
+                setFeedback(
+                    result.appLaunch?.launched
+                        ? "当前页不支持 LinkPeek 预览，原始链接已复制，并已按配置调起应用。"
+                        : "当前页不支持 LinkPeek 预览，原始链接已复制。",
+                    "warning"
+                );
+            } else if (result.copied) {
                 setFeedback("当前页 LinkPeek 链接已复制。", "success");
             } else if (result.appLaunch?.launched) {
                 setFeedback("链接未复制，已按配置调起应用。", "warning");
@@ -333,7 +340,7 @@ function renderSetupGuide() {
         },
         {
             title: "测试联动 URL Scheme",
-            detail: wantsLaunch ? "确认 Chrome 能打开配置的 URL Scheme；链接未复制时也会调起。" : "未开启调起应用时可以跳过。",
+            detail: wantsLaunch ? "确认 Chrome 能打开配置的 URL Scheme；页面不支持预览时会复制原始链接并照常调起。" : "未开启调起应用时可以跳过。",
             state: wantsLaunch ? (appLaunchTested ? "done" : "pending") : "optional"
         }
     );

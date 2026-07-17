@@ -437,13 +437,16 @@ async function generateCurrentTabLink() {
     const launchResult = await launchConfiguredApp(config);
     const copied = generationResult.copied === true;
     const launchFailed = launchResult.enabled && !launchResult.launched;
-    const statusType = copied && !launchFailed ? "success" : "warning";
+    const statusType = copied && generationResult.supported && !launchFailed ? "success" : "warning";
     const statusMessage = statusMessageForGeneration(generationResult, launchResult);
     const status = await setStatus(statusMessage, statusType, {
         ...generationResult,
         appLaunch: launchResult
     });
-    await showBadge(copied ? "OK" : "NO", copied ? "#1f7a3a" : "#8a6d00");
+    await showBadge(
+        copied && generationResult.supported ? "OK" : copied ? "URL" : "NO",
+        copied && generationResult.supported ? "#1f7a3a" : "#8a6d00"
+    );
     return {
         ...generationResult,
         appLaunch: launchResult,
@@ -472,12 +475,15 @@ async function generatePreviewLink(config, sourceTab = null) {
         }
         const support = await supportResponse.json();
         if (!support?.supported) {
+            await copyText(tab.url);
             return {
-                copied: false,
+                copied: true,
                 supported: false,
+                copiedOriginal: true,
                 sourceUrl: tab.url,
+                clipboardUrl: tab.url,
                 support,
-                error: "当前页面不支持 LinkPeek 预览，未修改剪贴板。"
+                message: "当前页面不支持 LinkPeek 预览，已复制原始链接。"
             };
         }
 
@@ -486,7 +492,9 @@ async function generatePreviewLink(config, sourceTab = null) {
         return {
             copied: true,
             supported: true,
+            copiedOriginal: false,
             sourceUrl: tab.url,
+            clipboardUrl: previewUrl,
             previewUrl
         };
     } catch (error) {
@@ -499,6 +507,13 @@ async function generatePreviewLink(config, sourceTab = null) {
 }
 
 function statusMessageForGeneration(generationResult, launchResult) {
+    if (generationResult.copied && !generationResult.supported) {
+        return launchResult.enabled && launchResult.launched
+            ? "当前页面不支持 LinkPeek 预览，已复制原始链接并按配置调起应用"
+            : launchResult.enabled
+                ? "当前页面不支持 LinkPeek 预览，已复制原始链接，但调起应用失败"
+                : "当前页面不支持 LinkPeek 预览，已复制原始链接";
+    }
     if (generationResult.copied) {
         return launchResult.enabled && !launchResult.launched
             ? "LinkPeek 链接已复制，但调起应用失败"
