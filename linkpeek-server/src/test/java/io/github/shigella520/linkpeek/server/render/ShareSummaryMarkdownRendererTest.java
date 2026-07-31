@@ -38,4 +38,16 @@ class ShareSummaryMarkdownRendererTest {
         assertFalse(plainText.contains("**"));
         assertFalse(plainText.contains("[图片测试标题]"));
     }
+
+    @Test
+    void rendersMarkdownThematicBreakAsHtmlRuleAndOmitsItFromSpeechText() {
+        String markdown = "上半部分\n\n---\n\n下半部分";
+
+        String html = ShareSummaryMarkdownRenderer.toHtml(markdown);
+        String plainText = ShareSummaryMarkdownRenderer.toPlainText(markdown);
+
+        assertEquals("<p>上半部分</p>\n<hr>\n<p>下半部分</p>", html);
+        assertEquals("上半部分\n下半部分", plainText);
+        assertFalse(plainText.contains("---"));
+    }
 }

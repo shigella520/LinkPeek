@@ -213,6 +213,7 @@ public class ShareSummaryPublicController {
                         .report-content h2:first-child { margin-top: 0; }
                         .report-content h3 { margin: 24px 0 10px; font-size: 21px; line-height: 1.35; letter-spacing: -0.02em; }
                         .report-content p { margin: 0 0 15px; color: rgba(24, 24, 24, 0.82); }
+                        .report-content hr { margin: 28px 0; border: 0; border-top: 1px solid rgba(24, 24, 24, 0.14); }
                         .report-content ul, .report-content ol { margin: 0 0 18px 22px; padding: 0; color: rgba(24, 24, 24, 0.82); }
                         .report-content li { margin: 7px 0; }
                         .report-content a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(10, 132, 255, 0.24); }
