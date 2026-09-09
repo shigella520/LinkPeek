@@ -39,11 +39,17 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ShareSummaryImageServiceTest {
     private static final ZoneId ZONE = ZoneId.of("Asia/Shanghai");
@@ -55,7 +61,8 @@ class ShareSummaryImageServiceTest {
     void preservesExistingSuccessfulImageWhenRegenerationRedirectsToPrivateAddress() {
         FakeImageMapper imageMapper = new FakeImageMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        ShareSummaryImageClient imageClient = new ShareSummaryImageClient(
+        NotificationService notificationService = mock(NotificationService.class);
+        OpenAiCompatibleImageClient imageClient = new OpenAiCompatibleImageClient(
                 new ImageProviderHttpClient(200, """
                         {"data":[{"url":"http://93.184.216.34/image.png"}]}
                         """),
@@ -70,7 +77,7 @@ class ShareSummaryImageServiceTest {
                 imageClient,
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
-                null,
+                notificationService,
                 properties,
                 Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
         );
@@ -85,6 +92,124 @@ class ShareSummaryImageServiceTest {
         assertTrue(imageMapper.latestImage().getErrorMessage().contains("Image URL host is not allowed"));
         assertEquals(successful.getOgImageUrl(), summary.ogImageUrl());
         assertEquals(ShareSummaryImageStatus.FAILED.name(), summary.imageStatus());
+        verify(notificationService).publishShareSummaryImageFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryImageRecord.class),
+                eq("IOException"),
+                org.mockito.ArgumentMatchers.contains("Image URL host is not allowed")
+        );
+    }
+
+    @Test
+    void publishesImageFailedNotificationWhenQueueRejectsGeneration() {
+        FakeImageMapper imageMapper = new FakeImageMapper(config());
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        NotificationService notificationService = mock(NotificationService.class);
+        ShareSummaryImageService service = new ShareSummaryImageService(
+                imageMapper,
+                shareSummaryMapper,
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new RedirectingImageHttpClient(),
+                new RejectingExecutorService(),
+                notificationService,
+                new LinkPeekProperties(),
+                Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
+        );
+
+        service.generateImage(1, true);
+
+        assertEquals(ShareSummaryImageStatus.FAILED.name(), imageMapper.latestImage().getStatus());
+        assertEquals("IMAGE_QUEUE_FULL", imageMapper.latestImage().getErrorMessage());
+        verify(notificationService).publishShareSummaryImageFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryImageRecord.class),
+                eq("RejectedExecutionException"),
+                eq("IMAGE_QUEUE_FULL")
+        );
+    }
+
+    @Test
+    void imageFailureNotificationIncludesErrorTypeAndFallbackMessage() {
+        FakeImageMapper imageMapper = new FakeImageMapper(config());
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        NotificationService notificationService = mock(NotificationService.class);
+        OpenAiCompatibleImageClient imageClient = mock(OpenAiCompatibleImageClient.class);
+        try {
+            when(imageClient.generate(any(ShareSummaryImageConfigRecord.class), any(String.class)))
+                    .thenThrow(new IOException());
+        } catch (InterruptedException | IOException exception) {
+            throw new IllegalStateException(exception);
+        }
+        ShareSummaryImageService service = new ShareSummaryImageService(
+                imageMapper,
+                shareSummaryMapper,
+                imageClient,
+                new RedirectingImageHttpClient(),
+                new DirectExecutorService(),
+                notificationService,
+                new LinkPeekProperties(),
+                Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
+        );
+
+        service.generateImage(1, true);
+
+        assertEquals("Image generation failed.", imageMapper.latestImage().getErrorMessage());
+        verify(notificationService).publishShareSummaryImageFailed(
+                any(ShareSummaryRunRecord.class),
+                any(ShareSummaryImageRecord.class),
+                eq("IOException"),
+                eq("Image generation failed.")
+        );
+    }
+
+    @Test
+    void staleActiveImageIsMarkedFailedBeforeRegeneration() throws Exception {
+        ShareSummaryImageConfigRecord config = config();
+        FakeImageMapper imageMapper = new FakeImageMapper(config);
+        ShareSummaryImageRecord stale = new ShareSummaryImageRecord();
+        stale.setId(7L);
+        stale.setRunId(1L);
+        stale.setAttemptNo(1);
+        stale.setStatus(ShareSummaryImageStatus.GENERATING.name());
+        stale.setProviderType(config.getProviderType());
+        stale.setModel(config.getModel());
+        stale.setImageSize(config.getImageSize());
+        stale.setOutputFormat(config.getOutputFormat());
+        stale.setQuality(config.getQuality());
+        stale.setStylePromptSnapshot(config.getStylePrompt());
+        stale.setPromptSnapshot("old prompt");
+        stale.setPublicToken("stale-token");
+        stale.setCreatedAt(1L);
+        stale.setStartedAt(1L);
+        imageMapper.images.add(stale);
+        FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
+        OpenAiCompatibleImageClient imageClient = mock(OpenAiCompatibleImageClient.class);
+        when(imageClient.generate(any(ShareSummaryImageConfigRecord.class), any(String.class)))
+                .thenReturn(new OpenAiCompatibleImageClient.ImageGenerationResult(
+                        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=",
+                        null,
+                        "{}",
+                        10
+                ));
+        LinkPeekProperties properties = new LinkPeekProperties();
+        properties.setBaseUrl("https://linkpeek.example.com");
+        properties.setCacheDir(cacheDir);
+        ShareSummaryImageService service = new ShareSummaryImageService(
+                imageMapper,
+                shareSummaryMapper,
+                imageClient,
+                new RedirectingImageHttpClient(),
+                new DirectExecutorService(),
+                null,
+                properties,
+                Clock.fixed(Instant.parse("2026-05-30T02:00:00Z"), ZONE)
+        );
+
+        service.generateImage(1, true);
+
+        assertEquals(ShareSummaryImageStatus.FAILED.name(), stale.getStatus());
+        assertEquals("GENERATION timeout exceeded.", stale.getErrorMessage());
+        assertEquals(ShareSummaryImageStatus.SUCCESS.name(), imageMapper.latestImage().getStatus());
     }
 
     @Test
@@ -92,7 +217,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 new FakeImageMapper(config()),
                 new FakeShareSummaryMapper(successfulRun()),
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
                 null,
@@ -114,7 +239,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 new FakeImageMapper(config()),
                 new FakeShareSummaryMapper(successfulRun()),
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
                 null,
@@ -144,7 +269,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 imageMapper,
                 new FakeShareSummaryMapper(successfulRun()),
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
                 null,
@@ -179,7 +304,7 @@ class ShareSummaryImageServiceTest {
         ShareSummaryImageService service = new ShareSummaryImageService(
                 imageMapper,
                 new FakeShareSummaryMapper(successfulRun()),
-                new ShareSummaryImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
+                new OpenAiCompatibleImageClient(new ImageProviderHttpClient(200, "{\"data\":[]}"), new com.fasterxml.jackson.databind.ObjectMapper()),
                 new RedirectingImageHttpClient(),
                 new DirectExecutorService(),
                 null,
@@ -289,6 +414,23 @@ class ShareSummaryImageServiceTest {
         @Override
         public int updateImage(ShareSummaryImageRecord image) {
             return 1;
+        }
+
+        @Override
+        public int markStaleActiveImagesFailed(long threshold, long finishedAt, String errorMessage) {
+            int updated = 0;
+            for (ShareSummaryImageRecord image : images) {
+                long activeAt = image.getStartedAt() == null ? image.getCreatedAt() : image.getStartedAt();
+                if ((ShareSummaryImageStatus.PENDING.name().equals(image.getStatus())
+                        || ShareSummaryImageStatus.GENERATING.name().equals(image.getStatus()))
+                        && activeAt < threshold) {
+                    image.setStatus(ShareSummaryImageStatus.FAILED.name());
+                    image.setErrorMessage(errorMessage);
+                    image.setFinishedAt(finishedAt);
+                    updated++;
+                }
+            }
+            return updated;
         }
 
         @Override
@@ -579,7 +721,7 @@ class ShareSummaryImageServiceTest {
         }
     }
 
-    private static final class DirectExecutorService implements ExecutorService {
+    private static class DirectExecutorService implements ExecutorService {
         @Override
         public void shutdown() {
         }
@@ -650,6 +792,13 @@ class ShareSummaryImageServiceTest {
         @Override
         public void execute(Runnable command) {
             command.run();
+        }
+    }
+
+    private static final class RejectingExecutorService extends DirectExecutorService {
+        @Override
+        public void execute(Runnable command) {
+            throw new RejectedExecutionException("queue full");
         }
     }
 }

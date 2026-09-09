@@ -114,10 +114,10 @@ public class PreviewService {
 
             PreviewLoadResult baseResult = loadBasePreview(resolvedPreview);
             PreviewMetadata aiMetadata = resolvedPreview.provider().enrichForAiTitle(baseResult.metadata(), resolvedPreview.sourceUrl());
-            if (!aiTitleService.supportsAiTitle(aiMetadata)) {
+            if (!resolvedPreview.provider().supportsAiTitle(aiMetadata)) {
                 return baseResult.withStyleStats(requestedStyle, stylePrompt.style());
             }
-            AiTitleService.StyledMetadataResult styledResult = aiTitleService.generateStyledMetadataResult(aiMetadata, stylePrompt);
+            AiTitleService.StyledMetadataResult styledResult = aiTitleService.generateSupportedStyledMetadataResult(aiMetadata, stylePrompt);
             if (styledResult.metadata().isPresent()) {
                 PreviewMetadata styledMetadata = styledResult.metadata().get();
                 cacheManager.storeMetadata(styledPreviewKey, styledMetadata);

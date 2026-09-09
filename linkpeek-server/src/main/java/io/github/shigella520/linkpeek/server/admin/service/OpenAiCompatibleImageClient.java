@@ -22,14 +22,14 @@ import java.util.Map;
 import java.util.Optional;
 
 @Component
-public class ShareSummaryImageClient {
-    private static final Logger log = LoggerFactory.getLogger(ShareSummaryImageClient.class);
+public class OpenAiCompatibleImageClient {
+    private static final Logger log = LoggerFactory.getLogger(OpenAiCompatibleImageClient.class);
     private static final int MAX_BODY_LOG_CHARS = 2_000;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
-    public ShareSummaryImageClient(HttpClient httpClient, ObjectMapper objectMapper) {
+    public OpenAiCompatibleImageClient(HttpClient httpClient, ObjectMapper objectMapper) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
     }

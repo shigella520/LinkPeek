@@ -5,11 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260608-share-summary-task-list">
+    <link rel="stylesheet" href="/admin/styles.css?v=20260622-share-summary-image-centered">
 </head>
 <body>
 <header class="topbar">
-    <div class="topbar-brand">
+    <div class="topbar-brand brand-mark">
         <button
             type="button"
             id="admin-menu-button"
@@ -21,12 +21,22 @@
         >
             <span class="admin-menu-icon" aria-hidden="true"></span>
         </button>
-        <div>
-            <p class="eyebrow">Management</p>
-            <h1>LinkPeek Admin</h1>
-        </div>
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span class="brand-text">LinkPeek Admin</span>
     </div>
     <nav class="topbar-actions">
+        <a
+            class="icon-link github-link"
+            href="https://github.com/shigella520/LinkPeek"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Open LinkPeek on GitHub"
+            title="GitHub"
+        >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 1.5C6.2 1.5 1.5 6.3 1.5 12.2c0 4.7 3 8.7 7.2 10.1.5.1.7-.2.7-.5v-1.9c-2.9.7-3.5-1.2-3.5-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1 1.6 1 .9 1.5 2.3 1 2.8.8.1-.7.4-1 .6-1.3-2.3-.3-4.8-1.2-4.8-5.3 0-1.2.4-2.2 1-3-.1-.2-.4-1.3.1-2.8 0 0 .9-.3 3 .9a10.2 10.2 0 0 1 5.5 0c2.1-1.2 3-.9 3-.9.6 1.5.2 2.6.1 2.8.7.8 1 1.8 1 3 0 4.1-2.5 5-4.8 5.3.4.3.7.9.7 1.9v2.7c0 .3.2.7.7.5a10.7 10.7 0 0 0 7.2-10C22.5 6.3 17.8 1.5 12 1.5Z"/>
+            </svg>
+        </a>
         <a href="/dashboard">Dashboard</a>
         <button type="button" id="logout-button" hidden>退出</button>
     </nav>
@@ -160,12 +170,20 @@
                             aria-pressed="false"
                             data-enabled="false"
                         ><strong id="ai-auto-downgrade-enabled-label">禁用</strong></button>
-                        <span>Provider 超时达到</span>
+                        <span>失败阈值降级：Provider 失败达到</span>
                         <label class="inline-threshold-field">
-                            <span class="sr-only">自动降级超时次数</span>
-                            <input id="ai-auto-downgrade-timeout-threshold" class="inline-threshold-input" type="number" min="1" max="100" value="3" required>
+                            <span class="sr-only">自动降级失败阈值</span>
+                            <input id="ai-auto-downgrade-failure-threshold" class="inline-threshold-input" type="number" min="1" max="100" value="3" required>
                         </label>
                         <span>次后自动移动到列表最后。</span>
+                    </p>
+                    <p class="ai-downgrade-sentence">
+                        <span>分享总结超时倍率：</span>
+                        <label class="inline-multiplier-field">
+                            <span class="sr-only">分享总结超时倍率</span>
+                            <input id="ai-share-summary-timeout-multiplier" class="inline-threshold-input" type="number" min="1" max="20" step="0.1" value="1" required>
+                        </label>
+                        <span>倍，实际超时 = AI Provider Timeout × 倍率。</span>
                     </p>
                 </form>
                 <p id="ai-downgrade-config-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -317,6 +335,7 @@
                                 <th>链接</th>
                                 <th>AI</th>
                                 <th>分享图</th>
+                                <th>语音</th>
                                 <th>操作</th>
                             </tr>
                             </thead>
@@ -455,33 +474,86 @@
                     </div>
                 </div>
                 <form id="provider-form" class="provider-grid">
-                    <fieldset>
-                        <legend>LinuxDo Cookie</legend>
-                        <label>
-                            <span>_t</span>
-                            <input data-provider="linuxdo" data-key="_t" type="text" autocomplete="off">
-                        </label>
-                        <label>
-                            <span>cf_clearance</span>
-                            <input data-provider="linuxdo" data-key="cf_clearance" type="text" autocomplete="off">
-                        </label>
-                        <label>
-                            <span>_forum_session</span>
-                            <input data-provider="linuxdo" data-key="_forum_session" type="text" autocomplete="off">
-                        </label>
+                    <fieldset class="provider-section provider-section-linuxdo">
+                        <legend class="sr-only">LinuxDo Cookie</legend>
+                        <h3 class="provider-section-title">LinuxDo Cookie</h3>
+                        <div class="table-shell provider-cookie-shell">
+                            <table class="provider-cookie-table">
+                                <thead>
+                                    <tr>
+                                        <th>字段</th>
+                                        <th>值</th>
+                                        <th>发送</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td class="provider-cookie-name">_t</td>
+                                        <td><input data-provider="linuxdo" data-key="_t" type="text" autocomplete="off" aria-label="LinuxDo _t"></td>
+                                        <td>
+                                            <label class="checkbox-row provider-cookie-toggle">
+                                                <input data-provider="linuxdo" data-key="_t_enabled" type="checkbox" value="true">
+                                                <span>启用</span>
+                                            </label>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="provider-cookie-name">cf_clearance</td>
+                                        <td><input data-provider="linuxdo" data-key="cf_clearance" type="text" autocomplete="off" aria-label="LinuxDo cf_clearance"></td>
+                                        <td>
+                                            <label class="checkbox-row provider-cookie-toggle">
+                                                <input data-provider="linuxdo" data-key="cf_clearance_enabled" type="checkbox" value="true">
+                                                <span>启用</span>
+                                            </label>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="provider-cookie-name">_forum_session</td>
+                                        <td><input data-provider="linuxdo" data-key="_forum_session" type="text" autocomplete="off" aria-label="LinuxDo _forum_session"></td>
+                                        <td>
+                                            <label class="checkbox-row provider-cookie-toggle">
+                                                <input data-provider="linuxdo" data-key="_forum_session_enabled" type="checkbox" value="true">
+                                                <span>启用</span>
+                                            </label>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </fieldset>
-                    <fieldset>
-                        <legend>NGA Cookie</legend>
-                        <label>
-                            <span>NGA_PASSPORT_UID</span>
-                            <input data-provider="nga" data-key="NGA_PASSPORT_UID" type="text" autocomplete="off">
-                        </label>
-                        <label>
-                            <span>NGA_PASSPORT_CID</span>
-                            <input data-provider="nga" data-key="NGA_PASSPORT_CID" type="text" autocomplete="off">
-                        </label>
-                    </fieldset>
-                    <button type="submit">保存 Provider 配置</button>
+                    <div class="provider-secondary-grid">
+                        <fieldset class="provider-section provider-section-bilibili">
+                            <legend class="sr-only">Bilibili</legend>
+                            <h3 class="provider-section-title">Bilibili</h3>
+                            <div class="provider-setting-row">
+                                <div class="provider-setting-copy">
+                                    <strong>AI 标题</strong>
+                                    <span class="keyline">关闭后保留原始标题，封面仍使用原图。</span>
+                                </div>
+                                <label class="checkbox-row provider-cookie-toggle">
+                                    <input data-provider="bilibili" data-key="ai_title_enabled" type="checkbox" value="true">
+                                    <span>启用</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                        <fieldset class="provider-section provider-section-nga">
+                            <legend class="sr-only">NGA Cookie</legend>
+                            <h3 class="provider-section-title">NGA Cookie</h3>
+                            <div class="provider-field-grid">
+                                <label>
+                                    <span>NGA_PASSPORT_UID</span>
+                                    <input data-provider="nga" data-key="NGA_PASSPORT_UID" type="text" autocomplete="off">
+                                </label>
+                                <label>
+                                    <span>NGA_PASSPORT_CID</span>
+                                    <input data-provider="nga" data-key="NGA_PASSPORT_CID" type="text" autocomplete="off">
+                                </label>
+                            </div>
+                        </fieldset>
+                    </div>
+                    <div class="provider-actions">
+                        <button type="submit">保存 Provider 配置</button>
+                    </div>
                 </form>
                 <p id="provider-feedback" class="feedback" role="status" aria-live="polite"></p>
             </section>
@@ -835,6 +907,7 @@
                 <span>Provider</span>
                 <select id="share-summary-audio-provider-type">
                     <option value="OPENAI_COMPATIBLE">OpenAI Compatible</option>
+                    <option value="MIMO_TTS">Xiaomi MiMo TTS</option>
                 </select>
             </label>
             <label>
@@ -853,20 +926,34 @@
                 <span>Model</span>
                 <input id="share-summary-audio-model" type="text" autocomplete="off" placeholder="可选，例如 tts-1">
             </label>
-            <label>
+            <label id="share-summary-audio-voice-text-row">
                 <span>Voice</span>
                 <input id="share-summary-audio-voice" type="text" value="zh-CN-YunhaoNeural">
             </label>
-            <label>
+            <label id="share-summary-audio-voice-select-row" hidden>
+                <span>Voice</span>
+                <select id="share-summary-audio-voice-select">
+                    <option value="苏打">苏打 / 中文男声</option>
+                    <option value="冰糖">冰糖 / 中文女声</option>
+                    <option value="茉莉">茉莉 / 中文女声</option>
+                    <option value="白桦">白桦 / 中文男声</option>
+                    <option value="mimo_default">MiMo 默认</option>
+                    <option value="Mia">Mia / English Female</option>
+                    <option value="Chloe">Chloe / English Female</option>
+                    <option value="Milo">Milo / English Male</option>
+                    <option value="Dean">Dean / English Male</option>
+                </select>
+            </label>
+            <label id="share-summary-audio-speed-row">
                 <span>Speed</span>
                 <input id="share-summary-audio-speed" type="number" min="0.25" max="4" step="any" value="1.2">
             </label>
-            <label>
+            <label id="share-summary-audio-pitch-row">
                 <span>Pitch</span>
                 <input id="share-summary-audio-pitch" type="number" step="1" value="0">
             </label>
-            <label>
-                <span>Style</span>
+            <label id="share-summary-audio-style-row">
+                <span id="share-summary-audio-style-label">Style</span>
                 <input id="share-summary-audio-style" type="text" value="newscast">
             </label>
             <label>
@@ -874,7 +961,11 @@
                 <input id="share-summary-audio-timeout" type="number" min="1" max="1800" value="120">
             </label>
             <div class="modal-actions wide">
+                <button type="button" class="secondary test-button" id="share-summary-audio-config-test-button">测试 TTS</button>
                 <button type="submit">保存配置</button>
+            </div>
+            <div id="share-summary-audio-test-player" class="audio-test-player wide" hidden>
+                <audio id="share-summary-audio-test-audio" controls preload="none" aria-label="TTS 测试音频"></audio>
             </div>
         </form>
         <p id="share-summary-audio-config-modal-feedback" class="feedback" role="status" aria-live="polite"></p>
@@ -979,7 +1070,7 @@
                 <span>关联渠道</span>
                 <div id="notification-task-channel-options" class="checkbox-list"></div>
             </label>
-            <div class="wide notification-filter-panel">
+            <div class="wide notification-filter-panel" id="notification-task-filter-panel">
                 <div class="subsection-head">
                     <div>
                         <p class="panel-kicker">Filters</p>
@@ -1034,6 +1125,16 @@
     </section>
 </div>
 
-<script src="/admin/app.js?v=20260608-share-summary-task-list"></script>
+<div class="share-summary-image-viewer" id="share-summary-image-viewer" role="dialog" aria-modal="true" aria-labelledby="share-summary-image-viewer-title" hidden>
+    <div class="share-summary-image-viewer-chrome">
+        <p id="share-summary-image-viewer-title">分享图</p>
+        <button type="button" class="share-summary-image-viewer-close" id="share-summary-image-viewer-close" aria-label="关闭图片预览"></button>
+    </div>
+    <div class="share-summary-image-viewer-stage">
+        <img id="share-summary-image-viewer-img" class="share-summary-image-viewer-img" alt="">
+    </div>
+</div>
+
+<script src="/admin/app.js?v=20260622-share-summary-image-centered"></script>
 </body>
 </html>

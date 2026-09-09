@@ -100,7 +100,7 @@ public class ProviderConfiguration {
         AtomicInteger threadIndex = new AtomicInteger();
         return new ThreadPoolExecutor(
                 1,
-                2,
+                1,
                 30L,
                 TimeUnit.SECONDS,
                 new LinkedBlockingQueue<>(128),
@@ -122,14 +122,16 @@ public class ProviderConfiguration {
     public BilibiliPreviewProvider bilibiliPreviewProvider(
             HttpClient httpClient,
             ObjectMapper objectMapper,
-            LinkPeekProperties properties
+            LinkPeekProperties properties,
+            ProviderConfigService providerConfigService
     ) {
         return new BilibiliPreviewProvider(
                 httpClient,
                 objectMapper,
                 URI.create("https://api.bilibili.com"),
                 properties.getDownloadTimeout(),
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                providerConfigService::bilibiliAiTitleEnabled
         );
     }
 

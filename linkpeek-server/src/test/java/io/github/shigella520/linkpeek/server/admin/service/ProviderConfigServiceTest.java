@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProviderConfigServiceTest {
     @Test
@@ -31,6 +33,35 @@ class ProviderConfigServiceTest {
     }
 
     @Test
+    void linuxDoCookieHeaderSkipsDisabledCookieKeys() {
+        FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
+        ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
+        Map<String, String> values = new LinkedHashMap<>();
+        values.put("_t", "token");
+        values.put("cf_clearance", "clear");
+        values.put("_forum_session", "session");
+        values.put("_t_enabled", "true");
+        values.put("cf_clearance_enabled", "false");
+        values.put("_forum_session_enabled", "false");
+
+        service.saveProviderConfigs(ProviderConfigService.PROVIDER_LINUXDO, values);
+
+        assertEquals("_t=token", service.linuxDoCookieHeader());
+    }
+
+    @Test
+    void linuxDoCookieEnabledFlagsDefaultToEnabledInConfigResponse() {
+        FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
+        ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
+
+        Map<String, String> linuxDoConfigs = service.allProviderConfigs().get(ProviderConfigService.PROVIDER_LINUXDO);
+
+        assertEquals("true", linuxDoConfigs.get("_t_enabled"));
+        assertEquals("true", linuxDoConfigs.get("cf_clearance_enabled"));
+        assertEquals("true", linuxDoConfigs.get("_forum_session_enabled"));
+    }
+
+    @Test
     void ngaCredentialsAreReadFromProviderConfig() {
         FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
         ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
@@ -42,6 +73,38 @@ class ProviderConfigServiceTest {
 
         assertEquals("uid", service.ngaPassportUid());
         assertEquals("cid", service.ngaPassportCid());
+    }
+
+    @Test
+    void bilibiliAiTitleDefaultsToEnabledInConfigResponse() {
+        FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
+        ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
+
+        assertTrue(service.bilibiliAiTitleEnabled());
+        assertEquals(
+                "true",
+                service.allProviderConfigs()
+                        .get(ProviderConfigService.PROVIDER_BILIBILI)
+                        .get(ProviderConfigService.BILIBILI_AI_TITLE_ENABLED)
+        );
+    }
+
+    @Test
+    void bilibiliAiTitleCanBeDisabledFromProviderConfig() {
+        FakeProviderConfigMapper mapper = new FakeProviderConfigMapper();
+        ProviderConfigService service = new ProviderConfigService(mapper, fixedClock());
+
+        service.saveProviderConfigs(ProviderConfigService.PROVIDER_BILIBILI, Map.of(
+                ProviderConfigService.BILIBILI_AI_TITLE_ENABLED, " false "
+        ));
+
+        assertFalse(service.bilibiliAiTitleEnabled());
+        assertEquals(
+                "false",
+                service.allProviderConfigs()
+                        .get(ProviderConfigService.PROVIDER_BILIBILI)
+                        .get(ProviderConfigService.BILIBILI_AI_TITLE_ENABLED)
+        );
     }
 
     private Clock fixedClock() {

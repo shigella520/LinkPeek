@@ -36,7 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class AiTitleClientTest {
+class OpenAiCompatibleTextClientTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
@@ -44,7 +44,7 @@ class AiTitleClientTest {
         CapturingHttpClient httpClient = new CapturingHttpClient(200, """
                 {"choices":[{"message":{"content":"AI 生成标题"}}]}
                 """);
-        AiTitleClient client = new AiTitleClient(httpClient, objectMapper);
+        OpenAiCompatibleTextClient client = new OpenAiCompatibleTextClient(httpClient, objectMapper);
 
         Optional<String> title = client.generateTitle(
                 provider("https://api.example.com/v1", "CHAT_COMPLETIONS", "gpt-test", "low", "sk-test"),
@@ -71,7 +71,7 @@ class AiTitleClientTest {
         CapturingHttpClient httpClient = new CapturingHttpClient(200, """
                 {"output":[{"content":[{"type":"output_text","text":"Responses 标题"}]}]}
                 """);
-        AiTitleClient client = new AiTitleClient(httpClient, objectMapper);
+        OpenAiCompatibleTextClient client = new OpenAiCompatibleTextClient(httpClient, objectMapper);
 
         Optional<String> title = client.generateTitle(
                 provider("https://api.example.com/v1", "RESPONSES", "gpt-test", "medium", ""),
@@ -97,7 +97,7 @@ class AiTitleClientTest {
         CapturingHttpClient httpClient = new CapturingHttpClient(200, """
                 {"choices":[{"message":{"content":"AI 生成标题"}}]}
                 """);
-        AiTitleClient client = new AiTitleClient(httpClient, objectMapper);
+        OpenAiCompatibleTextClient client = new OpenAiCompatibleTextClient(httpClient, objectMapper);
         AiProviderRecord provider = provider("https://api.example.com/v1", "CHAT_COMPLETIONS", "gpt-test", "", "sk-test");
         provider.setRequestTimeoutSeconds(12);
 
@@ -127,7 +127,7 @@ class AiTitleClientTest {
         CapturingHttpClient httpClient = new CapturingHttpClient(503, """
                 {"error":{"message":"upstream overloaded","type":"service_unavailable"}}
                 """);
-        AiTitleClient client = new AiTitleClient(httpClient, objectMapper);
+        OpenAiCompatibleTextClient client = new OpenAiCompatibleTextClient(httpClient, objectMapper);
 
         IOException exception = assertThrows(
                 IOException.class,

@@ -1,0 +1,54 @@
+{
+  "manifest_version": 3,
+  "name": "LinkPeek Helper",
+  "description": "Sync LinuxDo/NGA cookies and generate LinkPeek preview links.",
+  "version": "0.1.0",
+  "action": {
+    "default_title": "打开 LinkPeek Admin",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "src/service_worker.mjs",
+    "type": "module"
+  },
+  "commands": {
+    "generate-linkpeek-link": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "生成当前页面的 LinkPeek 链接"
+    }
+  },
+  "host_permissions": [
+    "https://linux.do/*",
+    "https://bbs.nga.cn/*",
+    "https://nga.178.com/*",
+    "https://ngabbs.com/*"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "options_page": "options.html",
+  "permissions": [
+    "alarms",
+    "clipboardWrite",
+    "cookies",
+    "offscreen",
+    "scripting",
+    "storage",
+    "tabs"
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

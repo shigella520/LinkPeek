@@ -15,6 +15,7 @@ public class ShareSummaryAudioRecord {
     private String textSnapshot;
     private String storageKey;
     private String audioUrl;
+    private long playCount;
     private String rawResponseSnapshot;
     private String errorMessage;
     private long durationMs;
@@ -132,6 +133,14 @@ public class ShareSummaryAudioRecord {
 
     public void setAudioUrl(String audioUrl) {
         this.audioUrl = audioUrl;
+    }
+
+    public long getPlayCount() {
+        return playCount;
+    }
+
+    public void setPlayCount(long playCount) {
+        this.playCount = playCount;
     }
 
     public String getRawResponseSnapshot() {

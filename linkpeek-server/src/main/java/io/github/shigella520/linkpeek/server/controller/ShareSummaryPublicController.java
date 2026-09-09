@@ -6,6 +6,9 @@ import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioServ
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageService;
 import io.github.shigella520.linkpeek.server.render.ShareSummaryMarkdownRenderer;
 import io.swagger.v3.oas.annotations.Hidden;
+import jakarta.servlet.http.HttpServletRequest;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.io.Resource;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
@@ -13,10 +16,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 
@@ -24,6 +29,8 @@ import java.util.concurrent.TimeUnit;
 @RequestMapping("/share-summary")
 @Hidden
 public class ShareSummaryPublicController {
+    private static final Logger log = LoggerFactory.getLogger(ShareSummaryPublicController.class);
+
     private final ShareSummaryImageService shareSummaryImageService;
     private final ShareSummaryAudioService shareSummaryAudioService;
 
@@ -61,15 +68,33 @@ public class ShareSummaryPublicController {
     }
 
     @GetMapping("/audios/{publicToken}.{ext}")
-    public ResponseEntity<Resource> audio(@PathVariable String publicToken, @PathVariable String ext) {
+    public ResponseEntity<Resource> audio(
+            @PathVariable String publicToken,
+            @PathVariable String ext,
+            HttpServletRequest request
+    ) {
         try {
             ShareSummaryAudioService.PublicAudio audio = shareSummaryAudioService.publicAudio(publicToken, ext);
+            logAudioRequest(request, publicToken, ext, audio);
             return ResponseEntity.ok()
                     .contentType(audio.mediaType())
                     .cacheControl(CacheControl.maxAge(30, TimeUnit.DAYS).cachePublic())
                     .body(audio.resource());
         } catch (IllegalArgumentException exception) {
+            logAudioRequestNotFound(request, publicToken, ext, exception);
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    @PostMapping("/audios/{publicToken}.{ext}/plays")
+    public ShareSummaryAudioService.PlayCountResponse recordAudioPlay(
+            @PathVariable String publicToken,
+            @PathVariable String ext
+    ) {
+        try {
+            return shareSummaryAudioService.recordPublicPlay(publicToken, ext);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
     }
 
@@ -78,9 +103,12 @@ public class ShareSummaryPublicController {
         String description = image.getOgDescription();
         String imageUrl = image.getOgImageUrl();
         String pageUrl = image.getOgPageUrl();
-        String audioUrl = audioUrl(run.getId());
+        ShareSummaryAudioService.AudioSummary audioSummary = audioSummary(run.getId());
+        String audioUrl = audioSummary == null ? "" : audioSummary.audioUrl();
+        String audioMediaType = audioSummary == null || !StringUtils.hasText(audioSummary.audioMediaType()) ? "audio/mpeg" : audioSummary.audioMediaType();
         boolean hasAudio = StringUtils.hasText(audioUrl);
-        String audioMeta = audioMeta(audioUrl);
+        String audioPlayUrl = hasAudio ? audioUrl + "/plays" : "";
+        String audioMeta = audioMeta(audioUrl, audioMediaType);
         String report = StringUtils.hasText(run.getReport()) ? run.getReport() : "";
         return """
                 <!doctype html>
@@ -101,108 +129,327 @@ public class ShareSummaryPublicController {
                     <meta name="twitter:title" content="%s">
                     <meta name="twitter:description" content="%s">
                     <meta name="twitter:image" content="%s">
+                    <link rel="icon" href="/favicon.ico">
+                    <link rel="stylesheet" href="/dashboard/styles.css?v=20260612-report-topbar-polish">
                     <style>
-                        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f6f7f9; color: #172033; }
-                        main { max-width: 860px; margin: 0 auto; padding: 32px 20px 48px; }
-                        img { width: 100%%; height: auto; border-radius: 8px; background: #e8ebf0; }
-                        .reader { margin: 18px 0; padding: 14px; border: 1px solid #dfe3ea; border-radius: 8px; background: #fff; box-shadow: 0 10px 24px rgba(23, 32, 51, 0.05); }
+                        .report-shell { max-width: 1180px; padding-bottom: 72px; }
+                        .report-topbar { margin-bottom: 24px; }
+                        .project-link { width: 48px; height: 48px; background: rgba(255, 255, 255, 0.9); box-shadow: 0 20px 42px rgba(18, 22, 28, 0.14); }
+                        .project-link svg { width: 21px; height: 21px; }
+                        body.report-image-viewer-open { overflow: hidden; }
+                        .report-hero {
+                            position: relative;
+                            z-index: 1;
+                            display: grid;
+                            grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr);
+                            gap: 26px;
+                            align-items: stretch;
+                            padding: 30px;
+                            margin-bottom: 34px;
+                            border-radius: 44px;
+                            background: linear-gradient(145deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.58));
+                            border: 1px solid rgba(255, 255, 255, 0.82);
+                            box-shadow: var(--shadow);
+                            backdrop-filter: blur(26px);
+                            -webkit-backdrop-filter: blur(26px);
+                        }
+                        .report-visual { position: relative; min-height: 0; overflow: hidden; border-radius: 38px; box-shadow: var(--shadow-soft); }
+                        .report-image-button { display: block; width: 100%%; height: 100%%; padding: 0; border: 0; border-radius: inherit; background: transparent; color: inherit; font: inherit; line-height: 0; cursor: zoom-in; }
+                        .report-image-button:focus-visible { outline: 3px solid rgba(10, 132, 255, 0.54); outline-offset: 4px; }
+                        .report-cover { display: block; width: 100%%; height: 100%%; min-height: 320px; aspect-ratio: 1200 / 630; object-fit: cover; background: rgba(255, 255, 255, 0.74); }
+                        .report-visual::after {
+                            content: "";
+                            position: absolute;
+                            inset: auto 0 0;
+                            height: 34%%;
+                            background: linear-gradient(180deg, transparent, rgba(17, 17, 17, 0.18));
+                            pointer-events: none;
+                        }
+                        .report-copy { display: flex; flex-direction: column; min-width: 0; }
+                        .report-copy h1 {
+                            margin: 0;
+                            font-size: clamp(34px, 5vw, 58px);
+                            line-height: 1.02;
+                            letter-spacing: -0.05em;
+                            background: linear-gradient(120deg, rgba(24, 24, 24, 0.98) 0%%, rgba(24, 24, 24, 0.72) 32%%, rgba(10, 132, 255, 0.82) 70%%, rgba(249, 115, 22, 0.76) 100%%);
+                            -webkit-background-clip: text;
+                            background-clip: text;
+                            color: transparent;
+                            filter: drop-shadow(0 14px 30px rgba(10, 132, 255, 0.08));
+                        }
+                        .report-description { margin: 18px 0 4px; color: var(--muted); font-size: 16px; line-height: 1.75; }
+                        .report-main { position: relative; z-index: 1; display: block; }
+                        .reader {
+                            margin: 18px 0 0;
+                            padding: 16px;
+                            border-radius: 24px;
+                            background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(255, 255, 255, 0.64));
+                            border: 1px solid rgba(255, 255, 255, 0.86);
+                            box-shadow: var(--shadow-soft);
+                            backdrop-filter: blur(26px);
+                            -webkit-backdrop-filter: blur(26px);
+                        }
                         .reader[hidden] { display: none !important; }
-                        .reader-main { display: grid; grid-template-columns: 38px minmax(0, 1fr); gap: 12px; align-items: center; }
+                        .reader-main { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; align-items: center; }
                         .reader button { border: 0; font: inherit; cursor: pointer; position: relative; }
                         .reader button:disabled { cursor: not-allowed; opacity: 0.42; }
-                        .reader-play { width: 38px; height: 38px; border-radius: 8px; background: #172033; color: #fff; display: grid; place-items: center; box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.12); }
-                        .reader-play:hover:not(:disabled) { background: #263044; }
+                        .reader-play { width: 44px; height: 44px; border-radius: 999px; background: linear-gradient(135deg, #111111, #363636); color: #fff; display: grid; place-items: center; box-shadow: 0 12px 24px rgba(17, 17, 17, 0.16); transition: transform 180ms ease, box-shadow 180ms ease; }
+                        .reader-play:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 18px 30px rgba(17, 17, 17, 0.2); }
                         .reader-play::before { content: ""; display: block; width: 0; height: 0; margin-left: 3px; border-top: 7px solid transparent; border-bottom: 7px solid transparent; border-left: 11px solid currentColor; }
                         .reader-play.is-playing::before { width: 4px; height: 14px; margin-left: 0; border: 0; border-radius: 2px; background: currentColor; box-shadow: 8px 0 0 currentColor; transform: translateX(-4px); }
-                        .reader-status { min-width: 0; color: #5d6678; font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                        .reader-progress { height: 4px; margin-top: 8px; border-radius: 999px; background: #e8edf4; overflow: hidden; }
-                        .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: #2563eb; transition: width 180ms ease; }
+                        .reader-status { min-width: 0; color: var(--muted); font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+                        .reader-progress { height: 5px; margin-top: 10px; border-radius: 999px; background: rgba(10, 132, 255, 0.12); overflow: hidden; }
+                        .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-3)); transition: width 180ms ease; }
                         .reader-settings { display: grid; grid-template-columns: minmax(128px, 0.7fr) minmax(220px, 1.3fr); gap: 14px; margin-top: 14px; align-items: end; }
-                        .reader-control { display: grid; grid-template-columns: minmax(44px, auto) minmax(0, 1fr); gap: 8px; min-width: 0; align-items: center; color: #5d6678; font-size: 13px; }
+                        .reader-control { display: grid; grid-template-columns: minmax(44px, auto) minmax(0, 1fr); gap: 8px; min-width: 0; align-items: center; color: var(--muted); font-size: 13px; }
                         .reader-control-label { display: block; line-height: 34px; white-space: nowrap; }
                         .reader-control-value { min-width: 0; display: grid; gap: 4px; }
                         .reader-control-meta { display: none; }
-                        .reader input, .reader select { width: 100%%; min-height: 34px; border: 1px solid #d7dde7; border-radius: 7px; background: #f8fafc; color: #172033; font: inherit; }
-                        .reader input { accent-color: #2563eb; }
-                        .reader select { padding: 0 10px; }
-                        article { line-height: 1.72; background: #fff; border: 1px solid #dfe3ea; border-radius: 8px; padding: 24px; }
-                        article h2 { margin: 28px 0 12px; font-size: 22px; line-height: 1.35; }
-                        article h3 { margin: 22px 0 10px; font-size: 18px; line-height: 1.4; }
-                        article p { margin: 0 0 14px; color: #263044; }
-                        article ul, article ol { margin: 0 0 16px 22px; padding: 0; }
-                        article li { margin: 6px 0; }
-                        article pre { overflow-x: auto; margin: 0 0 16px; padding: 14px; border-radius: 6px; background: #f1f3f6; }
-                        article code { padding: 1px 5px; border-radius: 4px; background: #eef1f5; }
-                        article pre code { padding: 0; background: transparent; }
-                        h1 { font-size: 28px; line-height: 1.25; margin: 24px 0 12px; }
-                        main > p { color: #5d6678; }
+                        .reader input, .reader select { width: 100%%; min-height: 38px; border: 1px solid rgba(20, 20, 20, 0.08); border-radius: 16px; background: rgba(255, 255, 255, 0.86); color: var(--text); font: inherit; }
+                        .reader input { accent-color: var(--accent); }
+                        .reader select { padding: 0 12px; }
+                        .report-content { line-height: 1.78; font-size: 16px; }
+                        .report-content h2 { margin: 30px 0 12px; font-size: clamp(25px, 3vw, 34px); line-height: 1.18; letter-spacing: -0.04em; }
+                        .report-content h2:first-child { margin-top: 0; }
+                        .report-content h3 { margin: 24px 0 10px; font-size: 21px; line-height: 1.35; letter-spacing: -0.02em; }
+                        .report-content p { margin: 0 0 15px; color: rgba(24, 24, 24, 0.82); }
+                        .report-content hr { margin: 28px 0; border: 0; border-top: 1px solid rgba(24, 24, 24, 0.14); }
+                        .report-content ul, .report-content ol { margin: 0 0 18px 22px; padding: 0; color: rgba(24, 24, 24, 0.82); }
+                        .report-content li { margin: 7px 0; }
+                        .report-content a { color: var(--accent); text-decoration: none; border-bottom: 1px solid rgba(10, 132, 255, 0.24); }
+                        .report-content a:hover { border-bottom-color: currentColor; }
+                        .report-content pre { overflow-x: auto; margin: 0 0 18px; padding: 16px; border-radius: 20px; background: rgba(255, 255, 255, 0.72); border: 1px solid rgba(20, 20, 20, 0.06); }
+                        .report-content code { padding: 2px 6px; border-radius: 8px; background: rgba(10, 132, 255, 0.1); }
+                        .report-content pre code { padding: 0; background: transparent; }
+                        .report-image-viewer[hidden] { display: none !important; }
+                        .report-image-viewer { position: fixed; inset: 0; z-index: 100; display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 14px; padding: max(14px, env(safe-area-inset-top)) max(14px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(14px, env(safe-area-inset-left)); background: rgba(8, 12, 18, 0.92); }
+                        .report-image-viewer-chrome { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+                        .report-image-viewer-chrome p { min-width: 0; margin: 0; overflow: hidden; color: rgba(255, 255, 255, 0.86); font-size: 14px; font-weight: 650; line-height: 1.3; text-overflow: ellipsis; text-shadow: 0 2px 12px rgba(0, 0, 0, 0.42); white-space: nowrap; }
+                        .report-image-viewer-close { position: relative; flex: 0 0 auto; width: 42px; height: 42px; min-height: 42px; padding: 0; border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 999px; background: rgba(255, 255, 255, 0.14); box-shadow: 0 14px 34px rgba(0, 0, 0, 0.24); cursor: pointer; }
+                        .report-image-viewer-close::before, .report-image-viewer-close::after { content: ""; position: absolute; top: 50%%; left: 50%%; width: 18px; height: 2px; border-radius: 999px; background: #ffffff; }
+                        .report-image-viewer-close::before { transform: translate(-50%%, -50%%) rotate(45deg); }
+                        .report-image-viewer-close::after { transform: translate(-50%%, -50%%) rotate(-45deg); }
+                        .report-image-viewer-close:focus-visible { outline: 2px solid rgba(255, 255, 255, 0.54); outline-offset: 3px; }
+                        .report-image-viewer-stage { display: grid; place-items: center; min-width: 0; min-height: 0; overflow: hidden; }
+                        .report-image-viewer-img { display: block; width: auto; height: auto; max-width: 100%%; max-height: 100%%; aspect-ratio: 1200 / 630; object-fit: contain; border-radius: 8px; background: rgba(255, 255, 255, 0.04); box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42); }
+                        @media (max-width: 860px) {
+                            .report-hero { grid-template-columns: 1fr; border-radius: 34px; padding: 22px; }
+                            .report-cover { height: auto; min-height: 0; }
+                        }
+                        @media (max-width: 720px) and (orientation: portrait) {
+                            .report-image-viewer { gap: 10px; padding: max(10px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right)) max(10px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left)); }
+                            .report-image-viewer-chrome p { font-size: 13px; }
+                            .report-image-viewer-close { width: 38px; height: 38px; min-height: 38px; }
+                            .report-image-viewer-stage { position: relative; }
+                            .report-image-viewer-img { position: absolute; top: 50%%; left: 50%%; width: var(--report-image-viewer-mobile-width, 100%%); height: auto; max-width: none; max-height: none; border-radius: 6px; transform: translate(-50%%, -50%%) rotate(90deg); transform-origin: center; }
+                        }
                         @media (max-width: 520px) {
-                            main { padding: 20px 14px 36px; }
-                            article { padding: 18px; }
-                            .reader { padding: 14px; }
+                            .page-shell { padding: 12px 10px 40px; }
+                            .report-shell { padding-bottom: 40px; }
+                            .topbar {
+                                flex-direction: row;
+                                align-items: center;
+                                gap: 8px;
+                                padding: 8px 10px;
+                                border-radius: 18px;
+                                margin-bottom: 14px;
+                            }
+                            .report-topbar .brand-mark { flex: 1 1 auto; gap: 8px; min-width: 0; overflow: visible; }
+                            .report-topbar .topbar-meta { flex: 0 0 auto; min-width: 0; }
+                            .report-topbar .brand-dot { flex: 0 0 7px; width: 7px; height: 7px; box-shadow: 0 0 0 6px rgba(10, 132, 255, 0.1); }
+                            .report-topbar .brand-text { max-width: clamp(206px, 62vw, 320px); min-width: 0; font-size: 16px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+                            .project-link { flex: 0 0 36px; width: 36px; min-width: 36px; height: 36px; aspect-ratio: 1; padding: 0; }
+                            .project-link svg { width: 17px; height: 17px; }
+                            .report-hero { padding: 12px; border-radius: 22px; gap: 14px; margin-bottom: 22px; }
+                            .report-visual { border-radius: 18px; }
+                            .report-copy h1 { font-size: 27px; line-height: 1.08; letter-spacing: -0.02em; }
+                            .report-description { margin-top: 12px; font-size: 14px; line-height: 1.65; }
+                            .report-content { padding: 14px; border-radius: 22px; font-size: 15px; line-height: 1.72; }
+                            .report-content h2 { margin: 24px 0 10px; font-size: 23px; letter-spacing: -0.02em; }
+                            .report-content h3 { margin: 20px 0 8px; font-size: 18px; letter-spacing: 0; }
+                            .report-content ul, .report-content ol { margin-left: 18px; }
+                            .reader { margin-top: 14px; padding: 12px; border-radius: 18px; }
+                            .reader-main { grid-template-columns: 40px minmax(0, 1fr); gap: 10px; }
+                            .reader-play { width: 40px; height: 40px; }
                             .reader-settings { grid-template-columns: 1fr; }
-                            .reader-control { grid-template-columns: 44px minmax(0, 1fr); }
+                            .reader-control { grid-template-columns: 40px minmax(0, 1fr); font-size: 12px; }
+                        }
+                        @media (max-width: 380px) {
+                            .page-shell { padding-inline: 8px; }
+                            .topbar { padding: 7px 8px; }
+                            .report-topbar .brand-text { font-size: 15px; max-width: clamp(176px, 58vw, 260px); }
+                            .project-link { flex-basis: 34px; width: 34px; min-width: 34px; height: 34px; }
+                            .report-hero { padding: 10px; border-radius: 20px; }
+                            .report-copy h1 { font-size: 25px; }
+                            .report-description,
+                            .report-content { font-size: 14px; }
                         }
                     </style>
                 </head>
                 <body>
-                    <main>
-                        <img src="%s" alt="%s">
-                        <h1 data-reader-title>%s</h1>
-                        <p data-reader-description>%s</p>
-                        <section class="reader reader-audio" data-audio-reader data-audio-src="%s" %s aria-label="报告音频播放">
-                            <audio data-audio-element preload="metadata" src="%s"></audio>
-                            <div class="reader-main">
-                                <button class="reader-play" type="button" data-audio-action="toggle" aria-label="播放"></button>
-                                <div>
-                                    <div class="reader-status" data-audio-status>服务端语音</div>
-                                    <div class="reader-progress" aria-hidden="true">
-                                        <span class="reader-progress-bar" data-audio-progress></span>
+                    <div class="page-shell report-shell">
+                        <div class="backdrop-grid"></div>
+                        <div class="backdrop-glow backdrop-glow-left"></div>
+                        <div class="backdrop-glow backdrop-glow-right"></div>
+
+                        <header class="topbar report-topbar">
+                            <div class="brand-mark">
+                                <span class="brand-dot"></span>
+                                <span class="brand-text">LinkPeek Share Report</span>
+                            </div>
+                            <div class="topbar-meta">
+                                <a
+                                    class="icon-link project-link"
+                                    href="https://github.com/shigella520/LinkPeek"
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    aria-label="打开 LinkPeek 项目"
+                                    title="LinkPeek 项目"
+                                >
+                                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                                        <path d="M12 1.5C6.2 1.5 1.5 6.3 1.5 12.2c0 4.7 3 8.7 7.2 10.1.5.1.7-.2.7-.5v-1.9c-2.9.7-3.5-1.2-3.5-1.2-.5-1.2-1.1-1.5-1.1-1.5-.9-.6.1-.6.1-.6 1 .1 1.6 1 1.6 1 .9 1.5 2.3 1 2.8.8.1-.7.4-1 .6-1.3-2.3-.3-4.8-1.2-4.8-5.3 0-1.2.4-2.2 1-3-.1-.2-.4-1.3.1-2.8 0 0 .9-.3 3 .9a10.2 10.2 0 0 1 5.5 0c2.1-1.2 3-.9 3-.9.6 1.5.2 2.6.1 2.8.7.8 1 1.8 1 3 0 4.1-2.5 5-4.8 5.3.4.3.7.9.7 1.9v2.7c0 .3.2.7.7.5a10.7 10.7 0 0 0 7.2-10C22.5 6.3 17.8 1.5 12 1.5Z"/>
+                                    </svg>
+                                </a>
+                            </div>
+                        </header>
+
+                        <section class="report-hero">
+                            <div class="report-visual">
+                                <button type="button" class="report-image-button" data-report-image-open aria-label="查看分享图">
+                                    <img class="report-cover" src="%s" alt="%s">
+                                </button>
+                            </div>
+                            <div class="report-copy">
+                                <p class="eyebrow">Share Summary</p>
+                                <h1 data-reader-title>%s</h1>
+                                <p class="report-description" data-reader-description>%s</p>
+                                <section class="reader reader-audio" data-audio-reader data-audio-src="%s" data-audio-play-url="%s" %s aria-label="报告音频播放">
+                                    <audio data-audio-element preload="metadata" src="%s"></audio>
+                                    <div class="reader-main">
+                                        <button class="reader-play" type="button" data-audio-action="toggle" aria-label="播放"></button>
+                                        <div>
+                                            <div class="reader-status" data-audio-status>准备播放</div>
+                                            <div class="reader-progress" aria-hidden="true">
+                                                <span class="reader-progress-bar" data-audio-progress></span>
+                                            </div>
+                                        </div>
                                     </div>
-                                </div>
+                                </section>
+                                <section class="reader reader-system" data-reader hidden aria-label="报告朗读">
+                                    <div class="reader-main">
+                                        <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放"></button>
+                                        <div>
+                                            <div class="reader-status" data-reader-status>准备播放</div>
+                                            <div class="reader-progress" aria-hidden="true">
+                                                <span class="reader-progress-bar" data-reader-progress></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="reader-settings">
+                                        <label class="reader-control">
+                                            <span class="reader-control-label">语速</span>
+                                            <span class="reader-control-value">
+                                                <select data-reader-rate>
+                                                    <option value="1.0">1.0x</option>
+                                                    <option value="1.1">1.1x</option>
+                                                    <option value="1.2">1.2x</option>
+                                                    <option value="1.3">1.3x</option>
+                                                    <option value="1.4">1.4x</option>
+                                                    <option value="1.5">1.5x</option>
+                                                    <option value="1.8">1.8x</option>
+                                                    <option value="2.0">2.0x</option>
+                                                </select>
+                                                <span class="reader-control-meta" data-reader-rate-label></span>
+                                            </span>
+                                        </label>
+                                        <label class="reader-control reader-voice">
+                                            <span class="reader-control-label">音色</span>
+                                            <span class="reader-control-value">
+                                                <select data-reader-voice>
+                                                    <option value="">系统默认</option>
+                                                </select>
+                                                <span class="reader-control-meta" data-reader-voice-hint>系统默认</span>
+                                            </span>
+                                        </label>
+                                    </div>
+                                </section>
                             </div>
                         </section>
-                        <section class="reader reader-system" data-reader hidden aria-label="报告朗读">
-                            <div class="reader-main">
-                                <button class="reader-play" type="button" data-reader-action="toggle" aria-label="播放"></button>
-                                <div>
-                                    <div class="reader-status" data-reader-status>准备播放</div>
-                                    <div class="reader-progress" aria-hidden="true">
-                                        <span class="reader-progress-bar" data-reader-progress></span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="reader-settings">
-                                <label class="reader-control">
-                                    <span class="reader-control-label">语速</span>
-                                    <span class="reader-control-value">
-                                        <select data-reader-rate>
-                                            <option value="1.0">1.0x</option>
-                                            <option value="1.1">1.1x</option>
-                                            <option value="1.2">1.2x</option>
-                                            <option value="1.3">1.3x</option>
-                                            <option value="1.4">1.4x</option>
-                                            <option value="1.5">1.5x</option>
-                                            <option value="1.8">1.8x</option>
-                                            <option value="2.0">2.0x</option>
-                                        </select>
-                                        <span class="reader-control-meta" data-reader-rate-label></span>
-                                    </span>
-                                </label>
-                                <label class="reader-control reader-voice">
-                                    <span class="reader-control-label">音色</span>
-                                    <span class="reader-control-value">
-                                        <select data-reader-voice>
-                                            <option value="">系统默认</option>
-                                        </select>
-                                        <span class="reader-control-meta" data-reader-voice-hint>系统默认</span>
-                                    </span>
-                                </label>
-                            </div>
-                        </section>
-                        <article data-reader-content>%s</article>
-                    </main>
+                        <main class="report-main">
+                            <article class="content-card report-content" data-reader-content>%s</article>
+                        </main>
+                    </div>
+                    <div class="report-image-viewer" data-report-image-viewer role="dialog" aria-modal="true" aria-labelledby="report-image-viewer-title" hidden>
+                        <div class="report-image-viewer-chrome">
+                            <p id="report-image-viewer-title" data-report-image-title>分享图</p>
+                            <button type="button" class="report-image-viewer-close" data-report-image-close aria-label="关闭图片预览"></button>
+                        </div>
+                        <div class="report-image-viewer-stage">
+                            <img class="report-image-viewer-img" data-report-image alt="">
+                        </div>
+                    </div>
                     <script>
+                        (() => {
+                            const trigger = document.querySelector("[data-report-image-open]");
+                            const cover = document.querySelector(".report-cover");
+                            const viewer = document.querySelector("[data-report-image-viewer]");
+                            const image = document.querySelector("[data-report-image]");
+                            const title = document.querySelector("[data-report-image-title]");
+                            const closeButton = document.querySelector("[data-report-image-close]");
+
+                            if (!trigger || !cover || !viewer || !image || !closeButton) {
+                                return;
+                            }
+
+                            function openViewer() {
+                                image.src = cover.currentSrc || cover.src;
+                                image.alt = cover.alt || "分享图";
+                                title.textContent = cover.alt || "分享图";
+                                viewer.hidden = false;
+                                document.body.classList.add("report-image-viewer-open");
+                                updateViewerLayout();
+                                closeButton.focus({preventScroll: true});
+                            }
+
+                            function closeViewer() {
+                                viewer.hidden = true;
+                                image.removeAttribute("src");
+                                image.alt = "";
+                                document.body.classList.remove("report-image-viewer-open");
+                            }
+
+                            function updateViewerLayout() {
+                                if (viewer.hidden || !window.matchMedia("(max-width: 720px) and (orientation: portrait)").matches) {
+                                    return;
+                                }
+                                const stage = viewer.querySelector(".report-image-viewer-stage");
+                                if (!stage) {
+                                    return;
+                                }
+                                const stageRect = stage.getBoundingClientRect();
+                                if (!stageRect.width || !stageRect.height) {
+                                    return;
+                                }
+                                const imageWidth = Math.min(stageRect.height, stageRect.width * 1200 / 630);
+                                stage.style.setProperty("--report-image-viewer-mobile-width", `${Math.floor(imageWidth)}px`);
+                            }
+
+                            trigger.addEventListener("click", openViewer);
+                            image.addEventListener("load", updateViewerLayout);
+                            window.addEventListener("resize", updateViewerLayout);
+                            closeButton.addEventListener("click", closeViewer);
+                            viewer.addEventListener("click", (event) => {
+                                if (event.target === viewer) {
+                                    closeViewer();
+                                }
+                            });
+                            document.addEventListener("keydown", (event) => {
+                                if (event.key === "Escape" && !viewer.hidden) {
+                                    closeViewer();
+                                }
+                            });
+                        })();
+
                         (() => {
                             const audioRoot = document.querySelector("[data-audio-reader]");
                             const systemRoot = document.querySelector("[data-reader]");
@@ -219,6 +466,7 @@ public class ShareSummaryPublicController {
                                 const action = audioRoot.querySelector('[data-audio-action="toggle"]');
                                 const status = audioRoot.querySelector("[data-audio-status]");
                                 const progress = audioRoot.querySelector("[data-audio-progress]");
+                                let playRecordedForCurrentPlayback = false;
                                 audioRoot.hidden = false;
 
                                 function setAudioStatus(message, playing) {
@@ -233,10 +481,26 @@ public class ShareSummaryPublicController {
                                     progress.style.width = `${percent}%%`;
                                 }
 
+                                function recordAudioPlay() {
+                                    const playUrl = audioRoot.dataset.audioPlayUrl;
+                                    if (playRecordedForCurrentPlayback || !playUrl) {
+                                        return;
+                                    }
+                                    playRecordedForCurrentPlayback = true;
+                                    fetch(playUrl, {
+                                        method: "POST",
+                                        credentials: "same-origin",
+                                        keepalive: true
+                                    }).catch(() => {
+                                        // Playback should not depend on analytics delivery.
+                                    });
+                                }
+
                                 action.addEventListener("click", async () => {
                                     if (audio.paused) {
                                         try {
                                             await audio.play();
+                                            recordAudioPlay();
                                         } catch (error) {
                                             audioRoot.hidden = true;
                                             enableSystemReader();
@@ -245,10 +509,11 @@ public class ShareSummaryPublicController {
                                         audio.pause();
                                     }
                                 });
-                                audio.addEventListener("play", () => setAudioStatus("服务端语音播放中", true));
+                                audio.addEventListener("play", () => setAudioStatus("正在播放", true));
                                 audio.addEventListener("pause", () => setAudioStatus(audio.ended ? "播放完成" : "已暂停", false));
                                 audio.addEventListener("ended", () => {
                                     updateAudioProgress();
+                                    playRecordedForCurrentPlayback = false;
                                     setAudioStatus("播放完成", false);
                                 });
                                 audio.addEventListener("timeupdate", updateAudioProgress);
@@ -568,13 +833,79 @@ public class ShareSummaryPublicController {
                 escapeHtml(title),
                 escapeHtml(description),
                 escapeAttribute(audioUrl),
+                escapeAttribute(audioPlayUrl),
                 hasAudio ? "" : "hidden",
                 escapeAttribute(audioUrl),
                 ShareSummaryMarkdownRenderer.toHtml(report)
         );
     }
 
-    private String audioMeta(String audioUrl) {
+    private void logAudioRequest(
+            HttpServletRequest request,
+            String publicToken,
+            String ext,
+            ShareSummaryAudioService.PublicAudio audio
+    ) {
+        log.info(
+                "share_summary_public_audio_request tokenSuffix={} ext={} mediaType={} contentLength={} range={} ifRange={} userAgent={} referer={} accept={} forwardedFor={} realIp={} remoteAddr={}",
+                tokenSuffix(publicToken),
+                ext,
+                audio.mediaType(),
+                contentLength(audio.resource()),
+                header(request, "Range"),
+                header(request, "If-Range"),
+                header(request, "User-Agent"),
+                header(request, "Referer"),
+                header(request, "Accept"),
+                header(request, "X-Forwarded-For"),
+                header(request, "X-Real-IP"),
+                request.getRemoteAddr()
+        );
+    }
+
+    private void logAudioRequestNotFound(
+            HttpServletRequest request,
+            String publicToken,
+            String ext,
+            IllegalArgumentException exception
+    ) {
+        log.info(
+                "share_summary_public_audio_not_found tokenSuffix={} ext={} range={} userAgent={} referer={} accept={} forwardedFor={} realIp={} remoteAddr={} message={}",
+                tokenSuffix(publicToken),
+                ext,
+                header(request, "Range"),
+                header(request, "User-Agent"),
+                header(request, "Referer"),
+                header(request, "Accept"),
+                header(request, "X-Forwarded-For"),
+                header(request, "X-Real-IP"),
+                request.getRemoteAddr(),
+                exception.getMessage()
+        );
+    }
+
+    private long contentLength(Resource resource) {
+        try {
+            return resource.contentLength();
+        } catch (IOException exception) {
+            return -1L;
+        }
+    }
+
+    private String header(HttpServletRequest request, String name) {
+        String value = request.getHeader(name);
+        return StringUtils.hasText(value) ? value : "-";
+    }
+
+    private String tokenSuffix(String publicToken) {
+        if (!StringUtils.hasText(publicToken)) {
+            return "-";
+        }
+        String value = publicToken.strip();
+        return value.length() <= 8 ? value : value.substring(value.length() - 8);
+    }
+
+    private String audioMeta(String audioUrl, String audioMediaType) {
         if (!StringUtils.hasText(audioUrl)) {
             return "";
         }
@@ -582,15 +913,15 @@ public class ShareSummaryPublicController {
         return """
                 <meta property="og:audio" content="%s">
                     <meta property="og:audio:secure_url" content="%s">
-                    <meta property="og:audio:type" content="audio/mpeg">""".formatted(
+                    <meta property="og:audio:type" content="%s">""".formatted(
                 escapedAudioUrl,
-                escapedAudioUrl
+                escapedAudioUrl,
+                escapeAttribute(audioMediaType)
         );
     }
 
-    private String audioUrl(long runId) {
-        ShareSummaryAudioService.AudioSummary summary = shareSummaryAudioService.audioSummary(runId);
-        return summary == null ? "" : summary.audioUrl();
+    private ShareSummaryAudioService.AudioSummary audioSummary(long runId) {
+        return shareSummaryAudioService.audioSummary(runId);
     }
 
     private String escapeHtml(String value) {

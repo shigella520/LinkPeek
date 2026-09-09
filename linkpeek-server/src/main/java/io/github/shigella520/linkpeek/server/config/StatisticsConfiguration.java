@@ -81,6 +81,7 @@ public class StatisticsConfiguration {
             ensureColumn(jdbcTemplate, "stats_event", "ai_duration_ms", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "stats_event", "crawl_duration_ms", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "ai_provider", "request_timeout_seconds", "INTEGER NOT NULL DEFAULT 45");
+            deleteLegacyAiProviderTimeoutDowngradeConfig(jdbcTemplate);
             rebuildShareSummaryTablesWithoutDayOfMonth(jdbcTemplate);
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted_at", "INTEGER");
@@ -174,6 +175,7 @@ public class StatisticsConfiguration {
                         text_snapshot TEXT NOT NULL,
                         storage_key TEXT,
                         audio_url TEXT,
+                        play_count INTEGER NOT NULL DEFAULT 0,
                         raw_response_snapshot TEXT,
                         error_message TEXT,
                         duration_ms INTEGER NOT NULL DEFAULT 0,
@@ -185,6 +187,7 @@ public class StatisticsConfiguration {
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_run_id ON share_summary_audio (run_id)");
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_status ON share_summary_audio (status)");
             jdbcTemplate.execute("CREATE INDEX IF NOT EXISTS idx_share_summary_audio_created_at ON share_summary_audio (created_at)");
+            ensureColumn(jdbcTemplate, "share_summary_audio", "play_count", "INTEGER NOT NULL DEFAULT 0");
             ensureNotificationTables(jdbcTemplate);
         }
 
@@ -260,6 +263,14 @@ public class StatisticsConfiguration {
             if (!tableExists(jdbcTemplate, tableName)) {
                 jdbcTemplate.execute(createSql);
             }
+        }
+
+        private void deleteLegacyAiProviderTimeoutDowngradeConfig(JdbcTemplate jdbcTemplate) {
+            jdbcTemplate.update("""
+                    DELETE FROM provider_config
+                    WHERE provider_id = 'ai_provider'
+                      AND config_key = 'auto_downgrade_timeout_threshold'
+                    """);
         }
 
         private void rebuildShareSummaryTablesWithoutDayOfMonth(JdbcTemplate jdbcTemplate) {

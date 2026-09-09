@@ -8,6 +8,7 @@ import io.github.shigella520.linkpeek.core.media.ThumbnailBadgeRenderer;
 import io.github.shigella520.linkpeek.core.model.ContentType;
 import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
 import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
+import io.github.shigella520.linkpeek.core.util.PreviewRawContentFormatter;
 import io.github.shigella520.linkpeek.core.util.UrlNormalizer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +28,7 @@ import java.time.Duration;
 import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.function.BooleanSupplier;
 import java.util.zip.GZIPInputStream;
 
 import javax.net.ssl.SSLHandshakeException;
@@ -37,12 +39,14 @@ public class BilibiliPreviewProvider implements PreviewProvider {
     private static final Pattern BV_PATTERN = Pattern.compile("(BV[0-9A-Za-z]{10})");
     private static final String REFERER = "https://www.bilibili.com";
     private static final String SITE_NAME = "Bilibili";
+    private static final int MAX_RAW_CONTENT_LENGTH = 12_000;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final URI apiBaseUri;
     private final Duration requestTimeout;
     private final String userAgent;
+    private final BooleanSupplier aiTitleEnabledSupplier;
 
     public BilibiliPreviewProvider(
             HttpClient httpClient,
@@ -51,11 +55,23 @@ public class BilibiliPreviewProvider implements PreviewProvider {
             Duration requestTimeout,
             String userAgent
     ) {
+        this(httpClient, objectMapper, apiBaseUri, requestTimeout, userAgent, () -> true);
+    }
+
+    public BilibiliPreviewProvider(
+            HttpClient httpClient,
+            ObjectMapper objectMapper,
+            URI apiBaseUri,
+            Duration requestTimeout,
+            String userAgent,
+            BooleanSupplier aiTitleEnabledSupplier
+    ) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
         this.apiBaseUri = apiBaseUri;
         this.requestTimeout = requestTimeout;
         this.userAgent = userAgent;
+        this.aiTitleEnabledSupplier = aiTitleEnabledSupplier == null ? () -> true : aiTitleEnabledSupplier;
     }
 
     @Override
@@ -126,17 +142,20 @@ public class BilibiliPreviewProvider implements PreviewProvider {
 
                 JsonNode data = payload.path("data");
                 JsonNode dimension = data.path("dimension");
+                String title = displayTitle(data);
+                String description = data.path("desc").asText("");
                 return new PreviewMetadata(
                         UrlNormalizer.normalizeHttpUrl(sourceUrl).toString(),
                         canonicalUrl.toString(),
                         getId(),
-                        displayTitle(data),
-                        data.path("desc").asText(""),
+                        title,
+                        description,
                         SITE_NAME,
                         data.path("pic").asText(),
                         dimension.path("width").asInt(1920),
                         dimension.path("height").asInt(1080),
-                        ContentType.VIDEO
+                        ContentType.VIDEO,
+                        buildRawContent(title, description)
                 );
             } catch (IOException | RuntimeException exception) {
                 log.warn(
@@ -165,6 +184,20 @@ public class BilibiliPreviewProvider implements PreviewProvider {
         }
     }
 
+    @Override
+    public PreviewMetadata enrichForAiTitle(PreviewMetadata metadata, URI sourceUrl) {
+        if (metadata == null || !metadata.rawContent().isBlank()) {
+            return metadata;
+        }
+        String rawContent = buildRawContent(metadata.title(), metadata.description());
+        return rawContent.isBlank() ? metadata : withRawContent(metadata, rawContent);
+    }
+
+    @Override
+    public boolean supportsAiTitle(PreviewMetadata metadata) {
+        return aiTitleEnabledSupplier.getAsBoolean() && metadata != null && !metadata.rawContent().isBlank();
+    }
+
     private String displayTitle(JsonNode data) {
         String title = data.path("title").asText("").strip();
         String ownerName = data.path("owner").path("name").asText("").strip();
@@ -172,6 +205,26 @@ public class BilibiliPreviewProvider implements PreviewProvider {
             return title;
         }
         return ownerName + "：" + title;
+    }
+
+    private String buildRawContent(String title, String description) {
+        return PreviewRawContentFormatter.format(title, description, java.util.List.of(), MAX_RAW_CONTENT_LENGTH);
+    }
+
+    private PreviewMetadata withRawContent(PreviewMetadata metadata, String rawContent) {
+        return new PreviewMetadata(
+                metadata.sourceUrl(),
+                metadata.canonicalUrl(),
+                metadata.providerId(),
+                metadata.title(),
+                metadata.description(),
+                metadata.siteName(),
+                metadata.thumbnailUrl(),
+                metadata.imageWidth(),
+                metadata.imageHeight(),
+                metadata.contentType(),
+                rawContent
+        );
     }
 
     @Override

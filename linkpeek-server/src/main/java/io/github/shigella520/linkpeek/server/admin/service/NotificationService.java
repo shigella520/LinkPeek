@@ -3,20 +3,27 @@ package io.github.shigella520.linkpeek.server.admin.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationChannelRecord;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryStatus;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationEventType;
 import io.github.shigella520.linkpeek.server.admin.model.NotificationTaskRecord;
+import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.persistence.NotificationMapper;
+import io.github.shigella520.linkpeek.server.ai.AiProviderAutoDowngradedEvent;
+import io.github.shigella520.linkpeek.server.ai.AiProviderRequestFailedEvent;
 import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
+import io.github.shigella520.linkpeek.server.notification.DataCrawlRequestFailedEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.util.StringUtils;
 
 import javax.crypto.Mac;
@@ -42,6 +49,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 @Service
 public class NotificationService {
@@ -55,6 +64,7 @@ public class NotificationService {
     private static final int MAX_PAGE_SIZE = 100;
     private static final int SNAPSHOT_LIMIT = 8_000;
     private static final int ERROR_LIMIT = 500;
+    private static final int DATABASE_WRITE_ATTEMPTS = 5;
     private static final String DEFAULT_CHANNEL_BODY_TEMPLATE = "{{message.bodyJson}}";
     private static final Set<String> BLOCKED_HEADERS = Set.of(
             "host",
@@ -266,10 +276,111 @@ public class NotificationService {
         NotificationEventType eventType = NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS;
         long occurredAt = now();
         String eventKey = eventType.name() + ":" + image.getId();
-        Map<String, Object> values = shareSummaryImageValues(eventType, eventKey, occurredAt, run, image);
-        for (NotificationTaskRecord task : notificationMapper.selectEnabledTasksByEventType(eventType.name())) {
+        Map<String, Object> values = shareSummaryImageValues(run, image);
+        publishEvent(eventType, eventKey, occurredAt, values, task -> matches(task, run));
+    }
+
+    public void publishShareSummaryImageFailed(ShareSummaryRunRecord run, ShareSummaryImageRecord image) {
+        publishShareSummaryImageFailed(run, image, "", image == null ? "" : image.getErrorMessage());
+    }
+
+    public void publishShareSummaryImageFailed(ShareSummaryRunRecord run, ShareSummaryImageRecord image, String errorType, String errorMessage) {
+        if (run == null || image == null || image.getId() == null) {
+            return;
+        }
+        NotificationEventType eventType = NotificationEventType.SHARE_SUMMARY_IMAGE_FAILED;
+        long occurredAt = now();
+        String eventKey = eventType.name() + ":" + image.getId();
+        Map<String, Object> values = shareSummaryImageValues(run, image);
+        values.put("error.type", errorValue(errorType, "ImageGenerationException"));
+        values.put("error.message", errorValue(errorMessage, "Image generation failed."));
+        publishEvent(eventType, eventKey, occurredAt, values);
+    }
+
+    public void publishShareSummaryAudioFailed(ShareSummaryRunRecord run, ShareSummaryAudioRecord audio) {
+        publishShareSummaryAudioFailed(run, audio, "", audio == null ? "" : audio.getErrorMessage());
+    }
+
+    public void publishShareSummaryAudioFailed(ShareSummaryRunRecord run, ShareSummaryAudioRecord audio, String errorType, String errorMessage) {
+        if (run == null || audio == null || audio.getId() == null) {
+            return;
+        }
+        NotificationEventType eventType = NotificationEventType.SHARE_SUMMARY_AUDIO_FAILED;
+        long occurredAt = now();
+        String eventKey = eventType.name() + ":" + audio.getId();
+        Map<String, Object> values = shareSummaryRunValues(run);
+        values.putAll(shareSummaryAudioValues(audio));
+        values.put("error.type", errorValue(errorType, "AudioGenerationException"));
+        values.put("error.message", errorValue(errorMessage, "Audio generation failed."));
+        publishEvent(eventType, eventKey, occurredAt, values);
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void publishAiProviderRequestFailed(AiProviderRequestFailedEvent event) {
+        if (event == null || event.provider() == null || event.provider().getId() == null) {
+            return;
+        }
+        NotificationEventType eventType = NotificationEventType.AI_PROVIDER_REQUEST_FAILED;
+        long occurredAt = now();
+        String eventKey = eventType.name() + ":" + event.provider().getId() + ":" + occurredAt;
+        submitEventPublish(eventType, eventKey, () -> publishEvent(eventType, eventKey, occurredAt, aiProviderRequestFailedValues(event)));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void publishAiProviderAutoDowngraded(AiProviderAutoDowngradedEvent event) {
+        if (event == null || event.provider() == null || event.provider().getId() == null) {
+            return;
+        }
+        NotificationEventType eventType = NotificationEventType.AI_PROVIDER_AUTO_DOWNGRADED;
+        long occurredAt = now();
+        String eventKey = eventType.name() + ":" + event.provider().getId() + ":" + occurredAt;
+        submitEventPublish(eventType, eventKey, () -> publishEvent(eventType, eventKey, occurredAt, aiProviderAutoDowngradedValues(event)));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void publishDataCrawlRequestFailed(DataCrawlRequestFailedEvent event) {
+        if (event == null || !StringUtils.hasText(event.previewKey())) {
+            return;
+        }
+        NotificationEventType eventType = NotificationEventType.DATA_CRAWL_REQUEST_FAILED;
+        long occurredAt = now();
+        String eventKey = eventType.name() + ":" + event.previewKey() + ":" + occurredAt;
+        submitEventPublish(eventType, eventKey, () -> publishEvent(eventType, eventKey, occurredAt, dataCrawlRequestFailedValues(event)));
+    }
+
+    public void publishEvent(NotificationEventType eventType, String eventKey, Map<String, Object> values) {
+        publishEvent(eventType, eventKey, now(), values);
+    }
+
+    private void publishEvent(
+            NotificationEventType eventType,
+            String eventKey,
+            long occurredAt,
+            Map<String, Object> values
+    ) {
+        publishEvent(eventType, eventKey, occurredAt, values, ignored -> true);
+    }
+
+    private void publishEvent(
+            NotificationEventType eventType,
+            String eventKey,
+            long occurredAt,
+            Map<String, Object> eventValues,
+            Predicate<NotificationTaskRecord> taskFilter
+    ) {
+        Map<String, Object> values = eventValues(eventType, eventKey, occurredAt);
+        if (eventValues != null) {
+            values.putAll(eventValues);
+        }
+        List<NotificationTaskRecord> tasks = notificationMapper.selectEnabledTasksByEventType(eventType.name());
+        if (tasks.isEmpty()) {
+            log.info("notification_event_skipped_no_enabled_tasks eventType={} eventKey={}", eventType.name(), eventKey);
+            return;
+        }
+        log.info("notification_event_publish eventType={} eventKey={} taskCount={}", eventType.name(), eventKey, tasks.size());
+        for (NotificationTaskRecord task : tasks) {
             try {
-                if (!matches(task, run)) {
+                if (!taskFilter.test(task)) {
                     continue;
                 }
                 publishTask(eventType, eventKey, occurredAt, values, task);
@@ -287,7 +398,12 @@ public class NotificationService {
             NotificationTaskRecord task
     ) {
         String messageBody = templateService.render(eventType, task.getTemplateJson(), values);
-        for (NotificationChannelRecord channel : notificationMapper.selectEnabledChannelsForTask(task.getId())) {
+        List<NotificationChannelRecord> channels = notificationMapper.selectEnabledChannelsForTask(task.getId());
+        if (channels.isEmpty()) {
+            log.info("notification_task_skipped_no_enabled_channels taskId={} eventType={} eventKey={}", task.getId(), eventType.name(), eventKey);
+            return;
+        }
+        for (NotificationChannelRecord channel : channels) {
             String body = templateService.renderChannelBody(channel.getBodyTemplate(), messageBody);
             NotificationDeliveryRecord delivery = new NotificationDeliveryRecord();
             delivery.setEventType(eventType.name());
@@ -303,8 +419,27 @@ public class NotificationService {
             delivery.setRequestBodySnapshot(limit(body, SNAPSHOT_LIMIT));
             delivery.setDurationMs(0);
             delivery.setCreatedAt(now());
-            notificationMapper.insertDelivery(delivery);
+            databaseWrite(() -> {
+                notificationMapper.insertDelivery(delivery);
+                return null;
+            });
+            log.info(
+                    "notification_delivery_created deliveryId={} eventType={} eventKey={} taskId={} channelId={}",
+                    delivery.getId(),
+                    eventType.name(),
+                    eventKey,
+                    task.getId(),
+                    channel.getId()
+            );
             submitDelivery(delivery.getId(), channel, eventType.name(), occurredAt, body);
+        }
+    }
+
+    private void submitEventPublish(NotificationEventType eventType, String eventKey, Runnable publishTask) {
+        try {
+            executor.execute(publishTask);
+        } catch (RejectedExecutionException exception) {
+            log.warn("notification_event_publish_rejected eventType={} eventKey={} message={}", eventType.name(), eventKey, exception.getMessage(), exception);
         }
     }
 
@@ -317,7 +452,7 @@ public class NotificationService {
                 delivery.setStatus(NotificationDeliveryStatus.FAILED.name());
                 delivery.setErrorMessage("NOTIFICATION_QUEUE_FULL");
                 delivery.setFinishedAt(now());
-                notificationMapper.updateDelivery(delivery);
+                databaseWrite(() -> notificationMapper.updateDelivery(delivery));
             }
         }
     }
@@ -345,7 +480,35 @@ public class NotificationService {
         delivery.setErrorMessage(result == null ? "Webhook delivery failed." : limit(result.errorMessage(), ERROR_LIMIT));
         delivery.setDurationMs(result == null ? 0 : result.durationMs());
         delivery.setFinishedAt(now());
-        notificationMapper.updateDelivery(delivery);
+        databaseWrite(() -> notificationMapper.updateDelivery(delivery));
+    }
+
+    private <T> T databaseWrite(Supplier<T> writeOperation) {
+        RuntimeException lastException = null;
+        for (int attempt = 1; attempt <= DATABASE_WRITE_ATTEMPTS; attempt++) {
+            try {
+                return writeOperation.get();
+            } catch (RuntimeException exception) {
+                if (!isDatabaseBusy(exception) || attempt == DATABASE_WRITE_ATTEMPTS) {
+                    throw exception;
+                }
+                lastException = exception;
+                sleepBeforeDatabaseRetry(attempt);
+            }
+        }
+        throw lastException == null ? new IllegalStateException("Database write failed.") : lastException;
+    }
+
+    private boolean isDatabaseBusy(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null && (message.contains("SQLITE_BUSY") || message.contains("database is locked"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private SendResult sendWebhook(NotificationChannelRecord channel, String eventType, long occurredAt, String body) {
@@ -451,34 +614,19 @@ public class NotificationService {
         return allowed == null || allowed.isEmpty() || allowed.contains(value);
     }
 
-    private Map<String, Object> shareSummaryImageValues(
-            NotificationEventType eventType,
-            String eventKey,
-            long occurredAt,
-            ShareSummaryRunRecord run,
-            ShareSummaryImageRecord image
-    ) {
+    private Map<String, Object> eventValues(NotificationEventType eventType, String eventKey, long occurredAt) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("event.type", eventType.name());
         values.put("event.key", eventKey);
         values.put("event.occurredAt", occurredAt);
         values.put("event.occurredAtIso", Instant.ofEpochMilli(occurredAt).toString());
-        values.put("run.id", run.getId());
-        values.put("run.taskId", run.getTaskId());
-        values.put("run.taskName", run.getTaskName());
-        values.put("run.triggerType", run.getTriggerType());
-        values.put("run.periodType", run.getPeriodType());
-        values.put("run.windowStart", run.getWindowStart());
-        values.put("run.windowEnd", run.getWindowEnd());
-        values.put("run.windowStartLabel", dateLabel(run.getWindowStart()));
-        values.put("run.windowEndLabel", dateLabel(run.getWindowEnd()));
-        values.put("run.status", run.getStatus());
-        values.put("run.linkCount", run.getLinkCount());
-        values.put("run.uniqueLinkCount", run.getUniqueLinkCount());
-        values.put("run.inputLinkCount", run.getInputLinkCount());
-        values.put("run.aiProviderNames", run.getAiProviderNames());
-        values.put("run.aiDurationMs", run.getAiDurationMs());
-        values.put("run.report", run.getReport());
+        values.put("system.baseUrl", baseUrl());
+        values.put("system.appName", "LinkPeek");
+        return values;
+    }
+
+    private Map<String, Object> shareSummaryImageValues(ShareSummaryRunRecord run, ShareSummaryImageRecord image) {
+        Map<String, Object> values = shareSummaryRunValues(run);
         values.put("image.id", image.getId());
         values.put("image.runId", image.getRunId());
         values.put("image.attemptNo", image.getAttemptNo());
@@ -498,8 +646,107 @@ public class NotificationService {
         values.put("image.createdAt", image.getCreatedAt());
         values.put("image.startedAt", image.getStartedAt());
         values.put("image.finishedAt", image.getFinishedAt());
-        values.put("system.baseUrl", baseUrl());
-        values.put("system.appName", "LinkPeek");
+        values.put("image.errorMessage", optionalStrip(image.getErrorMessage()));
+        return values;
+    }
+
+    private Map<String, Object> shareSummaryRunValues(ShareSummaryRunRecord run) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("run.id", run.getId());
+        values.put("run.taskId", run.getTaskId());
+        values.put("run.taskName", run.getTaskName());
+        values.put("run.triggerType", run.getTriggerType());
+        values.put("run.periodType", run.getPeriodType());
+        values.put("run.windowStart", run.getWindowStart());
+        values.put("run.windowEnd", run.getWindowEnd());
+        values.put("run.windowStartLabel", dateLabel(run.getWindowStart()));
+        values.put("run.windowEndLabel", dateLabel(run.getWindowEnd()));
+        values.put("run.status", run.getStatus());
+        values.put("run.linkCount", run.getLinkCount());
+        values.put("run.uniqueLinkCount", run.getUniqueLinkCount());
+        values.put("run.inputLinkCount", run.getInputLinkCount());
+        values.put("run.aiProviderNames", run.getAiProviderNames());
+        values.put("run.aiDurationMs", run.getAiDurationMs());
+        values.put("run.report", run.getReport());
+        return values;
+    }
+
+    private Map<String, Object> shareSummaryAudioValues(ShareSummaryAudioRecord audio) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("audio.id", audio.getId());
+        values.put("audio.runId", audio.getRunId());
+        values.put("audio.attemptNo", audio.getAttemptNo());
+        values.put("audio.status", audio.getStatus());
+        values.put("audio.providerType", audio.getProviderType());
+        values.put("audio.model", audio.getModel());
+        values.put("audio.voice", audio.getVoice());
+        values.put("audio.speed", audio.getSpeed());
+        values.put("audio.pitch", audio.getPitch());
+        values.put("audio.style", audio.getStyle());
+        values.put("audio.outputFormat", audio.getOutputFormat());
+        values.put("audio.audioUrl", audio.getAudioUrl());
+        values.put("audio.durationMs", audio.getDurationMs());
+        values.put("audio.createdAt", audio.getCreatedAt());
+        values.put("audio.startedAt", audio.getStartedAt());
+        values.put("audio.finishedAt", audio.getFinishedAt());
+        values.put("audio.errorMessage", optionalStrip(audio.getErrorMessage()));
+        return values;
+    }
+
+    private Map<String, Object> aiProviderRequestFailedValues(AiProviderRequestFailedEvent event) {
+        Map<String, Object> values = aiProviderValues(event.provider());
+        values.put("request.operation", optionalStrip(event.operation()));
+        values.put("request.durationMs", event.durationMs());
+        values.put("error.type", errorValue(event.errorType(), "AiProviderException"));
+        values.put("error.message", errorValue(event.errorMessage(), "AI Provider request failed."));
+        values.put("downgrade.enabled", event.downgradeEnabled());
+        values.put("downgrade.failureCount", event.failureCount());
+        values.put("downgrade.failureThreshold", event.failureThreshold());
+        values.put("downgrade.triggered", event.downgradeTriggered());
+        return values;
+    }
+
+    private Map<String, Object> aiProviderAutoDowngradedValues(AiProviderAutoDowngradedEvent event) {
+        Map<String, Object> values = aiProviderValues(event.provider());
+        values.put("request.operation", optionalStrip(event.operation()));
+        values.put("request.durationMs", event.durationMs());
+        values.put("error.type", errorValue(event.errorType(), "AiProviderException"));
+        values.put("error.message", errorValue(event.errorMessage(), "AI Provider request failed."));
+        values.put("downgrade.failureCount", event.failureCount());
+        values.put("downgrade.failureThreshold", event.failureThreshold());
+        values.put("downgrade.oldSortOrder", event.oldSortOrder());
+        values.put("downgrade.newSortOrder", event.newSortOrder());
+        values.put("downgrade.alreadyLowest", event.alreadyLowest());
+        values.put("downgrade.providerCount", event.providerCount());
+        return values;
+    }
+
+    private Map<String, Object> aiProviderValues(AiProviderRecord provider) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("provider.id", provider.getId());
+        values.put("provider.name", provider.getName());
+        values.put("provider.enabled", provider.isEnabled());
+        values.put("provider.sortOrder", provider.getSortOrder());
+        values.put("provider.baseUrl", provider.getBaseUrl());
+        values.put("provider.apiKind", provider.getApiKind());
+        values.put("provider.model", provider.getModel());
+        values.put("provider.requestTimeoutSeconds", provider.getRequestTimeoutSeconds());
+        return values;
+    }
+
+    private Map<String, Object> dataCrawlRequestFailedValues(DataCrawlRequestFailedEvent event) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("preview.previewKey", event.previewKey());
+        values.put("preview.providerId", event.providerId());
+        values.put("preview.sourceUrl", event.sourceUrl());
+        values.put("preview.canonicalUrl", event.canonicalUrl());
+        values.put("request.clientType", event.clientType());
+        values.put("request.httpStatus", event.httpStatus());
+        values.put("request.durationMs", event.durationMs());
+        values.put("request.requestedStyle", event.requestedStyle());
+        values.put("error.code", event.errorCode());
+        values.put("error.type", errorValue(event.errorType(), "DataCrawlException"));
+        values.put("error.message", errorValue(event.errorMessage(), "Data crawl request failed."));
         return values;
     }
 
@@ -534,7 +781,7 @@ public class NotificationService {
         task.setName(required(request.name(), "Task name"));
         task.setEnabled(request.enabled() == null ? existing == null || existing.isEnabled() : request.enabled());
         task.setEventType(eventType.name());
-        task.setFiltersJson(normalizeFilters(request.filters()));
+        task.setFiltersJson(normalizeFilters(eventType, request.filters()));
         task.setTemplateJson(templateService.normalizeTemplate(eventType, request.templateJson()));
         return new NormalizedTask(task, channelIds);
     }
@@ -630,6 +877,10 @@ public class NotificationService {
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException("Notification filters must be valid JSON.", exception);
         }
+    }
+
+    private String normalizeFilters(NotificationEventType eventType, JsonNode filters) {
+        return normalizeFilters(eventType == NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS ? filters : null);
     }
 
     private Filters filters(String filtersJson) {
@@ -743,6 +994,10 @@ public class NotificationService {
         return StringUtils.hasText(value) ? value.strip() : "";
     }
 
+    private String errorValue(String value, String fallback) {
+        return StringUtils.hasText(value) ? value.strip() : fallback;
+    }
+
     private String dateLabel(long millis) {
         ZoneId zone = clock.getZone();
         return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate().format(DATE_FORMATTER);
@@ -784,6 +1039,15 @@ public class NotificationService {
             });
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
+        }
+    }
+
+    private void sleepBeforeDatabaseRetry(int attempt) {
+        try {
+            Thread.sleep(25L * attempt);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while retrying database write.", exception);
         }
     }
 

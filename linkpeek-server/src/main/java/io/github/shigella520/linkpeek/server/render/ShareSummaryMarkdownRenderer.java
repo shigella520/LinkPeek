@@ -16,6 +16,7 @@ public final class ShareSummaryMarkdownRenderer {
     private static final Pattern ANCHOR = Pattern.compile("<a\\b[^>]*>.*?</a>");
     private static final Pattern ORDERED_LIST_ITEM = Pattern.compile("^\\d+[.)]\\s+(.+)$");
     private static final Pattern HEADING = Pattern.compile("^(#{1,6})\\s+(.+)$");
+    private static final Pattern THEMATIC_BREAK = Pattern.compile("^(?:(?:-\\s*){3,}|(?:\\*\\s*){3,}|(?:_\\s*){3,})$");
 
     private ShareSummaryMarkdownRenderer() {
     }
@@ -49,6 +50,12 @@ public final class ShareSummaryMarkdownRenderer {
             if (trimmed.isEmpty()) {
                 flushHtmlParagraph(blocks, paragraph);
                 flushHtmlList(blocks, listItems);
+                continue;
+            }
+            if (THEMATIC_BREAK.matcher(trimmed).matches()) {
+                flushHtmlParagraph(blocks, paragraph);
+                flushHtmlList(blocks, listItems);
+                blocks.add("<hr>");
                 continue;
             }
             Matcher heading = HEADING.matcher(trimmed);
@@ -108,6 +115,11 @@ public final class ShareSummaryMarkdownRenderer {
                 continue;
             }
             if (trimmed.isEmpty()) {
+                flushTextParagraph(blocks, paragraph);
+                flushTextList(blocks, listItems);
+                continue;
+            }
+            if (THEMATIC_BREAK.matcher(trimmed).matches()) {
                 flushTextParagraph(blocks, paragraph);
                 flushTextList(blocks, listItems);
                 continue;

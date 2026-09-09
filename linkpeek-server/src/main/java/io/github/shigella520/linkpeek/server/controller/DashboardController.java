@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit;
 
 @Controller
 public class DashboardController {
-    private static final Resource DEFAULT_FAVICON = new ClassPathResource("static/dashboard/DefaultIcon.svg");
+    private static final Resource DEFAULT_FAVICON = new ClassPathResource("static/dashboard/favicon.svg");
 
     private final LinkPeekProperties linkPeekProperties;
     private final AdminAuthService adminAuthService;

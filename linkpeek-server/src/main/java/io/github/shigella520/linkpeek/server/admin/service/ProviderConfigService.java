@@ -16,11 +16,14 @@ import java.util.TreeMap;
 
 @Service
 public class ProviderConfigService {
+    public static final String PROVIDER_BILIBILI = "bilibili";
     public static final String PROVIDER_LINUXDO = "linuxdo";
     public static final String PROVIDER_NGA = "nga";
+    public static final String BILIBILI_AI_TITLE_ENABLED = "ai_title_enabled";
     public static final String NGA_PASSPORT_UID = "NGA_PASSPORT_UID";
     public static final String NGA_PASSPORT_CID = "NGA_PASSPORT_CID";
     public static final List<String> LINUXDO_COOKIE_KEYS = List.of("_t", "cf_clearance", "_forum_session");
+    public static final String LINUXDO_COOKIE_ENABLED_SUFFIX = "_enabled";
 
     private final ProviderConfigMapper providerConfigMapper;
     private final Clock clock;
@@ -36,7 +39,12 @@ public class ProviderConfigService {
             grouped.computeIfAbsent(record.getProviderId(), ignored -> new TreeMap<>())
                     .put(record.getConfigKey(), record.getConfigValue());
         }
-        grouped.computeIfAbsent(PROVIDER_LINUXDO, ignored -> new TreeMap<>());
+        grouped.computeIfAbsent(PROVIDER_BILIBILI, ignored -> new TreeMap<>())
+                .putIfAbsent(BILIBILI_AI_TITLE_ENABLED, Boolean.TRUE.toString());
+        Map<String, String> linuxDoConfigs = grouped.computeIfAbsent(PROVIDER_LINUXDO, ignored -> new TreeMap<>());
+        for (String cookieKey : LINUXDO_COOKIE_KEYS) {
+            linuxDoConfigs.putIfAbsent(linuxDoCookieEnabledKey(cookieKey), Boolean.TRUE.toString());
+        }
         grouped.computeIfAbsent(PROVIDER_NGA, ignored -> new TreeMap<>());
         return grouped;
     }
@@ -79,10 +87,14 @@ public class ProviderConfigService {
 
         Map<String, String> ordered = new LinkedHashMap<>();
         for (String key : LINUXDO_COOKIE_KEYS) {
-            ordered.put(key, values.get(key));
+            if (linuxDoCookieEnabled(values, key)) {
+                ordered.put(key, values.get(key));
+            }
         }
         values.entrySet().stream()
                 .filter(entry -> !ordered.containsKey(entry.getKey()))
+                .filter(entry -> !LINUXDO_COOKIE_KEYS.contains(entry.getKey()))
+                .filter(entry -> !entry.getKey().endsWith(LINUXDO_COOKIE_ENABLED_SUFFIX))
                 .forEach(entry -> ordered.put(entry.getKey(), entry.getValue()));
 
         String header = ordered.entrySet().stream()
@@ -100,6 +112,22 @@ public class ProviderConfigService {
 
     public String ngaPassportCid() {
         return value(PROVIDER_NGA, NGA_PASSPORT_CID).orElse(null);
+    }
+
+    public boolean bilibiliAiTitleEnabled() {
+        return value(PROVIDER_BILIBILI, BILIBILI_AI_TITLE_ENABLED)
+                .map(this::enabledByTextValue)
+                .orElse(true);
+    }
+
+    private boolean linuxDoCookieEnabled(Map<String, String> values, String cookieKey) {
+        return Optional.ofNullable(values.get(linuxDoCookieEnabledKey(cookieKey)))
+                .map(this::enabledByTextValue)
+                .orElse(true);
+    }
+
+    private String linuxDoCookieEnabledKey(String cookieKey) {
+        return cookieKey + LINUXDO_COOKIE_ENABLED_SUFFIX;
     }
 
     private String normalizeRequired(String value, String fieldName) {
@@ -124,5 +152,13 @@ public class ProviderConfigService {
             return "";
         }
         return key + "=" + value;
+    }
+
+    private boolean enabledByTextValue(String value) {
+        String normalized = value.strip().toLowerCase(java.util.Locale.ROOT);
+        return !("false".equals(normalized)
+                || "0".equals(normalized)
+                || "off".equals(normalized)
+                || "no".equals(normalized));
     }
 }

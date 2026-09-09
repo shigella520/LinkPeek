@@ -8,7 +8,10 @@ import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageServ
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryService;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.core.io.Resource;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -191,7 +194,7 @@ public class ShareSummaryAdminController {
     }
 
     @PostMapping("/audio-config/test")
-    public ShareSummaryAudioService.ConfigResponse testAudioConfig(
+    public ShareSummaryAudioService.TestResponse testAudioConfig(
             HttpServletRequest request,
             @RequestBody ShareSummaryAudioService.ConfigRequest audioConfigRequest
     ) {
@@ -200,6 +203,20 @@ public class ShareSummaryAdminController {
             return shareSummaryAudioService.testConfig(audioConfigRequest);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
+    @GetMapping("/audio-config/test-audio.{ext}")
+    public ResponseEntity<Resource> testAudio(HttpServletRequest request, @PathVariable String ext) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            ShareSummaryAudioService.TestAudio audio = shareSummaryAudioService.testAudio(ext);
+            return ResponseEntity.ok()
+                    .cacheControl(CacheControl.noStore())
+                    .contentType(audio.mediaType())
+                    .body(audio.resource());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
     }
 

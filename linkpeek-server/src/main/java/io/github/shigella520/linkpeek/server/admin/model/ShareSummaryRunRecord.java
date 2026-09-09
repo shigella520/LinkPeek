@@ -29,6 +29,7 @@ public class ShareSummaryRunRecord {
     private String imageErrorMessage;
     private String audioStatus;
     private String audioUrl;
+    private long audioPlayCount;
     private String audioErrorMessage;
 
     public Long getId() {
@@ -253,6 +254,14 @@ public class ShareSummaryRunRecord {
 
     public void setAudioUrl(String audioUrl) {
         this.audioUrl = audioUrl;
+    }
+
+    public long getAudioPlayCount() {
+        return audioPlayCount;
+    }
+
+    public void setAudioPlayCount(long audioPlayCount) {
+        this.audioPlayCount = audioPlayCount;
     }
 
     public String getAudioErrorMessage() {

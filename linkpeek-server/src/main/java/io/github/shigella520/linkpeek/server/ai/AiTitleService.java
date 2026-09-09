@@ -2,6 +2,7 @@ package io.github.shigella520.linkpeek.server.ai;
 
 import io.github.shigella520.linkpeek.core.model.PreviewKey;
 import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
+import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.core.util.CardTextSanitizer;
 import io.github.shigella520.linkpeek.server.admin.model.AdminPromptRecord;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
@@ -15,7 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.net.URI;
-import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -36,6 +36,7 @@ public class AiTitleService {
 
     public static final String FREESTYLE_STYLE = "FREESTYLE";
     public static final String DEFAULT_TITLE_FORMAT_PROMPT = AiTitleConfigService.DEFAULT_TITLE_FORMAT_PROMPT;
+    private static final String OPERATION_AI_TITLE = "AI_TITLE";
     private static final long FREESTYLE_STABLE_WINDOW_MILLIS = 30_000;
     // FreeStyle 标题生成成功前不启动 30 秒窗口；该哨兵值表示风格选择仍在生成中。
     private static final long FREESTYLE_PENDING_EXPIRES_AT_MILLIS = Long.MAX_VALUE;
@@ -46,7 +47,7 @@ public class AiTitleService {
 
     private final AdminPromptMapper adminPromptMapper;
     private final AiProviderMapper aiProviderMapper;
-    private final AiTitleClient aiTitleClient;
+    private final OpenAiCompatibleTextClient textClient;
     private final AiTitleConfigService aiTitleConfigService;
     private final AiProviderDowngradeService aiProviderDowngradeService;
     private final Clock clock;
@@ -56,14 +57,14 @@ public class AiTitleService {
     public AiTitleService(
             AdminPromptMapper adminPromptMapper,
             AiProviderMapper aiProviderMapper,
-            AiTitleClient aiTitleClient,
+            OpenAiCompatibleTextClient textClient,
             AiTitleConfigService aiTitleConfigService,
             AiProviderDowngradeService aiProviderDowngradeService,
             Clock clock
     ) {
         this.adminPromptMapper = adminPromptMapper;
         this.aiProviderMapper = aiProviderMapper;
-        this.aiTitleClient = aiTitleClient;
+        this.textClient = textClient;
         this.aiTitleConfigService = aiTitleConfigService;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
         this.clock = clock == null ? Clock.systemUTC() : clock;
@@ -72,14 +73,14 @@ public class AiTitleService {
     public AiTitleService(
             AdminPromptMapper adminPromptMapper,
             AiProviderMapper aiProviderMapper,
-            AiTitleClient aiTitleClient,
+            OpenAiCompatibleTextClient textClient,
             AiTitleConfigService aiTitleConfigService,
             AiProviderDowngradeService aiProviderDowngradeService
     ) {
         this(
                 adminPromptMapper,
                 aiProviderMapper,
-                aiTitleClient,
+                textClient,
                 aiTitleConfigService,
                 aiProviderDowngradeService,
                 Clock.systemUTC()
@@ -214,10 +215,7 @@ public class AiTitleService {
     }
 
     public boolean supportsAiTitle(PreviewMetadata metadata) {
-        return metadata != null
-                && metadata.thumbnailUrl() != null
-                && metadata.thumbnailUrl().startsWith("generated://")
-                && StringUtils.hasText(metadata.rawContent());
+        return PreviewProvider.defaultSupportsAiTitle(metadata);
     }
 
     public Optional<PreviewMetadata> generateStyledMetadata(PreviewMetadata metadata, StylePrompt stylePrompt) {
@@ -228,30 +226,40 @@ public class AiTitleService {
         if (!supportsAiTitle(metadata)) {
             return StyledMetadataResult.empty();
         }
+        return generateSupportedStyledMetadataResult(metadata, stylePrompt);
+    }
 
+    public StyledMetadataResult generateSupportedStyledMetadataResult(PreviewMetadata metadata, StylePrompt stylePrompt) {
+        if (metadata == null || !StringUtils.hasText(metadata.rawContent())) {
+            return StyledMetadataResult.empty();
+        }
         AiTitlePrompt prompt = buildPrompt(stylePrompt.prompt(), metadata.rawContent(), stylePrompt.titleFormatPrompt());
         List<AiProviderRecord> providers = aiProviderMapper.selectEnabledProviders();
         AiAttemptStats attemptStats = new AiAttemptStats();
         for (AiProviderRecord provider : providers) {
             long startedAt = System.nanoTime();
             try {
-                AiTitleClient.AiTitleResult result = aiTitleClient.generateTitleResult(provider, prompt);
+                OpenAiCompatibleTextClient.TitleResult result = textClient.generateTitleResult(provider, prompt);
                 long durationMs = result.durationMs() > 0 ? result.durationMs() : elapsedMillis(startedAt);
                 attemptStats.record(provider, durationMs);
                 Optional<String> generated = result.title()
                         .map(this::cleanTitle)
                         .filter(StringUtils::hasText);
-                recordAiProviderSuccess(provider);
                 if (generated.isPresent()) {
+                    recordAiProviderSuccess(provider);
                     return attemptStats.result(Optional.of(withTitle(metadata, generated.get())));
                 }
+                recordAiProviderFailure(provider, durationMs, new IllegalStateException("AI provider returned empty title."));
             } catch (InterruptedException exception) {
-                attemptStats.record(provider, elapsedMillis(startedAt));
-                Thread.currentThread().interrupt();
+                long durationMs = elapsedMillis(startedAt);
+                attemptStats.record(provider, durationMs);
                 log.warn("ai_title_request_interrupted providerId={} style={}", provider.getId(), stylePrompt.style(), exception);
+                recordAiProviderFailure(provider, durationMs, exception);
+                Thread.currentThread().interrupt();
                 return attemptStats.result(Optional.empty());
             } catch (RuntimeException | java.io.IOException exception) {
-                attemptStats.record(provider, elapsedMillis(startedAt));
+                long durationMs = elapsedMillis(startedAt);
+                attemptStats.record(provider, durationMs);
                 log.warn(
                         "ai_title_request_failed providerId={} style={} baseUrl={} message={}",
                         provider.getId(),
@@ -259,9 +267,7 @@ public class AiTitleService {
                         provider.getBaseUrl(),
                         exception.getMessage()
                 );
-                if (exception instanceof HttpTimeoutException) {
-                    recordAiProviderTimeout(provider, exception);
-                }
+                recordAiProviderFailure(provider, durationMs, exception);
             }
         }
         return attemptStats.result(Optional.empty());
@@ -368,9 +374,9 @@ public class AiTitleService {
         }
     }
 
-    private void recordAiProviderTimeout(AiProviderRecord provider, Throwable exception) {
+    private void recordAiProviderFailure(AiProviderRecord provider, long durationMs, Throwable exception) {
         if (aiProviderDowngradeService != null) {
-            aiProviderDowngradeService.recordTimeout(provider, exception);
+            aiProviderDowngradeService.recordFailure(provider, OPERATION_AI_TITLE, durationMs, exception);
         }
     }
 

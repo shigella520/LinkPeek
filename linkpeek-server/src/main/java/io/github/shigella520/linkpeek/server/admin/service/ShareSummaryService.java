@@ -13,7 +13,7 @@ import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryLinkM
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryMapper;
 import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
-import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -22,7 +22,6 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
-import java.net.http.HttpTimeoutException;
 import java.time.Clock;
 import java.time.DayOfWeek;
 import java.time.Instant;
@@ -48,15 +47,17 @@ public class ShareSummaryService {
     private static final int DEFAULT_MIN_LINKS = 1;
     private static final int MIN_MIN_LINKS = 1;
     private static final int MAX_MIN_LINKS = 2_000;
+    private static final int MAX_SHARE_SUMMARY_REQUEST_TIMEOUT_SECONDS = 3_600;
     private static final int CATCH_UP_LIMIT = 7;
     private static final long RUNNING_TIMEOUT_MILLIS = 30 * 60 * 1000L;
     private static final String DEFAULT_SUMMARY_INSTRUCTIONS = "请根据用户提供的分享总结提示词和链接分享列表，生成一份结构清晰、信息密度高的中文分享总结。";
+    private static final String OPERATION_SHARE_SUMMARY = "SHARE_SUMMARY";
     private static final DateTimeFormatter SUMMARY_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
 
     private final ShareSummaryMapper shareSummaryMapper;
     private final ShareSummaryLinkMapper shareSummaryLinkMapper;
     private final AiProviderMapper aiProviderMapper;
-    private final AiTitleClient aiTitleClient;
+    private final OpenAiCompatibleTextClient textClient;
     private final ShareSummaryImageService shareSummaryImageService;
     private final ShareSummaryAudioService shareSummaryAudioService;
     private final AiProviderDowngradeService aiProviderDowngradeService;
@@ -67,7 +68,7 @@ public class ShareSummaryService {
             ShareSummaryMapper shareSummaryMapper,
             ShareSummaryLinkMapper shareSummaryLinkMapper,
             AiProviderMapper aiProviderMapper,
-            AiTitleClient aiTitleClient,
+            OpenAiCompatibleTextClient textClient,
             ShareSummaryImageService shareSummaryImageService,
             ShareSummaryAudioService shareSummaryAudioService,
             AiProviderDowngradeService aiProviderDowngradeService,
@@ -76,7 +77,7 @@ public class ShareSummaryService {
         this.shareSummaryMapper = shareSummaryMapper;
         this.shareSummaryLinkMapper = shareSummaryLinkMapper;
         this.aiProviderMapper = aiProviderMapper;
-        this.aiTitleClient = aiTitleClient;
+        this.textClient = textClient;
         this.shareSummaryImageService = shareSummaryImageService;
         this.shareSummaryAudioService = shareSummaryAudioService;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
@@ -178,6 +179,12 @@ public class ShareSummaryService {
     void runScheduledScan() {
         long now = now();
         shareSummaryMapper.markStaleRunningRunsFailed(now - RUNNING_TIMEOUT_MILLIS, now);
+        if (shareSummaryImageService != null) {
+            shareSummaryImageService.markStaleActiveImagesFailed();
+        }
+        if (shareSummaryAudioService != null) {
+            shareSummaryAudioService.markStaleActiveAudiosFailed();
+        }
         for (ShareSummaryTaskRecord task : shareSummaryMapper.selectEnabledTasks()) {
             try {
                 runDueWindows(task);
@@ -485,23 +492,35 @@ public class ShareSummaryService {
         List<String> providerNames = new ArrayList<>();
         long durationMs = 0;
         String lastError = "";
+        double shareSummaryTimeoutMultiplier = shareSummaryTimeoutMultiplier();
         for (AiProviderRecord provider : providers) {
+            long startedAt = System.nanoTime();
             try {
-                AiTitleClient.AiTextResult result = aiTitleClient.generateTextResult(provider, prompt);
-                durationMs += result.durationMs();
+                OpenAiCompatibleTextClient.TextResult result = textClient.generateTextResult(
+                        providerWithShareSummaryTimeout(provider, shareSummaryTimeoutMultiplier),
+                        prompt
+                );
+                long attemptDurationMs = result.durationMs() > 0 ? result.durationMs() : elapsedMillis(startedAt);
+                durationMs += attemptDurationMs;
                 providerNames.add(provider.getName());
-                recordAiProviderSuccess(provider);
                 Optional<String> report = result.text()
                         .map(String::strip)
                         .filter(StringUtils::hasText);
                 if (report.isPresent()) {
+                    recordAiProviderSuccess(provider);
                     return new AiSummaryResult(report.get(), providerNames, durationMs);
                 }
                 lastError = "AI provider returned empty summary.";
+                recordAiProviderFailure(provider, attemptDurationMs, new IllegalStateException(lastError));
             } catch (InterruptedException exception) {
+                long attemptDurationMs = elapsedMillis(startedAt);
+                durationMs += attemptDurationMs;
+                recordAiProviderFailure(provider, attemptDurationMs, exception);
                 Thread.currentThread().interrupt();
                 throw new IllegalStateException("AI summary request was interrupted.", exception);
             } catch (IOException | RuntimeException exception) {
+                long attemptDurationMs = elapsedMillis(startedAt);
+                durationMs += attemptDurationMs;
                 providerNames.add(provider.getName());
                 lastError = exception.getMessage();
                 log.warn(
@@ -512,10 +531,41 @@ public class ShareSummaryService {
                         exception.getMessage(),
                         exception
                 );
-                recordAiProviderTimeout(provider, exception);
+                recordAiProviderFailure(provider, attemptDurationMs, exception);
             }
         }
         throw new IllegalStateException(StringUtils.hasText(lastError) ? lastError : "AI summary request failed.");
+    }
+
+    private double shareSummaryTimeoutMultiplier() {
+        return aiProviderDowngradeService == null
+                ? AiProviderDowngradeService.DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER
+                : aiProviderDowngradeService.shareSummaryTimeoutMultiplier();
+    }
+
+    private AiProviderRecord providerWithShareSummaryTimeout(AiProviderRecord provider, double multiplier) {
+        AiProviderRecord requestProvider = new AiProviderRecord();
+        requestProvider.setId(provider.getId());
+        requestProvider.setName(provider.getName());
+        requestProvider.setEnabled(provider.isEnabled());
+        requestProvider.setSortOrder(provider.getSortOrder());
+        requestProvider.setBaseUrl(provider.getBaseUrl());
+        requestProvider.setApiKind(provider.getApiKind());
+        requestProvider.setModel(provider.getModel());
+        requestProvider.setEffort(provider.getEffort());
+        requestProvider.setApiKey(provider.getApiKey());
+        requestProvider.setUpdatedAt(provider.getUpdatedAt());
+        requestProvider.setRequestTimeoutSeconds(shareSummaryRequestTimeout(provider, multiplier));
+        return requestProvider;
+    }
+
+    private int shareSummaryRequestTimeout(AiProviderRecord provider, double multiplier) {
+        int baseTimeoutSeconds = provider.getRequestTimeoutSeconds() > 0
+                ? provider.getRequestTimeoutSeconds()
+                : OpenAiCompatibleTextClient.DEFAULT_REQUEST_TIMEOUT_SECONDS;
+        long timeoutSeconds = Math.round(baseTimeoutSeconds * multiplier);
+        timeoutSeconds = Math.max(1L, Math.min(MAX_SHARE_SUMMARY_REQUEST_TIMEOUT_SECONDS, timeoutSeconds));
+        return (int) timeoutSeconds;
     }
 
     private void recordAiProviderSuccess(AiProviderRecord provider) {
@@ -524,9 +574,9 @@ public class ShareSummaryService {
         }
     }
 
-    private void recordAiProviderTimeout(AiProviderRecord provider, Throwable exception) {
-        if (aiProviderDowngradeService != null && exception instanceof HttpTimeoutException) {
-            aiProviderDowngradeService.recordTimeout(provider, exception);
+    private void recordAiProviderFailure(AiProviderRecord provider, long durationMs, Throwable exception) {
+        if (aiProviderDowngradeService != null) {
+            aiProviderDowngradeService.recordFailure(provider, OPERATION_SHARE_SUMMARY, durationMs, exception);
         }
     }
 
@@ -539,14 +589,13 @@ public class ShareSummaryService {
                 .append("\n\n链接分享列表：\n");
         for (int index = 0; index < links.size(); index++) {
             ShareSummaryLinkRow link = links.get(index);
-            content.append(index + 1)
-                    .append(".标题：")
+            content.append("- 标题：")
                     .append(link.getTitle())
                     .append('\n')
-                    .append("   链接：")
+                    .append("  - 链接：")
                     .append(summaryLinkUrl(link))
                     .append('\n')
-                    .append("   分享时间：")
+                    .append("  - 分享时间：")
                     .append(summaryTime(link.getFirstOccurredAt()))
                     .append('\n');
         }
@@ -680,6 +729,10 @@ public class ShareSummaryService {
         return Instant.now(clock).toEpochMilli();
     }
 
+    private long elapsedMillis(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
+    }
+
     private ShareSummaryRunRecord withShareAssetSummaries(ShareSummaryRunRecord run) {
         if (run == null || run.getId() == null) {
             return run;
@@ -699,6 +752,7 @@ public class ShareSummaryService {
             ShareSummaryAudioService.AudioSummary summary = shareSummaryAudioService.audioSummary(run.getId());
             run.setAudioStatus(summary.audioStatus());
             run.setAudioUrl(summary.audioUrl());
+            run.setAudioPlayCount(summary.playCount());
             run.setAudioErrorMessage(summary.audioErrorMessage());
         }
         return run;

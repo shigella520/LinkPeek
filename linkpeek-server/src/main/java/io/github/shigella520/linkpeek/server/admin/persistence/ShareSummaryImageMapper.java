@@ -17,6 +17,12 @@ public interface ShareSummaryImageMapper {
 
     int updateImage(ShareSummaryImageRecord image);
 
+    int markStaleActiveImagesFailed(
+            @Param("threshold") long threshold,
+            @Param("finishedAt") long finishedAt,
+            @Param("errorMessage") String errorMessage
+    );
+
     ShareSummaryImageRecord selectImage(@Param("id") long id);
 
     ShareSummaryImageRecord selectImageByPublicToken(@Param("publicToken") String publicToken);

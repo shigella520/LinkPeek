@@ -36,6 +36,7 @@
         text_snapshot,
         storage_key,
         audio_url,
+        play_count,
         raw_response_snapshot,
         error_message,
         duration_ms,
@@ -162,6 +163,23 @@
             started_at = #{startedAt},
             finished_at = #{finishedAt}
         WHERE id = #{id}
+    </update>
+
+    <update id="incrementPlayCount">
+        UPDATE share_summary_audio
+        SET play_count = play_count + 1
+        WHERE id = #{id}
+          AND status = 'SUCCESS'
+    </update>
+
+    <update id="markStaleActiveAudiosFailed">
+        UPDATE share_summary_audio
+        SET
+            status = 'FAILED',
+            error_message = #{errorMessage},
+            finished_at = #{finishedAt}
+        WHERE status IN ('PENDING', 'GENERATING')
+          AND COALESCE(started_at, created_at) &lt; #{threshold}
     </update>
 
     <select id="selectAudio" resultType="io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioRecord">

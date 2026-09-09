@@ -59,6 +59,7 @@ public class ShareSummaryImageService {
     private static final int MAX_IMAGE_REDIRECTS = 5;
     private static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 300;
     private static final int MAX_REQUEST_TIMEOUT_SECONDS = 1800;
+    private static final long STALE_ACTIVE_BUFFER_MILLIS = 60_000L;
     private static final int DEFAULT_WIDTH = 1200;
     private static final int DEFAULT_HEIGHT = 630;
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
@@ -67,7 +68,7 @@ public class ShareSummaryImageService {
 
     private final ShareSummaryImageMapper imageMapper;
     private final ShareSummaryMapper shareSummaryMapper;
-    private final ShareSummaryImageClient imageClient;
+    private final OpenAiCompatibleImageClient imageClient;
     private final HttpClient httpClient;
     private final ExecutorService executor;
     private final NotificationService notificationService;
@@ -78,7 +79,7 @@ public class ShareSummaryImageService {
     public ShareSummaryImageService(
             ShareSummaryImageMapper imageMapper,
             ShareSummaryMapper shareSummaryMapper,
-            ShareSummaryImageClient imageClient,
+            OpenAiCompatibleImageClient imageClient,
             @Qualifier("shareSummaryImageHttpClient") HttpClient httpClient,
             @Qualifier("shareSummaryImageExecutor") ExecutorService executor,
             NotificationService notificationService,
@@ -126,6 +127,7 @@ public class ShareSummaryImageService {
         }
         ShareSummaryImageConfigRecord config = configRecord();
         validateReadyConfig(config);
+        markStaleActiveImagesFailed();
         ShareSummaryImageRecord active = imageMapper.selectActiveImage(runId);
         if (active != null) {
             throw new IllegalStateException("IMAGE_GENERATION_IN_PROGRESS");
@@ -166,6 +168,7 @@ public class ShareSummaryImageService {
     }
 
     public int deleteImagesForRun(long runId) {
+        markStaleActiveImagesFailed();
         if (imageMapper.selectActiveImage(runId) != null) {
             throw new IllegalStateException("Share summary image generation is in progress.");
         }
@@ -173,6 +176,17 @@ public class ShareSummaryImageService {
         int deleted = imageMapper.deleteImagesForRun(runId);
         deleteStoredImagesAfterCommit(images);
         return deleted;
+    }
+
+    public int markStaleActiveImagesFailed() {
+        ShareSummaryImageConfigRecord config = configRecord();
+        long now = now();
+        long threshold = now - staleActiveTimeoutMillis(config.getRequestTimeoutSeconds());
+        int updated = imageMapper.markStaleActiveImagesFailed(threshold, now, "GENERATION timeout exceeded.");
+        if (updated > 0) {
+            log.warn("share_summary_image_stale_active_marked_failed count={} threshold={}", updated, threshold);
+        }
+        return updated;
     }
 
     public ImageResponse image(long imageId) {
@@ -224,6 +238,7 @@ public class ShareSummaryImageService {
                 image.setErrorMessage("IMAGE_QUEUE_FULL");
                 image.setFinishedAt(now());
                 imageMapper.updateImage(image);
+                publishImageFailed(image, RejectedExecutionException.class.getSimpleName(), "IMAGE_QUEUE_FULL");
             }
         }
     }
@@ -239,7 +254,7 @@ public class ShareSummaryImageService {
         imageMapper.updateImage(image);
         try {
             ShareSummaryImageConfigRecord config = configRecord();
-            ShareSummaryImageClient.ImageGenerationResult result = imageClient.generate(config, image.getPromptSnapshot());
+            OpenAiCompatibleImageClient.ImageGenerationResult result = imageClient.generate(config, image.getPromptSnapshot());
             byte[] sourceBytes = StringUtils.hasText(result.base64())
                     ? decodeBase64Image(result.base64())
                     : downloadImage(result.imageUrl(), config.getRequestTimeoutSeconds());
@@ -258,9 +273,9 @@ public class ShareSummaryImageService {
             publishImageSuccess(image);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            failImage(image, ShareSummaryImageStatus.FAILED, "Image generation was interrupted.");
+            failImage(image, ShareSummaryImageStatus.FAILED, exception, "Image generation was interrupted.");
         } catch (RuntimeException | IOException exception) {
-            failImage(image, ShareSummaryImageStatus.FAILED, limitError(exception.getMessage()));
+            failImage(image, ShareSummaryImageStatus.FAILED, exception, null);
         }
     }
 
@@ -331,6 +346,11 @@ public class ShareSummaryImageService {
         defaults.setRequestTimeoutSeconds(DEFAULT_REQUEST_TIMEOUT_SECONDS);
         defaults.setUpdatedAt(0);
         return defaults;
+    }
+
+    private long staleActiveTimeoutMillis(int requestTimeoutSeconds) {
+        int seconds = Math.max(1, requestTimeoutSeconds);
+        return seconds * 2_000L + STALE_ACTIVE_BUFFER_MILLIS;
     }
 
     private void validateReadyConfig(ShareSummaryImageConfigRecord config) {
@@ -528,11 +548,14 @@ public class ShareSummaryImageService {
         return storageKey;
     }
 
-    private void failImage(ShareSummaryImageRecord image, ShareSummaryImageStatus status, String message) {
+    private void failImage(ShareSummaryImageRecord image, ShareSummaryImageStatus status, Throwable exception, String fallbackMessage) {
         image.setStatus(status.name());
-        image.setErrorMessage(StringUtils.hasText(message) ? message : "Image generation failed.");
+        image.setErrorMessage(errorMessage(exception, fallbackMessage, "Image generation failed."));
         image.setFinishedAt(now());
         imageMapper.updateImage(image);
+        if (status == ShareSummaryImageStatus.FAILED) {
+            publishImageFailed(image, errorType(exception, "ImageGenerationException"), image.getErrorMessage());
+        }
     }
 
     private void publishImageSuccess(ShareSummaryImageRecord image) {
@@ -544,6 +567,18 @@ public class ShareSummaryImageService {
             notificationService.publishShareSummaryImageSuccess(run, image);
         } catch (RuntimeException exception) {
             log.warn("share_summary_image_notification_failed imageId={} runId={} message={}", image.getId(), image.getRunId(), exception.getMessage(), exception);
+        }
+    }
+
+    private void publishImageFailed(ShareSummaryImageRecord image, String errorType, String errorMessage) {
+        if (notificationService == null) {
+            return;
+        }
+        try {
+            ShareSummaryRunRecord run = shareSummaryMapper.selectRun(image.getRunId());
+            notificationService.publishShareSummaryImageFailed(run, image, errorType, errorMessage);
+        } catch (RuntimeException exception) {
+            log.warn("share_summary_image_failed_notification_failed imageId={} runId={} message={}", image.getId(), image.getRunId(), exception.getMessage(), exception);
         }
     }
 
@@ -684,12 +719,31 @@ public class ShareSummaryImageService {
         return millisToDate(millis).format(DATE_FORMATTER);
     }
 
-    private String limitError(String message) {
+    private String errorType(Throwable exception, String fallbackType) {
+        return exception == null ? fallbackType : exception.getClass().getSimpleName();
+    }
+
+    private String errorMessage(Throwable exception, String fallbackMessage, String defaultMessage) {
+        String message = firstErrorMessage(exception);
         if (!StringUtils.hasText(message)) {
-            return "Image generation failed.";
+            message = fallbackMessage;
+        }
+        if (!StringUtils.hasText(message)) {
+            message = defaultMessage;
         }
         String stripped = message.strip();
         return stripped.length() <= 500 ? stripped : stripped.substring(0, 500);
+    }
+
+    private String firstErrorMessage(Throwable exception) {
+        Throwable current = exception;
+        while (current != null) {
+            if (StringUtils.hasText(current.getMessage())) {
+                return current.getMessage();
+            }
+            current = current.getCause();
+        }
+        return "";
     }
 
     private long now() {

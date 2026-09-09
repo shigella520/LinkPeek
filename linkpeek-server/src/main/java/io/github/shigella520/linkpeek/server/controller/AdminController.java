@@ -11,7 +11,7 @@ import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService
 import io.github.shigella520.linkpeek.server.admin.service.ServiceLogService;
 import io.github.shigella520.linkpeek.server.ai.AiApiKind;
 import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
-import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import io.github.shigella520.linkpeek.server.ai.AiTitlePrompt;
 import io.github.shigella520.linkpeek.server.ai.AiTitleService;
 import io.github.shigella520.linkpeek.server.stats.service.StatisticsMaintenanceService;
@@ -63,7 +63,7 @@ public class AdminController {
     private final ProviderConfigService providerConfigService;
     private final AiProviderMapper aiProviderMapper;
     private final AiProviderDowngradeService aiProviderDowngradeService;
-    private final AiTitleClient aiTitleClient;
+    private final OpenAiCompatibleTextClient textClient;
     private final ServiceLogService serviceLogService;
     private final StatisticsMaintenanceService statisticsMaintenanceService;
     private final AdminPreviewEventService adminPreviewEventService;
@@ -76,7 +76,7 @@ public class AdminController {
             ProviderConfigService providerConfigService,
             AiProviderMapper aiProviderMapper,
             AiProviderDowngradeService aiProviderDowngradeService,
-            AiTitleClient aiTitleClient,
+            OpenAiCompatibleTextClient textClient,
             ServiceLogService serviceLogService,
             StatisticsMaintenanceService statisticsMaintenanceService,
             AdminPreviewEventService adminPreviewEventService,
@@ -88,7 +88,7 @@ public class AdminController {
         this.providerConfigService = providerConfigService;
         this.aiProviderMapper = aiProviderMapper;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
-        this.aiTitleClient = aiTitleClient;
+        this.textClient = textClient;
         this.serviceLogService = serviceLogService;
         this.statisticsMaintenanceService = statisticsMaintenanceService;
         this.adminPreviewEventService = adminPreviewEventService;
@@ -255,7 +255,8 @@ public class AdminController {
         try {
             return aiProviderDowngradeService.saveConfig(
                     downgradeRequest.autoDowngradeEnabled(),
-                    downgradeRequest.autoDowngradeTimeoutThreshold()
+                    downgradeRequest.autoDowngradeFailureThreshold(),
+                    downgradeRequest.shareSummaryTimeoutMultiplier()
             );
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
@@ -353,7 +354,7 @@ public class AdminController {
 
         long startedAt = System.nanoTime();
         try {
-            Optional<String> output = aiTitleClient.generateTitle(provider, AI_PROVIDER_TEST_PROMPT)
+            Optional<String> output = textClient.generateTitle(provider, AI_PROVIDER_TEST_PROMPT)
                     .map(String::strip)
                     .filter(StringUtils::hasText);
             long durationMs = elapsedMillis(startedAt);
@@ -413,7 +414,7 @@ public class AdminController {
 
     private int normalizeAiRequestTimeoutSeconds(Integer requestTimeoutSeconds, AiProviderRecord existing) {
         int timeoutSeconds = requestTimeoutSeconds == null
-                ? (existing == null ? AiTitleClient.DEFAULT_REQUEST_TIMEOUT_SECONDS : existing.getRequestTimeoutSeconds())
+                ? (existing == null ? OpenAiCompatibleTextClient.DEFAULT_REQUEST_TIMEOUT_SECONDS : existing.getRequestTimeoutSeconds())
                 : requestTimeoutSeconds;
         if (timeoutSeconds < MIN_AI_REQUEST_TIMEOUT_SECONDS || timeoutSeconds > MAX_AI_REQUEST_TIMEOUT_SECONDS) {
             throw new ResponseStatusException(
@@ -487,7 +488,8 @@ public class AdminController {
 
     public record AiProviderDowngradeRequest(
             Boolean autoDowngradeEnabled,
-            Integer autoDowngradeTimeoutThreshold
+            Integer autoDowngradeFailureThreshold,
+            Double shareSummaryTimeoutMultiplier
     ) {
     }
 

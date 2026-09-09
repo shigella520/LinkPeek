@@ -22,6 +22,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -37,98 +38,140 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-class ShareSummaryAudioClientTest {
+class MimoTtsAudioProviderTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void omitsBlankModelAndSendsWangwangitExtensionFields() throws Exception {
-        byte[] audioBytes = testMp3Bytes();
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, "audio/mpeg", audioBytes);
-        ShareSummaryAudioClient client = new ShareSummaryAudioClient(httpClient, objectMapper);
+    void sendsChatCompletionsRequestAndDecodesBase64Audio() throws Exception {
+        byte[] audioBytes = new byte[]{1, 2, 3, 4};
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "application/json", """
+                {"choices":[{"message":{"audio":{"data":"%s"}}}]}
+                """.formatted(Base64.getEncoder().encodeToString(audioBytes)).getBytes(StandardCharsets.UTF_8));
+        MimoTtsAudioProvider provider = new MimoTtsAudioProvider(httpClient, objectMapper);
 
-        ShareSummaryAudioClient.AudioGenerationResult result = client.generate(config(""), "测试文本");
+        ShareSummaryAudioProvider.AudioGenerationResult result = provider.generate(config(), "报告正文");
 
         JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
         assertArrayEquals(audioBytes, result.audioBytes());
-        assertEquals("/v1/audio/speech", httpClient.lastRequestUri.getPath());
-        assertEquals("", httpClient.lastAuthorization);
-        assertTrue(body.path("model").isMissingNode());
-        assertEquals("测试文本", body.path("input").asText());
-        assertEquals("zh-CN-YunhaoNeural", body.path("voice").asText());
-        assertEquals(1.2, body.path("speed").asDouble());
-        assertEquals(0, body.path("pitch").asInt());
-        assertEquals("newscast", body.path("style").asText());
+        assertEquals("/v1/chat/completions", httpClient.lastRequestUri.getPath());
+        assertEquals("sk-mimo", httpClient.lastApiKey);
+        assertEquals("mimo-v2.5-tts", body.path("model").asText());
+        assertEquals(1, body.path("messages").size());
+        assertEquals("assistant", body.path("messages").path(0).path("role").asText());
+        assertEquals("(孙悟空 活泼 凌厉 兴奋)报告正文", body.path("messages").path(0).path("content").asText());
+        assertEquals("wav", body.path("audio").path("format").asText());
+        assertEquals("苏打", body.path("audio").path("voice").asText());
+        assertTrue(body.path("audio").path("optimize_text_preview").isMissingNode());
     }
 
     @Test
-    void sendsConfiguredModelAndAuthorization() throws Exception {
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, "audio/mpeg", testMp3Bytes());
-        ShareSummaryAudioClient client = new ShareSummaryAudioClient(httpClient, objectMapper);
-        ShareSummaryAudioConfigRecord config = config("tts-1");
-        config.setApiKey("sk-audio");
+    void sendsLegacyStyleInstructionAsAudioTag() throws Exception {
+        byte[] audioBytes = new byte[]{4, 3, 2, 1};
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "application/json", """
+                {"choices":[{"message":{"audio":{"data":"%s"}}}]}
+                """.formatted(Base64.getEncoder().encodeToString(audioBytes)).getBytes(StandardCharsets.UTF_8));
+        MimoTtsAudioProvider provider = new MimoTtsAudioProvider(httpClient, objectMapper);
+        ShareSummaryAudioConfigRecord config = config();
+        config.setStyle("请用严肃、清晰、适合新闻播报的语气朗读。");
 
-        client.generate(config, "测试文本");
+        provider.generate(config, "报告正文");
 
         JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
-        assertEquals("tts-1", body.path("model").asText());
-        assertEquals("Bearer sk-audio", httpClient.lastAuthorization);
+        assertEquals("mimo-v2.5-tts", body.path("model").asText());
+        assertEquals(1, body.path("messages").size());
+        assertEquals("assistant", body.path("messages").path(0).path("role").asText());
+        assertEquals("(严肃)报告正文", body.path("messages").path(0).path("content").asText());
+        assertEquals("苏打", body.path("audio").path("voice").asText());
+        assertTrue(body.path("audio").path("optimize_text_preview").isMissingNode());
     }
 
     @Test
-    void failsWhenProviderReturnsNonAudio() {
-        CapturingHttpClient httpClient = new CapturingHttpClient(200, "application/json", "{\"ok\":false}".getBytes(StandardCharsets.UTF_8));
-        ShareSummaryAudioClient client = new ShareSummaryAudioClient(httpClient, objectMapper);
+    void downgradesVoiceDesignModelToPresetAudioTagRequest() throws Exception {
+        byte[] audioBytes = new byte[]{5, 6};
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "application/json", """
+                {"choices":[{"message":{"audio":{"data":"%s"}}}]}
+                """.formatted(Base64.getEncoder().encodeToString(audioBytes)).getBytes(StandardCharsets.UTF_8));
+        MimoTtsAudioProvider provider = new MimoTtsAudioProvider(httpClient, objectMapper);
+        ShareSummaryAudioConfigRecord config = config();
+        config.setModel("mimo-v2.5-tts-voicedesign");
+        config.setStyle("孙悟空 活泼 凌厉 兴奋");
 
-        IOException exception = assertThrows(IOException.class, () -> client.generate(config(""), "测试文本"));
+        provider.generate(config, "报告正文");
 
-        assertTrue(exception.getMessage().contains("non-audio"));
+        JsonNode body = objectMapper.readTree(httpClient.lastRequestBody);
+        assertEquals("mimo-v2.5-tts", body.path("model").asText());
+        assertEquals(1, body.path("messages").size());
+        assertEquals("(孙悟空 活泼 凌厉 兴奋)报告正文", body.path("messages").path(0).path("content").asText());
+        assertEquals("苏打", body.path("audio").path("voice").asText());
+        assertTrue(body.path("audio").path("optimize_text_preview").isMissingNode());
     }
 
     @Test
-    void includesProviderErrorBody() {
-        CapturingHttpClient httpClient = new CapturingHttpClient(500, "application/json", "{\"error\":\"failed\"}".getBytes(StandardCharsets.UTF_8));
-        ShareSummaryAudioClient client = new ShareSummaryAudioClient(httpClient, objectMapper);
+    void failsWhenAudioDataIsMissing() {
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "application/json", "{\"choices\":[{}]}".getBytes(StandardCharsets.UTF_8));
+        MimoTtsAudioProvider provider = new MimoTtsAudioProvider(httpClient, objectMapper);
 
-        IOException exception = assertThrows(IOException.class, () -> client.generate(config(""), "测试文本"));
+        IOException exception = assertThrows(IOException.class, () -> provider.generate(config(), "报告正文"));
 
-        assertTrue(exception.getMessage().contains("HTTP 500"));
-        assertTrue(exception.getMessage().contains("failed"));
+        assertTrue(exception.getMessage().contains("audio.data"));
     }
 
-    private ShareSummaryAudioConfigRecord config(String model) {
+    @Test
+    void failsWhenRequestExceedsTotalTimeout() {
+        CapturingHttpClient httpClient = CapturingHttpClient.neverCompletes();
+        MimoTtsAudioProvider provider = new MimoTtsAudioProvider(httpClient, objectMapper);
+        ShareSummaryAudioConfigRecord config = config();
+        config.setRequestTimeoutSeconds(1);
+
+        IOException exception = assertThrows(IOException.class, () -> provider.generate(config, "报告正文"));
+
+        assertTrue(exception.getMessage().contains("timed out"));
+        assertEquals("/v1/chat/completions", httpClient.lastRequestUri.getPath());
+    }
+
+    private ShareSummaryAudioConfigRecord config() {
         ShareSummaryAudioConfigRecord config = new ShareSummaryAudioConfigRecord();
         config.setEnabled(true);
         config.setAutoGenerate(true);
-        config.setProviderType("OPENAI_COMPATIBLE");
-        config.setBaseUrl("https://tts.example.com");
-        config.setEndpointPath("/v1/audio/speech");
-        config.setApiKey("");
-        config.setModel(model);
-        config.setVoice("zh-CN-YunhaoNeural");
+        config.setProviderType("MIMO_TTS");
+        config.setBaseUrl("https://api.xiaomimimo.com");
+        config.setEndpointPath("/v1/chat/completions");
+        config.setApiKey("sk-mimo");
+        config.setModel("mimo-v2.5-tts");
+        config.setVoice("苏打");
         config.setSpeed(1.2);
         config.setPitch(0);
-        config.setStyle("newscast");
-        config.setOutputFormat("mp3");
+        config.setStyle("孙悟空");
+        config.setOutputFormat("wav");
         config.setRequestTimeoutSeconds(7);
         return config;
-    }
-
-    private static byte[] testMp3Bytes() {
-        return new byte[]{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0, 0};
     }
 
     private static final class CapturingHttpClient extends HttpClient {
         private final int statusCode;
         private final String contentType;
         private final byte[] responseBody;
+        private final boolean neverCompletes;
         private URI lastRequestUri;
         private String lastRequestBody = "";
-        private String lastAuthorization = "";
+        private String lastApiKey = "";
 
         private CapturingHttpClient(int statusCode, String contentType, byte[] responseBody) {
             this.statusCode = statusCode;
             this.contentType = contentType;
             this.responseBody = responseBody;
+            this.neverCompletes = false;
+        }
+
+        private CapturingHttpClient(boolean neverCompletes) {
+            this.statusCode = 200;
+            this.contentType = "application/json";
+            this.responseBody = new byte[0];
+            this.neverCompletes = neverCompletes;
+        }
+
+        private static CapturingHttpClient neverCompletes() {
+            return new CapturingHttpClient(true);
         }
 
         @Override
@@ -187,13 +230,27 @@ class ShareSummaryAudioClientTest {
         public <T> HttpResponse<T> send(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler) throws IOException {
             lastRequestUri = request.uri();
             lastRequestBody = BodyCollector.collect(request);
-            lastAuthorization = request.headers().firstValue("Authorization").orElse("");
+            lastApiKey = request.headers().firstValue("api-key").orElse("");
             return (HttpResponse<T>) new StubHttpResponse(request.uri(), statusCode, contentType, responseBody);
         }
 
         @Override
         public <T> CompletableFuture<HttpResponse<T>> sendAsync(HttpRequest request, HttpResponse.BodyHandler<T> responseBodyHandler) {
-            throw new UnsupportedOperationException();
+            try {
+                lastRequestUri = request.uri();
+                lastRequestBody = BodyCollector.collect(request);
+                lastApiKey = request.headers().firstValue("api-key").orElse("");
+            } catch (IOException exception) {
+                CompletableFuture<HttpResponse<T>> failed = new CompletableFuture<>();
+                failed.completeExceptionally(exception);
+                return failed;
+            }
+            if (neverCompletes) {
+                return new CompletableFuture<>();
+            }
+            @SuppressWarnings("unchecked")
+            HttpResponse<T> response = (HttpResponse<T>) new StubHttpResponse(request.uri(), statusCode, contentType, responseBody);
+            return CompletableFuture.completedFuture(response);
         }
 
         @Override

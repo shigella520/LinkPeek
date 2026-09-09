@@ -11,10 +11,12 @@ import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.service.NotificationService;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
-import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioClient;
-import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageClient;
+import io.github.shigella520.linkpeek.server.admin.service.OpenAiCompatibleAudioClient;
+import io.github.shigella520.linkpeek.server.admin.service.OpenAiCompatibleImageClient;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioProvider;
 import io.github.shigella520.linkpeek.server.ai.AiTextPrompt;
-import io.github.shigella520.linkpeek.server.ai.AiTitleClient;
+import io.github.shigella520.linkpeek.server.ai.AiProviderDowngradeService;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import io.github.shigella520.linkpeek.server.ai.AiTitlePrompt;
 import io.github.shigella520.linkpeek.server.service.PreviewService;
 import io.github.shigella520.linkpeek.server.stats.model.StatisticsClientType;
@@ -25,6 +27,7 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,6 +42,7 @@ import org.springframework.test.web.servlet.MvcResult;
 
 import java.io.IOException;
 import java.net.URI;
+import java.net.ConnectException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,6 +57,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -113,19 +118,26 @@ class PreviewControllerTest {
     private ProviderConfigService providerConfigService;
 
     @Autowired
+    private AiProviderDowngradeService aiProviderDowngradeService;
+
+    @Autowired
     private TestPreviewProvider testPreviewProvider;
 
     @Autowired
-    private TestAiTitleClient testAiTitleClient;
+    private TestOpenAiCompatibleTextClient testOpenAiCompatibleTextClient;
 
     @Autowired
-    private TestShareSummaryImageClient testShareSummaryImageClient;
+    private TestOpenAiCompatibleImageClient testOpenAiCompatibleImageClient;
 
     @Autowired
-    private TestShareSummaryAudioClient testShareSummaryAudioClient;
+    private TestOpenAiCompatibleAudioClient testOpenAiCompatibleAudioClient;
 
     @Autowired
     private NotificationService notificationService;
+
+    @Autowired
+    @Qualifier("notificationWebhookExecutor")
+    private ExecutorService notificationWebhookExecutor;
 
     @Autowired
     private StatisticsEventDeduplicator statisticsEventDeduplicator;
@@ -135,6 +147,7 @@ class PreviewControllerTest {
 
     @BeforeEach
     void setUp() throws IOException {
+        waitForNotificationQueueToDrain();
         Files.walk(TEST_CACHE_DIR)
                 .filter(path -> !path.equals(TEST_CACHE_DIR))
                 .sorted(Comparator.reverseOrder())
@@ -165,9 +178,9 @@ class PreviewControllerTest {
         jdbcTemplate.execute("DELETE FROM ai_provider");
 
         testPreviewProvider.reset();
-        testAiTitleClient.reset();
-        testShareSummaryImageClient.reset();
-        testShareSummaryAudioClient.reset();
+        testOpenAiCompatibleTextClient.reset();
+        testOpenAiCompatibleImageClient.reset();
+        testOpenAiCompatibleAudioClient.reset();
         statisticsEventDeduplicator.clear();
     }
 
@@ -246,6 +259,7 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("Copy LinkPeek URL")))
                 .andExpect(content().string(containsString("link-builder-input")))
                 .andExpect(content().string(containsString("link-builder-style")))
+                .andExpect(content().string(containsString("/dashboard/styles.css?v=20260612-dashboard-mobile-compact-2")))
                 .andExpect(content().string(not(containsString(">Default<"))))
                 .andExpect(content().string(containsString("ai-render-rate-inline")))
                 .andExpect(content().string(containsString("ai-success-rate-inline")))
@@ -254,7 +268,9 @@ class PreviewControllerTest {
 
         mockMvc.perform(get("/dashboard/styles.css"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/css"));
+                .andExpect(content().contentTypeCompatibleWith("text/css"))
+                .andExpect(content().string(containsString("gap: 14px")))
+                .andExpect(content().string(containsString("font-size: 24px")));
 
         mockMvc.perform(get("/dashboard/app.js"))
                 .andExpect(status().isOk())
@@ -275,7 +291,17 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("LinkPeek Admin")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
+                .andExpect(content().string(containsString("brand-text")))
+                .andExpect(content().string(containsString("/admin/app.js?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("id=\"share-summary-image-viewer\"")))
+                .andExpect(content().string(containsString("share-summary-image-viewer-stage")))
+                .andExpect(content().string(containsString("share-summary-image-viewer-img")))
+                .andExpect(content().string(not(containsString("brand-copy"))))
                 .andExpect(content().string(containsString("provider-config")))
+                .andExpect(content().string(containsString("data-provider=\"bilibili\"")))
+                .andExpect(content().string(containsString("data-key=\"ai_title_enabled\"")))
                 .andExpect(content().string(containsString("service-logs")))
                 .andExpect(content().string(containsString("ai-providers")))
                 .andExpect(content().string(containsString("preview-events")))
@@ -324,22 +350,59 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("login-form")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("class=\"login-head brand-mark\"")))
+                .andExpect(content().string(containsString("class=\"brand-text\"")))
+                .andExpect(content().string(not(containsString(">Management<"))))
                 .andExpect(content().string(containsString("/admin/login.js")));
 
         mockMvc.perform(get("/admin/styles.css"))
                 .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith("text/css"));
+                .andExpect(content().contentTypeCompatibleWith("text/css"))
+                .andExpect(content().string(containsString("--shadow-soft")))
+                .andExpect(content().string(containsString("backdrop-filter: blur(26px)")))
+                .andExpect(content().string(containsString("linear-gradient(180deg, #f8f7f3 0%")))
+                .andExpect(content().string(containsString(".brand-text")))
+                .andExpect(content().string(containsString(".icon-link svg")))
+                .andExpect(content().string(containsString(".share-summary-task-row")))
+                .andExpect(content().string(containsString(".share-summary-image-viewer")))
+                .andExpect(content().string(containsString(".share-summary-image-viewer-stage")))
+                .andExpect(content().string(containsString(".share-summary-preview-button")))
+                .andExpect(content().string(containsString("--share-summary-image-viewer-mobile-width")))
+                .andExpect(content().string(containsString("gap: 14px")))
+                .andExpect(content().string(containsString("font-size: 24px")))
+                .andExpect(content().string(not(containsString(".brand-copy"))))
+                .andExpect(content().string(containsString("body.admin-sidebar-pinned.admin-nav-open .admin-sidebar")))
+                .andExpect(content().string(containsString("background: #ffffff")))
+                .andExpect(content().string(containsString("body.admin-nav-hover-open .admin-drawer-backdrop")))
+                .andExpect(content().string(containsString("backdrop-filter: none")))
+                .andExpect(content().string(containsString(".checkbox-row > input[type=\"checkbox\"] + span::before")))
+                .andExpect(content().string(containsString(".inline-threshold-input:focus")))
+                .andExpect(content().string(containsString(".provider-cookie-table")))
+                .andExpect(content().string(containsString(".provider-actions button")))
+                .andExpect(content().string(containsString(".ai-provider-table .ai-provider-base-url-cell::before")));
 
         mockMvc.perform(get("/admin/app.js"))
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("application/javascript")))
                 .andExpect(content().string(containsString("/api/admin/logs")))
+                .andExpect(content().string(containsString("openAdminNavigationFromHover")))
+                .andExpect(content().string(containsString("adminNavHoverOpen")))
+                .andExpect(content().string(containsString("isAdminNavigationPointerInside")))
+                .andExpect(content().string(containsString("admin-nav-hover-open")))
                 .andExpect(content().string(containsString("/api/admin/ai-title-config")))
                 .andExpect(content().string(containsString("/api/admin/preview-events")))
                 .andExpect(content().string(containsString("/api/admin/share-summary")))
+                .andExpect(content().string(containsString("openShareSummaryImageViewer")))
+                .andExpect(content().string(containsString("updateShareSummaryImageViewerLayout")))
+                .andExpect(content().string(containsString("data-view-share-image")))
+                .andExpect(content().string(not(containsString("requestFullscreen"))))
+                .andExpect(content().string(not(containsString("screen.orientation"))))
                 .andExpect(content().string(containsString("/api/admin/notifications")))
                 .andExpect(content().string(containsString("renderNotificationDeliveryEvent")))
-                .andExpect(content().string(containsString("eventKeyTargetId")));
+                .andExpect(content().string(containsString("eventKeyTargetId")))
+                .andExpect(content().string(containsString("providerInputValue")))
+                .andExpect(content().string(containsString("ai-provider-base-url-cell")));
 
         mockMvc.perform(get("/admin/login.js"))
                 .andExpect(status().isOk())
@@ -512,7 +575,7 @@ class PreviewControllerTest {
     @Test
     void previewStyleUsesAiTitleForGeneratedTextCardsAndCachesResult() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 生成标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 生成标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -542,10 +605,10 @@ class PreviewControllerTest {
                         result.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("AI 生成标题")
                 ));
 
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertEquals("UC 风格", testAiTitleClient.prompt.get().stylePrompt());
-        org.junit.jupiter.api.Assertions.assertEquals("原始帖子正文，包含需要被 AI 总结的信息。", testAiTitleClient.prompt.get().rawContent());
-        org.junit.jupiter.api.Assertions.assertTrue(testAiTitleClient.prompt.get().titleFormatPrompt().contains("只返回一行中文标题文本"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("UC 风格", testOpenAiCompatibleTextClient.prompt.get().stylePrompt());
+        org.junit.jupiter.api.Assertions.assertEquals("原始帖子正文，包含需要被 AI 总结的信息。", testOpenAiCompatibleTextClient.prompt.get().rawContent());
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleTextClient.prompt.get().titleFormatPrompt().contains("只返回一行中文标题文本"));
         org.junit.jupiter.api.Assertions.assertEquals(
                 1,
                 jdbcTemplate.queryForObject(
@@ -575,7 +638,7 @@ class PreviewControllerTest {
     @Test
     void styledGeneratedCardImageUrlChangesWhenAiTitleChangesAfterCacheClear() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 第一标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 第一标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -611,7 +674,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.previewKey").value(styledPreviewKey))
                 .andExpect(jsonPath("$.deletedFiles").value(2));
 
-        testAiTitleClient.generatedTitle.set("\"AI 第二标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 第二标题\"");
         MvcResult second = mockMvc.perform(get("/preview")
                         .param("url", "https://video.example.com/watch/abc")
                         .param("style", "fun")
@@ -627,7 +690,7 @@ class PreviewControllerTest {
                 String.class
         ));
         org.junit.jupiter.api.Assertions.assertNotEquals(firstImageUrl, secondImageUrl);
-        org.junit.jupiter.api.Assertions.assertEquals(2, testAiTitleClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(2, testOpenAiCompatibleTextClient.requests.get());
 
         mockMvc.perform(get("/media/thumb/{previewKey}.jpg", styledPreviewKey)
                         .param("v", imageVersion(secondImageUrl)))
@@ -638,7 +701,7 @@ class PreviewControllerTest {
     @Test
     void previewFreestyleUsesRandomConfiguredStylePrompt() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI freestyle 标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI freestyle 标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -658,15 +721,15 @@ class PreviewControllerTest {
                         result.getResponse().getContentAsString(StandardCharsets.UTF_8).contains("AI freestyle 标题")
                 ));
 
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertEquals("UC 风格", testAiTitleClient.prompt.get().stylePrompt());
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("UC 风格", testOpenAiCompatibleTextClient.prompt.get().stylePrompt());
     }
 
     @Test
     void concurrentFreestylePreviewUsesSameStableStyleAndWaitsForCachedAiResult() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 并发标题\"");
-        testAiTitleClient.blockNextRequest();
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 并发标题\"");
+        testOpenAiCompatibleTextClient.blockNextRequest();
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -682,11 +745,11 @@ class PreviewControllerTest {
         );
 
         CompletableFuture<MvcResult> first = CompletableFuture.supplyAsync(() -> performFreestylePreview());
-        org.junit.jupiter.api.Assertions.assertTrue(testAiTitleClient.awaitBlockedRequest());
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleTextClient.awaitBlockedRequest());
         CompletableFuture<MvcResult> second = CompletableFuture.supplyAsync(() -> performFreestylePreview());
         Thread.sleep(50);
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
-        testAiTitleClient.releaseBlockedRequest();
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
+        testOpenAiCompatibleTextClient.releaseBlockedRequest();
 
         org.junit.jupiter.api.Assertions.assertTrue(
                 first.get(2, TimeUnit.SECONDS).getResponse().getContentAsString(StandardCharsets.UTF_8).contains("AI 并发标题")
@@ -694,7 +757,7 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertTrue(
                 second.get(2, TimeUnit.SECONDS).getResponse().getContentAsString(StandardCharsets.UTF_8).contains("AI 并发标题")
         );
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
         org.junit.jupiter.api.Assertions.assertEquals(1, testPreviewProvider.resolutions.get());
         org.junit.jupiter.api.Assertions.assertEquals(
                 1,
@@ -731,7 +794,46 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(containsString("Stub title")));
 
-        org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testOpenAiCompatibleTextClient.requests.get());
+    }
+
+    @Test
+    void previewStyleCanUseAiTitleForAllowedRealImageCardsWithoutChangingImage() throws Exception {
+        testPreviewProvider.aiTitleForRealImage.set(true);
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 原图标题\"");
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
+                "FUN", "UC 风格", now
+        );
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "local", 1, 1, "https://api.openai.com/v1/chat/completions", "test-model", "", "test-key", now
+        );
+
+        MvcResult result = mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .param("style", "fun")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isOk())
+                .andReturn();
+        String html = result.getResponse().getContentAsString(StandardCharsets.UTF_8);
+        org.junit.jupiter.api.Assertions.assertTrue(html.contains("AI 原图标题"));
+        String styledImageUrl = ogImageUrl(html);
+        String styledPreviewKey = jdbcTemplate.queryForObject(
+                "SELECT preview_key FROM stats_event WHERE event_type = 'PREVIEW_CREATED' ORDER BY id DESC LIMIT 1",
+                String.class
+        );
+
+        mockMvc.perform(get("/media/thumb/{previewKey}.jpg", styledPreviewKey)
+                        .param("v", imageVersion(styledImageUrl)))
+                .andExpect(status().isOk())
+                .andExpect(content().bytes("thumb-data".getBytes(StandardCharsets.UTF_8)));
+
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("真实图片正文，包含需要被 AI 总结的信息。", testOpenAiCompatibleTextClient.prompt.get().rawContent());
+        org.junit.jupiter.api.Assertions.assertEquals(1, testPreviewProvider.thumbnailDownloads.get());
+        org.junit.jupiter.api.Assertions.assertEquals("https://img.example/thumb.jpg", testPreviewProvider.downloadedThumbnailUrl.get());
     }
 
     @Test
@@ -769,6 +871,116 @@ class PreviewControllerTest {
                         .param("url", "https://unsupported.example.com/post/1")
                         .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
                 .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
+    void upstreamCrawlFailurePublishesDataCrawlNotification() throws Exception {
+        long channelId = insertLoopbackNotificationChannel("Crawl");
+        insertNotificationTask(
+                "爬取失败通知",
+                "DATA_CRAWL_REQUEST_FAILED",
+                "爬取失败 {{preview.providerId}} {{preview.previewKey}} {{request.httpStatus}} {{error.code}} {{error.type}}",
+                channelId
+        );
+        testPreviewProvider.resolveFails.set(true);
+
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://video.example.com/watch/abc")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isBadGateway());
+
+        waitForNotificationDeliveryByEventType("DATA_CRAWL_REQUEST_FAILED");
+        String body = jdbcTemplate.queryForObject(
+                "SELECT request_body_snapshot FROM notification_delivery WHERE event_type = 'DATA_CRAWL_REQUEST_FAILED' ORDER BY id DESC LIMIT 1",
+                String.class
+        );
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("爬取失败 stub"));
+        org.junit.jupiter.api.Assertions.assertTrue(body.contains("502 UPSTREAM_ERROR UpstreamFetchException"));
+    }
+
+    @Test
+    void invalidAndUnsupportedPreviewDoNotPublishDataCrawlNotification() throws Exception {
+        long channelId = insertLoopbackNotificationChannel("Crawl");
+        insertNotificationTask(
+                "爬取失败通知",
+                "DATA_CRAWL_REQUEST_FAILED",
+                "爬取失败 {{preview.providerId}}",
+                channelId
+        );
+
+        mockMvc.perform(get("/preview")
+                        .param("url", "notaurl")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isBadRequest());
+        mockMvc.perform(get("/preview")
+                        .param("url", "https://unsupported.example.com/post/1")
+                        .header(HttpHeaders.USER_AGENT, "facebookexternalhit/1.1"))
+                .andExpect(status().isUnprocessableEntity());
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                0,
+                jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM notification_delivery WHERE event_type = 'DATA_CRAWL_REQUEST_FAILED'",
+                        Integer.class
+                )
+        );
+    }
+
+    @Test
+    void aiProviderDowngradeCreatesFailureDeliveryBeforeAutoDowngradeDelivery() throws Exception {
+        long channelId = insertLoopbackNotificationChannel("AI Provider");
+        insertNotificationTask(
+                "AI Provider 失败通知",
+                "AI_PROVIDER_REQUEST_FAILED",
+                "失败 {{provider.name}} {{request.operation}} {{downgrade.failureCount}}/{{downgrade.failureThreshold}} triggered={{downgrade.triggered}}",
+                channelId
+        );
+        insertNotificationTask(
+                "AI Provider 自动降级通知",
+                "AI_PROVIDER_AUTO_DOWNGRADED",
+                "降级 {{provider.name}} {{request.operation}} {{downgrade.failureCount}}/{{downgrade.failureThreshold}} {{downgrade.oldSortOrder}} -> {{downgrade.newSortOrder}}",
+                channelId
+        );
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, request_timeout_seconds, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "primary", 1, 100, "https://primary.example.com/v1", "CHAT_COMPLETIONS", "gpt-primary", "low", 45, "test-key", now
+        );
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, request_timeout_seconds, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "backup", 1, 200, "https://backup.example.com/v1", "CHAT_COMPLETIONS", "gpt-backup", "low", 45, "test-key", now
+        );
+        Long providerId = jdbcTemplate.queryForObject("SELECT id FROM ai_provider WHERE name = ?", Long.class, "primary");
+        AiProviderRecord provider = new AiProviderRecord();
+        provider.setId(providerId);
+        provider.setName("primary");
+        provider.setEnabled(true);
+        provider.setSortOrder(100);
+        provider.setBaseUrl("https://primary.example.com/v1");
+        provider.setApiKind("CHAT_COMPLETIONS");
+        provider.setModel("gpt-primary");
+        provider.setEffort("low");
+        provider.setRequestTimeoutSeconds(45);
+
+        aiProviderDowngradeService.saveConfig(false, 2);
+        aiProviderDowngradeService.saveConfig(true, 2);
+        aiProviderDowngradeService.recordFailure(provider, "AI_TITLE", 123, new ConnectException("connection refused"));
+        aiProviderDowngradeService.recordFailure(provider, "AI_TITLE", 456, new ConnectException("connection refused"));
+
+        waitForNotificationDeliveryCount("AI_PROVIDER_REQUEST_FAILED", 2);
+        waitForNotificationDeliveryCount("AI_PROVIDER_AUTO_DOWNGRADED", 1);
+        List<String> failureBodies = jdbcTemplate.queryForList(
+                "SELECT request_body_snapshot FROM notification_delivery WHERE event_type = 'AI_PROVIDER_REQUEST_FAILED' ORDER BY id ASC",
+                String.class
+        );
+        org.junit.jupiter.api.Assertions.assertEquals(2, failureBodies.size());
+        org.junit.jupiter.api.Assertions.assertTrue(failureBodies.get(0).contains("失败 primary AI_TITLE 1/2 triggered=false"));
+        org.junit.jupiter.api.Assertions.assertTrue(failureBodies.get(1).contains("失败 primary AI_TITLE 2/2 triggered=true"));
+        String downgradedBody = jdbcTemplate.queryForObject(
+                "SELECT request_body_snapshot FROM notification_delivery WHERE event_type = 'AI_PROVIDER_AUTO_DOWNGRADED' ORDER BY id ASC LIMIT 1",
+                String.class
+        );
+        org.junit.jupiter.api.Assertions.assertTrue(downgradedBody.contains("降级 primary AI_TITLE 2/2 100 -> 200"));
     }
 
     @Test
@@ -945,7 +1157,7 @@ class PreviewControllerTest {
     @Test
     void adminPreviewEventsEndpointListsCreatedLinksAndClearsCache() throws Exception {
         testPreviewProvider.generatedTextCard.set(true);
-        testAiTitleClient.generatedTitle.set("\"AI 管理后台标题\"");
+        testOpenAiCompatibleTextClient.generatedTitle.set("\"AI 管理后台标题\"");
         long now = System.currentTimeMillis();
         jdbcTemplate.update(
                 "INSERT INTO admin_prompt (style, prompt, updated_at) VALUES (?, ?, ?)",
@@ -1019,7 +1231,7 @@ class PreviewControllerTest {
     void adminShareSummaryCrudManualRunAndHistoryUseDatabaseTitles() throws Exception {
         Cookie cookie = adminCookie();
         long now = System.currentTimeMillis();
-        testAiTitleClient.generatedText.set("分享总结报告");
+        testOpenAiCompatibleTextClient.generatedText.set("分享总结报告");
         jdbcTemplate.update(
                 "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 "local", 1, 1, "https://api.openai.com/v1", "RESPONSES", "test-model", "low", "test-key", now
@@ -1124,15 +1336,15 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertTrue(actualWindowEnd <= afterRun);
         org.junit.jupiter.api.Assertions.assertTrue(runResult.getResponse().getContentAsString().contains("\"windowEnd\":" + actualWindowEnd));
 
-        org.junit.jupiter.api.Assertions.assertEquals(1, testAiTitleClient.textRequests.get());
-        AiTextPrompt prompt = testAiTitleClient.textPrompt.get();
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleTextClient.textRequests.get());
+        AiTextPrompt prompt = testOpenAiCompatibleTextClient.textPrompt.get();
         org.junit.jupiter.api.Assertions.assertTrue(prompt.prompt().contains("按主题聚合"));
         org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("链接分享列表"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("1.标题：数据库标题 A"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   链接：https://example.com/a"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   分享时间：" + expectedShareTime(windowStart + 1_000L)));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("2.标题：数据库标题 B"));
-        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("   链接：https://example.com/b"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("- 标题：数据库标题 A"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("  - 链接：https://example.com/a"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("  - 分享时间：" + expectedShareTime(windowStart + 1_000L)));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("- 标题：数据库标题 B"));
+        org.junit.jupiter.api.Assertions.assertTrue(prompt.content().contains("  - 链接：https://example.com/b"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("[2次]"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 A 晚到"));
         org.junit.jupiter.api.Assertions.assertFalse(prompt.content().contains("数据库标题 C"));
@@ -1196,7 +1408,7 @@ class PreviewControllerTest {
                         .content("{\"windowStart\":1000,\"windowEnd\":2000}"))
                 .andExpect(status().isBadRequest());
 
-        org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.textRequests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testOpenAiCompatibleTextClient.textRequests.get());
     }
 
     @Test
@@ -1231,14 +1443,14 @@ class PreviewControllerTest {
                         .param("taskId", String.valueOf(taskId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.items[0].errorMessage").value("Link title count 1 is below the configured minimum 2."));
-        org.junit.jupiter.api.Assertions.assertEquals(0, testAiTitleClient.textRequests.get());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testOpenAiCompatibleTextClient.textRequests.get());
     }
 
     @Test
     void adminShareSummaryImageConfigGenerationAndPublicOgEndpoints() throws Exception {
         Cookie cookie = adminCookie();
         long now = System.currentTimeMillis();
-        testAiTitleClient.generatedText.set("""
+        testOpenAiCompatibleTextClient.generatedText.set("""
                 # 分享总结报告正文
 
                 ## 关键洞察
@@ -1300,6 +1512,26 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.model").value(""))
                 .andExpect(jsonPath("$.pitch").value(0));
 
+        mockMvc.perform(post("/api/admin/share-summary/audio-config/test")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://tts.wangwangit.com","endpointPath":"/v1/audio/speech","apiKey":"","model":"","voice":"zh-CN-YunhaoNeural","speed":1.2,"pitch":0,"style":"newscast","outputFormat":"mp3","requestTimeoutSeconds":120}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.responseBytes").value(testMp3Bytes().length))
+                .andExpect(jsonPath("$.durationMs").value(19))
+                .andExpect(jsonPath("$.audioUrl", containsString("/api/admin/share-summary/audio-config/test-audio.mp3?v=")));
+        mockMvc.perform(get("/api/admin/share-summary/audio-config/test-audio.mp3")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, containsString("no-store")))
+                .andExpect(content().contentType("audio/mpeg"))
+                .andExpect(content().bytes(testMp3Bytes()));
+        org.junit.jupiter.api.Assertions.assertEquals("俺老孙有七十二般变化，一个筋斗云就是十万八千里！", testOpenAiCompatibleAudioClient.input.get());
+        testOpenAiCompatibleAudioClient.reset();
+
         mockMvc.perform(post("/api/admin/share-summary/tasks")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
@@ -1325,9 +1557,9 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.status").value(isIn(List.of("PENDING", "GENERATING"))));
 
         waitForImageSuccess(runId);
-        org.junit.jupiter.api.Assertions.assertEquals(1, testShareSummaryImageClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryImageClient.prompt.get().contains("LinkPeek - "));
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryImageClient.prompt.get().contains("科技感数据报告"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleImageClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleImageClient.prompt.get().contains("LinkPeek - "));
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleImageClient.prompt.get().contains("科技感数据报告"));
 
         mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
                         .cookie(cookie))
@@ -1360,16 +1592,16 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.status").value(isIn(List.of("PENDING", "GENERATING"))));
 
         waitForAudioSuccess(runId);
-        org.junit.jupiter.api.Assertions.assertEquals(1, testShareSummaryAudioClient.requests.get());
-        org.junit.jupiter.api.Assertions.assertEquals("", testShareSummaryAudioClient.config.get().getModel());
-        org.junit.jupiter.api.Assertions.assertEquals(0, testShareSummaryAudioClient.config.get().getPitch());
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("LinkPeek - "));
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("分享总结报告正文"));
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("内容洞察稳定"));
-        org.junit.jupiter.api.Assertions.assertTrue(testShareSummaryAudioClient.input.get().contains("图片测试标题"));
-        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("# 分享总结报告正文"));
-        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("**内容洞察**"));
-        org.junit.jupiter.api.Assertions.assertFalse(testShareSummaryAudioClient.input.get().contains("[图片测试标题](https://example.com/image)"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, testOpenAiCompatibleAudioClient.requests.get());
+        org.junit.jupiter.api.Assertions.assertEquals("", testOpenAiCompatibleAudioClient.config.get().getModel());
+        org.junit.jupiter.api.Assertions.assertEquals(0, testOpenAiCompatibleAudioClient.config.get().getPitch());
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleAudioClient.input.get().contains("LinkPeek - "));
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleAudioClient.input.get().contains("分享总结报告正文"));
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleAudioClient.input.get().contains("内容洞察稳定"));
+        org.junit.jupiter.api.Assertions.assertTrue(testOpenAiCompatibleAudioClient.input.get().contains("图片测试标题"));
+        org.junit.jupiter.api.Assertions.assertFalse(testOpenAiCompatibleAudioClient.input.get().contains("# 分享总结报告正文"));
+        org.junit.jupiter.api.Assertions.assertFalse(testOpenAiCompatibleAudioClient.input.get().contains("**内容洞察**"));
+        org.junit.jupiter.api.Assertions.assertFalse(testOpenAiCompatibleAudioClient.input.get().contains("[图片测试标题](https://example.com/image)"));
 
         mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
                         .cookie(cookie))
@@ -1389,9 +1621,25 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("og:audio:secure_url")))
                 .andExpect(content().string(containsString("og:audio:type")))
                 .andExpect(content().string(containsString("audio/mpeg")))
+                .andExpect(content().string(containsString("<link rel=\"stylesheet\" href=\"/dashboard/styles.css?v=20260612-report-topbar-polish\">")))
+                .andExpect(content().string(containsString("LinkPeek Share Report")))
+                .andExpect(content().string(containsString("class=\"icon-link project-link\"")))
+                .andExpect(content().string(containsString("href=\"https://github.com/shigella520/LinkPeek\"")))
+                .andExpect(content().string(containsString("aria-label=\"打开 LinkPeek 项目\"")))
+                .andExpect(content().string(containsString("data-report-image-viewer")))
+                .andExpect(content().string(containsString("report-image-viewer-stage")))
+                .andExpect(content().string(containsString("aria-label=\"查看分享图\"")))
+                .andExpect(content().string(containsString("aria-label=\"关闭图片预览\"")))
+                .andExpect(content().string(containsString("--report-image-viewer-mobile-width")))
+                .andExpect(content().string(containsString("updateViewerLayout")))
+                .andExpect(content().string(not(containsString("requestFullscreen"))))
+                .andExpect(content().string(not(containsString("screen.orientation"))))
                 .andExpect(content().string(containsString("data-audio-reader")))
                 .andExpect(content().string(containsString("data-audio-element")))
                 .andExpect(content().string(containsString("/share-summary/audios/")))
+                .andExpect(content().string(containsString("data-audio-status>准备播放</div>")))
+                .andExpect(content().string(containsString("setAudioStatus(\"正在播放\", true)")))
+                .andExpect(content().string(not(containsString("服务端语音"))))
                 .andExpect(content().string(containsString("data-reader")))
                 .andExpect(content().string(containsString("speechSynthesis")))
                 .andExpect(content().string(containsString("data-reader-voice")))
@@ -1416,6 +1664,85 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("<strong>内容洞察</strong>")))
                 .andExpect(content().string(containsString("<a href=\"https://example.com/image\" target=\"_blank\" rel=\"noreferrer\">图片测试标题</a>")))
                 .andExpect(content().string(containsString("<a href=\"https://example.com/plain\" target=\"_blank\" rel=\"noreferrer\">https://example.com/plain</a>")));
+    }
+
+    @Test
+    void adminShareSummaryAudioConfigSupportsMimoTtsWavOutput() throws Exception {
+        Cookie cookie = adminCookie();
+
+        mockMvc.perform(put("/api/admin/share-summary/audio-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"MIMO_TTS","baseUrl":"https://api.xiaomimimo.com","endpointPath":"/v1/chat/completions","apiKey":"sk-mimo","model":"mimo-v2.5-tts","voice":"苏打","speed":1.2,"pitch":0,"style":"请用孙悟空式的角色语气朗读，语气机灵、有气势、节奏明快，但保持内容清晰可懂。","outputFormat":"wav","requestTimeoutSeconds":120}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.providerType").value("MIMO_TTS"))
+                .andExpect(jsonPath("$.baseUrl").value("https://api.xiaomimimo.com"))
+                .andExpect(jsonPath("$.endpointPath").value("/v1/chat/completions"))
+                .andExpect(jsonPath("$.model").value("mimo-v2.5-tts"))
+                .andExpect(jsonPath("$.voice").value("苏打"))
+                .andExpect(jsonPath("$.style").value("孙悟空 活泼 凌厉 兴奋"))
+                .andExpect(jsonPath("$.outputFormat").value("wav"));
+
+        long now = System.currentTimeMillis();
+        testOpenAiCompatibleTextClient.generatedText.set("# 分享总结报告正文\n\n- 内容洞察稳定");
+        jdbcTemplate.update(
+                "INSERT INTO ai_provider (name, enabled, sort_order, base_url, api_kind, model, effort, api_key, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "local", 1, 1, "https://api.openai.com/v1", "RESPONSES", "test-model", "low", "test-key", now
+        );
+        mockMvc.perform(put("/api/admin/share-summary/image-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"enabled":true,"autoGenerate":false,"providerType":"OPENAI_COMPATIBLE","baseUrl":"https://api.example.com","endpointPath":"/v1/images/generations","apiKey":"sk-image","model":"image-model","imageSize":"auto","quality":"auto","outputFormat":"png","stylePrompt":"科技感数据报告","requestTimeoutSeconds":300}
+                                """))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/admin/share-summary/tasks")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"name":"小米语音总结","enabled":false,"periodType":"MONTHLY","runTime":"09:00","prompt":"总结","maxLinks":5,"minLinks":1}
+                                """))
+                .andExpect(status().isOk());
+        Long taskId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_task WHERE name = ?", Long.class, "小米语音总结");
+        ExpectedWindow window = currentMonthlyManualWindow();
+        insertStatsLink("mimo-audio-key", "https://example.com/mimo-audio", "小米语音测试标题", window.start() + 1_000L);
+        insertPreviewCreatedEvent("mimo-audio-key", "https://source.example.com/mimo-audio", window.start() + 1_000L, true, true);
+
+        mockMvc.perform(post("/api/admin/share-summary/tasks/{taskId}/run", taskId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCESS"));
+        Long runId = jdbcTemplate.queryForObject("SELECT id FROM share_summary_run WHERE task_id = ?", Long.class, taskId);
+
+        mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/image", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk());
+        waitForImageSuccess(runId);
+        String publicToken = jdbcTemplate.queryForObject("SELECT public_token FROM share_summary_image WHERE run_id = ?", String.class, runId);
+
+        testOpenAiCompatibleAudioClient.bytes.set(testWavBytes());
+        mockMvc.perform(post("/api/admin/share-summary/runs/{runId}/audio", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk());
+        waitForAudioSuccess(runId);
+
+        org.junit.jupiter.api.Assertions.assertEquals("MIMO_TTS", testOpenAiCompatibleAudioClient.config.get().getProviderType());
+        org.junit.jupiter.api.Assertions.assertEquals("wav", testOpenAiCompatibleAudioClient.config.get().getOutputFormat());
+        mockMvc.perform(get("/api/admin/share-summary/runs/{runId}", runId)
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.audioUrl").value(containsString("/share-summary/audios/")))
+                .andExpect(jsonPath("$.audioUrl").value(containsString(".wav")));
+
+        mockMvc.perform(get("/share-summary/audios/{publicToken}.wav", publicToken))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "audio/wav"));
+
+        mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("audio/wav")));
     }
 
     @Test
@@ -1634,6 +1961,14 @@ class PreviewControllerTest {
         mockMvc.perform(post("/api/admin/ai-providers/1/test"))
                 .andExpect(status().isUnauthorized());
 
+        mockMvc.perform(post("/api/admin/share-summary/audio-config/test")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isUnauthorized());
+
+        mockMvc.perform(get("/api/admin/share-summary/audio-config/test-audio.mp3"))
+                .andExpect(status().isUnauthorized());
+
         mockMvc.perform(get("/api/admin/logs"))
                 .andExpect(status().isUnauthorized());
 
@@ -1750,24 +2085,43 @@ class PreviewControllerTest {
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(false))
-                .andExpect(jsonPath("$.autoDowngradeTimeoutThreshold").value(3))
-                .andExpect(jsonPath("$.defaultAutoDowngradeTimeoutThreshold").value(3));
+                .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(3))
+                .andExpect(jsonPath("$.defaultAutoDowngradeFailureThreshold").value(3))
+                .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(1.0))
+                .andExpect(jsonPath("$.defaultShareSummaryTimeoutMultiplier").value(1.0));
 
         mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeTimeoutThreshold\":2}"))
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2,\"shareSummaryTimeoutMultiplier\":4}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(true))
-                .andExpect(jsonPath("$.autoDowngradeTimeoutThreshold").value(2));
+                .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(2))
+                .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(4.0));
+
+        mockMvc.perform(get("/api/admin/provider-config")
+                        .cookie(cookie))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configs.bilibili.ai_title_enabled").value("true"));
+        org.junit.jupiter.api.Assertions.assertTrue(providerConfigService.bilibiliAiTitleEnabled());
+
+        mockMvc.perform(put("/api/admin/provider-config/bilibili")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"values\":{\"ai_title_enabled\":\"false\"}}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.configs.bilibili.ai_title_enabled").value("false"));
+        org.junit.jupiter.api.Assertions.assertFalse(providerConfigService.bilibiliAiTitleEnabled());
 
         mockMvc.perform(put("/api/admin/provider-config/linuxdo")
                         .cookie(cookie)
                         .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
-                        .content("{\"values\":{\"_t\":\"token\",\"cf_clearance\":\"clear\",\"_forum_session\":\"session\"}}"))
+                        .content("{\"values\":{\"_t\":\"token\",\"cf_clearance\":\"clear\",\"_forum_session\":\"session\",\"cf_clearance_enabled\":\"false\",\"_forum_session_enabled\":\"false\"}}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.configs.linuxdo._t").value("token"));
-        org.junit.jupiter.api.Assertions.assertEquals("_t=token; cf_clearance=clear; _forum_session=session", providerConfigService.linuxDoCookieHeader());
+                .andExpect(jsonPath("$.configs.linuxdo._t").value("token"))
+                .andExpect(jsonPath("$.configs.linuxdo.cf_clearance_enabled").value("false"))
+                .andExpect(jsonPath("$.configs.linuxdo._forum_session_enabled").value("false"));
+        org.junit.jupiter.api.Assertions.assertEquals("_t=token", providerConfigService.linuxDoCookieHeader());
 
         mockMvc.perform(put("/api/admin/provider-config/nga")
                         .cookie(cookie)
@@ -1854,7 +2208,7 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.output").value("AI title"));
 
-        testAiTitleClient.generatedTitle.set(null);
+        testOpenAiCompatibleTextClient.generatedTitle.set(null);
         mockMvc.perform(post("/api/admin/ai-providers/{id}/test", providerId)
                         .cookie(cookie))
                 .andExpect(status().isOk())
@@ -2062,6 +2416,105 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.fail("Expected notification delivery to finish.");
     }
 
+    private void waitForNotificationDeliveryByEventType(String eventType) throws InterruptedException {
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM notification_delivery WHERE event_type = ?",
+                    Integer.class,
+                    eventType
+            );
+            if (count != null && count > 0) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected notification delivery for event type: " + eventType);
+    }
+
+    private void waitForNotificationDeliveryCount(String eventType, int expectedCount) throws InterruptedException {
+        long deadline = System.nanoTime() + 3_000_000_000L;
+        while (System.nanoTime() < deadline) {
+            Integer count = jdbcTemplate.queryForObject(
+                    "SELECT COUNT(*) FROM notification_delivery WHERE event_type = ?",
+                    Integer.class,
+                    eventType
+            );
+            if (count != null && count >= expectedCount) {
+                return;
+            }
+            Thread.sleep(25);
+        }
+        org.junit.jupiter.api.Assertions.fail("Expected " + expectedCount + " notification deliveries for event type: " + eventType);
+    }
+
+    private void waitForNotificationQueueToDrain() {
+        CompletableFuture<Void> drained = new CompletableFuture<>();
+        notificationWebhookExecutor.execute(() -> drained.complete(null));
+        drained.orTimeout(3, TimeUnit.SECONDS).join();
+    }
+
+    private long insertLoopbackNotificationChannel(String name) {
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                """
+                        INSERT INTO notification_channel (
+                            name,
+                            enabled,
+                            type,
+                            method,
+                            url,
+                            headers_json,
+                            body_template,
+                            secret,
+                            timeout_seconds,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                name,
+                1,
+                "WEBHOOK",
+                "POST",
+                "http://127.0.0.1/linkpeek",
+                null,
+                "{{message.body}}",
+                "",
+                1,
+                now,
+                now
+        );
+        return jdbcTemplate.queryForObject("SELECT id FROM notification_channel WHERE name = ?", Long.class, name);
+    }
+
+    private void insertNotificationTask(String name, String eventType, String templateJson, long channelId) {
+        long now = System.currentTimeMillis();
+        jdbcTemplate.update(
+                """
+                        INSERT INTO notification_task (
+                            name,
+                            enabled,
+                            event_type,
+                            filters_json,
+                            template_json,
+                            created_at,
+                            updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """,
+                name,
+                1,
+                eventType,
+                "{\"shareSummaryTaskIds\":[],\"periodTypes\":[],\"triggerTypes\":[]}",
+                templateJson,
+                now,
+                now
+        );
+        Long taskId = jdbcTemplate.queryForObject("SELECT id FROM notification_task WHERE name = ?", Long.class, name);
+        jdbcTemplate.update("INSERT INTO notification_task_channel (task_id, channel_id) VALUES (?, ?)", taskId, channelId);
+    }
+
     private static ExpectedWindow currentDailyManualWindow() {
         ZoneId zone = ZoneId.systemDefault();
         return new ExpectedWindow(
@@ -2104,24 +2557,24 @@ class PreviewControllerTest {
 
         @Bean
         @Primary
-        TestAiTitleClient testAiTitleClient() {
-            return new TestAiTitleClient();
+        TestOpenAiCompatibleTextClient testOpenAiCompatibleTextClient() {
+            return new TestOpenAiCompatibleTextClient();
         }
 
         @Bean
         @Primary
-        TestShareSummaryImageClient testShareSummaryImageClient() {
-            return new TestShareSummaryImageClient();
+        TestOpenAiCompatibleImageClient testOpenAiCompatibleImageClient() {
+            return new TestOpenAiCompatibleImageClient();
         }
 
         @Bean
         @Primary
-        TestShareSummaryAudioClient testShareSummaryAudioClient() {
-            return new TestShareSummaryAudioClient();
+        TestOpenAiCompatibleAudioClient testOpenAiCompatibleAudioClient() {
+            return new TestOpenAiCompatibleAudioClient();
         }
     }
 
-    static final class TestAiTitleClient extends AiTitleClient {
+    static final class TestOpenAiCompatibleTextClient extends OpenAiCompatibleTextClient {
         private final AtomicInteger requests = new AtomicInteger();
         private final AtomicInteger textRequests = new AtomicInteger();
         private final AtomicReference<AiTitlePrompt> prompt = new AtomicReference<>(new AiTitlePrompt("", "", ""));
@@ -2131,7 +2584,7 @@ class PreviewControllerTest {
         private final AtomicReference<CountDownLatch> blockedRequestStarted = new AtomicReference<>();
         private final AtomicReference<CountDownLatch> blockedRequestRelease = new AtomicReference<>();
 
-        TestAiTitleClient() {
+        TestOpenAiCompatibleTextClient() {
             super(null, null);
         }
 
@@ -2143,7 +2596,7 @@ class PreviewControllerTest {
         }
 
         @Override
-        public AiTitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) {
+        public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) {
             requests.incrementAndGet();
             this.prompt.set(prompt);
             CountDownLatch started = blockedRequestStarted.get();
@@ -2160,14 +2613,14 @@ class PreviewControllerTest {
                     blockedRequestRelease.set(null);
                 }
             }
-            return new AiTitleResult(Optional.ofNullable(generatedTitle.get()), 12);
+            return new TitleResult(Optional.ofNullable(generatedTitle.get()), 12);
         }
 
         @Override
-        public AiTextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) {
+        public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) {
             textRequests.incrementAndGet();
             this.textPrompt.set(prompt);
-            return new AiTextResult(Optional.ofNullable(generatedText.get()), 34);
+            return new TextResult(Optional.ofNullable(generatedText.get()), 34);
         }
 
         void blockNextRequest() {
@@ -2204,14 +2657,20 @@ class PreviewControllerTest {
         private final AtomicInteger thumbnailDownloads = new AtomicInteger();
         private final AtomicInteger canonicalizations = new AtomicInteger();
         private final AtomicInteger resolutions = new AtomicInteger();
+        private final AtomicReference<String> downloadedThumbnailUrl = new AtomicReference<>("");
         private final java.util.concurrent.atomic.AtomicBoolean generatedTextCard = new java.util.concurrent.atomic.AtomicBoolean();
+        private final java.util.concurrent.atomic.AtomicBoolean aiTitleForRealImage = new java.util.concurrent.atomic.AtomicBoolean();
+        private final java.util.concurrent.atomic.AtomicBoolean resolveFails = new java.util.concurrent.atomic.AtomicBoolean();
         private final java.util.concurrent.atomic.AtomicBoolean thumbnailFails = new java.util.concurrent.atomic.AtomicBoolean();
 
         void reset() {
             thumbnailDownloads.set(0);
             canonicalizations.set(0);
             resolutions.set(0);
+            downloadedThumbnailUrl.set("");
             generatedTextCard.set(false);
+            aiTitleForRealImage.set(false);
+            resolveFails.set(false);
             thumbnailFails.set(false);
         }
 
@@ -2234,6 +2693,9 @@ class PreviewControllerTest {
         @Override
         public PreviewMetadata resolve(URI sourceUrl) {
             resolutions.incrementAndGet();
+            if (resolveFails.get()) {
+                throw new UpstreamFetchException("Upstream crawl failed");
+            }
             boolean generated = generatedTextCard.get();
             return new PreviewMetadata(
                     sourceUrl.toString(),
@@ -2246,8 +2708,17 @@ class PreviewControllerTest {
                     1200,
                     630,
                     generated ? ContentType.ARTICLE : ContentType.VIDEO,
-                    generated ? "原始帖子正文，包含需要被 AI 总结的信息。" : ""
+                    generated
+                            ? "原始帖子正文，包含需要被 AI 总结的信息。"
+                            : (aiTitleForRealImage.get() ? "真实图片正文，包含需要被 AI 总结的信息。" : "")
             );
+        }
+
+        @Override
+        public boolean supportsAiTitle(PreviewMetadata metadata) {
+            return generatedTextCard.get()
+                    ? PreviewProvider.super.supportsAiTitle(metadata)
+                    : aiTitleForRealImage.get() && metadata != null && !metadata.rawContent().isBlank();
         }
 
         @Override
@@ -2257,17 +2728,18 @@ class PreviewControllerTest {
                 throw new UpstreamFetchException("Thumbnail failed");
             }
             Files.createDirectories(targetPath.getParent());
+            downloadedThumbnailUrl.set(metadata.thumbnailUrl());
             Files.writeString(targetPath, "thumb-data");
             return targetPath;
         }
     }
 
-    static final class TestShareSummaryImageClient extends ShareSummaryImageClient {
+    static final class TestOpenAiCompatibleImageClient extends OpenAiCompatibleImageClient {
         private final AtomicInteger requests = new AtomicInteger();
         private final AtomicReference<String> prompt = new AtomicReference<>("");
         private final AtomicReference<String> base64 = new AtomicReference<>(testPngBase64());
 
-        TestShareSummaryImageClient() {
+        TestOpenAiCompatibleImageClient() {
             super(null, null);
         }
 
@@ -2285,22 +2757,27 @@ class PreviewControllerTest {
         }
     }
 
-    static final class TestShareSummaryAudioClient extends ShareSummaryAudioClient {
+    static final class TestOpenAiCompatibleAudioClient extends OpenAiCompatibleAudioClient {
         private final AtomicInteger requests = new AtomicInteger();
         private final AtomicReference<io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord> config = new AtomicReference<>();
         private final AtomicReference<String> input = new AtomicReference<>("");
         private final AtomicReference<byte[]> bytes = new AtomicReference<>(testMp3Bytes());
 
-        TestShareSummaryAudioClient() {
+        TestOpenAiCompatibleAudioClient() {
             super(null, null);
         }
 
         @Override
-        public AudioGenerationResult generate(io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord config, String input) {
+        public boolean supports(String providerType) {
+            return true;
+        }
+
+        @Override
+        public ShareSummaryAudioProvider.AudioGenerationResult generate(io.github.shigella520.linkpeek.server.admin.model.ShareSummaryAudioConfigRecord config, String input) {
             requests.incrementAndGet();
             this.config.set(config);
             this.input.set(input);
-            return new AudioGenerationResult(bytes.get(), "{\"test\":true}", 19);
+            return new ShareSummaryAudioProvider.AudioGenerationResult(bytes.get(), "{\"test\":true}", 19);
         }
 
         void reset() {
@@ -2313,6 +2790,10 @@ class PreviewControllerTest {
 
     private static byte[] testMp3Bytes() {
         return new byte[]{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 0, 0};
+    }
+
+    private static byte[] testWavBytes() {
+        return new byte[]{'R', 'I', 'F', 'F', 36, 0, 0, 0, 'W', 'A', 'V', 'E'};
     }
 
     private static String testPngBase64() {

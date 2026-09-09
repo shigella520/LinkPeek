@@ -190,6 +190,7 @@ CREATE TABLE IF NOT EXISTS share_summary_audio (
     text_snapshot TEXT NOT NULL,
     storage_key TEXT,
     audio_url TEXT,
+    play_count INTEGER NOT NULL DEFAULT 0,
     raw_response_snapshot TEXT,
     error_message TEXT,
     duration_ms INTEGER NOT NULL DEFAULT 0,

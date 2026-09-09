@@ -44,6 +44,8 @@ public class V2exPreviewProvider implements PreviewProvider {
     private static final String TITLE_CARD_PREFIX = "generated://v2ex/title-card/";
     private static final int CARD_WIDTH = TitleCardRenderer.WIDTH;
     private static final int CARD_HEIGHT = TitleCardRenderer.HEIGHT;
+    private static final TitleCardRenderer.Watermark TITLE_CARD_WATERMARK =
+            TitleCardRenderer.Watermark.resource(V2exPreviewProvider.class, "title-card-watermark.png");
     private static final int MAX_DESCRIPTION_LENGTH = 280;
     private static final int MAX_RAW_CONTENT_LENGTH = 12_000;
     private static final String ELLIPSIS = "…";
@@ -193,7 +195,7 @@ public class V2exPreviewProvider implements PreviewProvider {
     public Path downloadThumbnail(PreviewMetadata metadata, Path targetPath) throws IOException {
         Files.createDirectories(targetPath.getParent());
         if (isGeneratedTitleCard(metadata.thumbnailUrl())) {
-            TitleCardRenderer.render(metadata.title(), SITE_NAME, metadata.canonicalUrl(), SITE_NAME, targetPath);
+            TitleCardRenderer.render(metadata.title(), SITE_NAME, metadata.canonicalUrl(), SITE_NAME, TITLE_CARD_WATERMARK, targetPath);
             return targetPath;
         }
 
