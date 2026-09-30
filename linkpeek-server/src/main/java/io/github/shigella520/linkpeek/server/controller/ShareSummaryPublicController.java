@@ -199,8 +199,15 @@ public class ShareSummaryPublicController {
                         .reader-play.is-playing::before { width: 4px; height: 14px; margin-left: 0; border: 0; border-radius: 2px; background: currentColor; box-shadow: 8px 0 0 currentColor; transform: translateX(-4px); }
                         .reader-status { min-width: 0; color: var(--muted); font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                         .reader-progress { height: 5px; margin-top: 10px; border-radius: 999px; background: rgba(10, 132, 255, 0.12); overflow: hidden; }
-                        .reader-seek { display: block; width: 100%%; min-height: 24px; margin: 4px 0 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
-                        .reader-seek:disabled { cursor: default; }
+                        .reader .reader-seek { --audio-progress: 0%%; -webkit-appearance: none; appearance: none; display: block; width: 100%%; height: 24px; min-height: 24px; margin: 4px 0 0; padding: 0; border: 0; background: transparent; cursor: pointer; }
+                        .reader-seek::-webkit-slider-runnable-track { height: 5px; border: 0; box-shadow: none; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-3)) left center / var(--audio-progress) 100%% no-repeat, rgba(10, 132, 255, 0.12); }
+                        .reader-seek::-moz-range-track { height: 5px; border: 0; box-shadow: none; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent-3)) left center / var(--audio-progress) 100%% no-repeat, rgba(10, 132, 255, 0.12); }
+                        .reader-seek::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 16px; height: 16px; margin-top: -5.5px; border: 0; border-radius: 50%%; background: var(--accent-3); box-shadow: none; opacity: 0; }
+                        .reader-seek::-moz-range-thumb { box-sizing: border-box; width: 16px; height: 16px; border: 0; border-radius: 50%%; background: var(--accent-3); box-shadow: none; opacity: 0; }
+                        .reader-seek:hover::-webkit-slider-thumb, .reader-seek:focus-visible::-webkit-slider-thumb, .reader-seek:active::-webkit-slider-thumb { opacity: 1; }
+                        .reader-seek:hover::-moz-range-thumb, .reader-seek:focus-visible::-moz-range-thumb, .reader-seek:active::-moz-range-thumb { opacity: 1; }
+                        .reader-seek:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+                        .reader-seek:disabled { cursor: default; opacity: 0.5; }
                         .reader-time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
                         .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-3)); transition: width 180ms ease; }
                         .reader-settings { display: grid; grid-template-columns: minmax(128px, 0.7fr) minmax(220px, 1.3fr); gap: 14px; margin-top: 14px; align-items: end; }
@@ -496,6 +503,7 @@ public class ShareSummaryPublicController {
                                     progress.disabled = !duration;
                                     progress.max = String(duration);
                                     progress.value = String(position);
+                                    progress.style.setProperty("--audio-progress", `${duration ? position / duration * 100 : 0}%%`);
                                     const label = formatTime(position) + " / " + formatTime(duration);
                                     time.textContent = label;
                                     progress.setAttribute("aria-valuetext", label);

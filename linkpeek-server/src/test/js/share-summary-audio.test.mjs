@@ -10,7 +10,7 @@ const key = "linkpeek.shareSummary.audioProgress:/audio.mp3";
 
 function setup({saved, duration = 120, blocked = false, src = "/audio.mp3"} = {}) {
     const element = (props = {}) => Object.assign({
-        listeners: {}, style: {}, dataset: {}, classList: {toggle() {}},
+        listeners: {}, style: {setProperty(name, value) { this[name] = value; }}, dataset: {}, classList: {toggle() {}},
         addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn); },
         emit(name) { for (const fn of this.listeners[name] || []) fn(); },
         setAttribute(name, value) { this[name] = value; }
@@ -47,6 +47,7 @@ test("restores only after metadata and lets the user seek and persist", () => {
     p.progress.emit("input");
     assert.equal(p.audio.currentTime, 75);
     assert.equal(p.storage.get(key), "75");
+    assert.equal(p.progress.style["--audio-progress"], "62.5%");
     p.audio.emit("durationchange");
     assert.equal(p.audio.currentTime, 75);
 });
