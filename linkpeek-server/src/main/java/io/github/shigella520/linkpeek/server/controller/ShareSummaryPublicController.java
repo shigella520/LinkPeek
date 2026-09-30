@@ -199,6 +199,9 @@ public class ShareSummaryPublicController {
                         .reader-play.is-playing::before { width: 4px; height: 14px; margin-left: 0; border: 0; border-radius: 2px; background: currentColor; box-shadow: 8px 0 0 currentColor; transform: translateX(-4px); }
                         .reader-status { min-width: 0; color: var(--muted); font-size: 13px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
                         .reader-progress { height: 5px; margin-top: 10px; border-radius: 999px; background: rgba(10, 132, 255, 0.12); overflow: hidden; }
+                        .reader-seek { display: block; width: 100%%; min-height: 24px; margin: 4px 0 0; padding: 0; accent-color: var(--accent); cursor: pointer; }
+                        .reader-seek:disabled { cursor: default; }
+                        .reader-time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
                         .reader-progress-bar { display: block; width: 0%%; height: 100%%; border-radius: inherit; background: linear-gradient(90deg, var(--accent), var(--accent-3)); transition: width 180ms ease; }
                         .reader-settings { display: grid; grid-template-columns: minmax(128px, 0.7fr) minmax(220px, 1.3fr); gap: 14px; margin-top: 14px; align-items: end; }
                         .reader-control { display: grid; grid-template-columns: minmax(44px, auto) minmax(0, 1fr); gap: 8px; min-width: 0; align-items: center; color: var(--muted); font-size: 13px; }
@@ -329,9 +332,8 @@ public class ShareSummaryPublicController {
                                         <button class="reader-play" type="button" data-audio-action="toggle" aria-label="播放"></button>
                                         <div>
                                             <div class="reader-status" data-audio-status>准备播放</div>
-                                            <div class="reader-progress" aria-hidden="true">
-                                                <span class="reader-progress-bar" data-audio-progress></span>
-                                            </div>
+                                            <input class="reader-seek" data-audio-progress type="range" min="0" max="0" step="0.1" value="0" disabled aria-label="音频播放进度">
+                                            <div class="reader-time" data-audio-time>0:00 / 0:00</div>
                                         </div>
                                     </div>
                                 </section>
@@ -466,6 +468,10 @@ public class ShareSummaryPublicController {
                                 const action = audioRoot.querySelector('[data-audio-action="toggle"]');
                                 const status = audioRoot.querySelector("[data-audio-status]");
                                 const progress = audioRoot.querySelector("[data-audio-progress]");
+                                const time = audioRoot.querySelector("[data-audio-time]");
+                                const progressKey = "linkpeek.shareSummary.audioProgress:" + audioRoot.dataset.audioSrc;
+                                let progressRestored = false;
+                                let lastSavedAt = 0;
                                 let playRecordedForCurrentPlayback = false;
                                 audioRoot.hidden = false;
 
@@ -475,11 +481,70 @@ public class ShareSummaryPublicController {
                                     action.setAttribute("aria-label", playing ? "暂停" : "播放");
                                 }
 
-                                function updateAudioProgress() {
-                                    const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
-                                    const percent = duration ? Math.min(100, Math.round((audio.currentTime / duration) * 100)) : 0;
-                                    progress.style.width = `${percent}%%`;
+                                function audioDuration() {
+                                    return Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
                                 }
+
+                                function formatTime(seconds) {
+                                    const total = Math.max(0, Math.floor(seconds));
+                                    return Math.floor(total / 60) + ":" + String(total %% 60).padStart(2, "0");
+                                }
+
+                                function updateAudioProgress() {
+                                    const duration = audioDuration();
+                                    const position = Math.min(duration, Math.max(0, audio.currentTime || 0));
+                                    progress.disabled = !duration;
+                                    progress.max = String(duration);
+                                    progress.value = String(position);
+                                    const label = formatTime(position) + " / " + formatTime(duration);
+                                    time.textContent = label;
+                                    progress.setAttribute("aria-valuetext", label);
+                                }
+
+                                function saveAudioProgress(force = false) {
+                                    if (!progressRestored || !audioDuration()) {
+                                        return;
+                                    }
+                                    const now = Date.now();
+                                    if (!force && now - lastSavedAt < 1000) {
+                                        return;
+                                    }
+                                    lastSavedAt = now;
+                                    try {
+                                        if (audio.ended || audio.currentTime >= audio.duration) {
+                                            localStorage.removeItem(progressKey);
+                                        } else {
+                                            localStorage.setItem(progressKey, String(audio.currentTime));
+                                        }
+                                    } catch (error) {
+                                        // Storage may be unavailable; playback must still work.
+                                    }
+                                }
+
+                                function restoreAudioProgress() {
+                                    if (!progressRestored && audioDuration()) {
+                                        try {
+                                            const saved = Number(localStorage.getItem(progressKey));
+                                            if (Number.isFinite(saved) && saved > 0 && saved < audio.duration) {
+                                                audio.currentTime = saved;
+                                                setAudioStatus("已恢复上次播放进度", false);
+                                            }
+                                        } catch (error) {
+                                            // Ignore unavailable storage or an unseekable resource.
+                                        }
+                                        progressRestored = true;
+                                    }
+                                    updateAudioProgress();
+                                }
+
+                                progress.addEventListener("input", () => {
+                                    if (!audioDuration()) {
+                                        return;
+                                    }
+                                    audio.currentTime = Math.max(0, Math.min(audio.duration, Number(progress.value)));
+                                    updateAudioProgress();
+                                    saveAudioProgress(true);
+                                });
 
                                 function recordAudioPlay() {
                                     const playUrl = audioRoot.dataset.audioPlayUrl;
@@ -510,14 +575,30 @@ public class ShareSummaryPublicController {
                                     }
                                 });
                                 audio.addEventListener("play", () => setAudioStatus("正在播放", true));
-                                audio.addEventListener("pause", () => setAudioStatus(audio.ended ? "播放完成" : "已暂停", false));
+                                audio.addEventListener("pause", () => {
+                                    setAudioStatus(audio.ended ? "播放完成" : "已暂停", false);
+                                    saveAudioProgress(true);
+                                });
                                 audio.addEventListener("ended", () => {
                                     updateAudioProgress();
                                     playRecordedForCurrentPlayback = false;
+                                    saveAudioProgress(true);
                                     setAudioStatus("播放完成", false);
                                 });
-                                audio.addEventListener("timeupdate", updateAudioProgress);
-                                audio.addEventListener("loadedmetadata", updateAudioProgress);
+                                audio.addEventListener("timeupdate", () => {
+                                    updateAudioProgress();
+                                    saveAudioProgress();
+                                });
+                                audio.addEventListener("seeked", () => saveAudioProgress(true));
+                                audio.addEventListener("loadedmetadata", restoreAudioProgress);
+                                audio.addEventListener("durationchange", restoreAudioProgress);
+                                window.addEventListener("pagehide", () => saveAudioProgress(true));
+                                document.addEventListener("visibilitychange", () => {
+                                    if (document.visibilityState === "hidden") {
+                                        saveAudioProgress(true);
+                                    }
+                                });
+                                restoreAudioProgress();
                                 audio.addEventListener("error", () => {
                                     audioRoot.hidden = true;
                                     enableSystemReader();
