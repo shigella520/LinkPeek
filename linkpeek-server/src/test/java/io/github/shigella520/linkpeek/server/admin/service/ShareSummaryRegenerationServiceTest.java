@@ -22,6 +22,7 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.net.http.HttpClient;
+import java.net.http.HttpResponse;
 import java.nio.file.Path;
 import java.time.*;
 import java.util.*;
@@ -40,6 +41,7 @@ class ShareSummaryRegenerationServiceTest {
     ShareSummaryMapper runs;
     ShareSummaryImageMapper imageMapper;
     ShareSummaryAudioMapper audioMapper;
+    NotificationMapper notificationMapper;
     ShareSummaryVersionStore versions;
     ShareSummaryService summaries;
     ShareSummaryImageService images;
@@ -69,11 +71,13 @@ class ShareSummaryRegenerationServiceTest {
         mapping.setMapUnderscoreToCamelCase(true);
         factory.setConfiguration(mapping);
         factory.setMapperLocations(new ClassPathResource("mapper/ShareSummaryMapper.xml"),
-                new ClassPathResource("mapper/ShareSummaryImageMapper.xml"), new ClassPathResource("mapper/ShareSummaryAudioMapper.xml"));
+                new ClassPathResource("mapper/ShareSummaryImageMapper.xml"), new ClassPathResource("mapper/ShareSummaryAudioMapper.xml"),
+                new ClassPathResource("mapper/NotificationMapper.xml"));
         SqlSessionTemplate session = new SqlSessionTemplate(factory.getObject());
         runs = session.getMapper(ShareSummaryMapper.class);
         imageMapper = session.getMapper(ShareSummaryImageMapper.class);
         audioMapper = session.getMapper(ShareSummaryAudioMapper.class);
+        notificationMapper = session.getMapper(NotificationMapper.class);
         versions = new ShareSummaryVersionStore(jdbc, new DataSourceTransactionManager(dataSource), new ObjectMapper(), runs, imageMapper, audioMapper, clock);
         jdbc.update("""
                 INSERT INTO share_summary_image_config(id, enabled, auto_generate, base_url, api_key, model)
@@ -127,6 +131,54 @@ class ShareSummaryRegenerationServiceTest {
     }
 
     @AfterEach void stop() { if (regeneration != null) regeneration.shutdown(); }
+
+    @Test void publishedVersionNotificationIsVisibleToImmediateDeliveryWorker() throws Exception {
+        jdbc.update("""
+                INSERT INTO notification_channel(id, name, enabled, type, url, method, timeout_seconds, created_at, updated_at)
+                VALUES (1, 'test webhook', 1, 'WEBHOOK', 'https://192.0.2.1/webhook', 'POST', 10, 0, 0)
+                """);
+        jdbc.update("""
+                INSERT INTO notification_task(id, name, enabled, event_type, template_json, created_at, updated_at)
+                VALUES (1, 'summary', 1, 'SHARE_SUMMARY_IMAGE_SUCCESS', '{"url":"{{image.ogPageUrl}}"}', 0, 0)
+                """);
+        jdbc.update("INSERT INTO notification_task_channel(task_id, channel_id) VALUES (1, 1)");
+        HttpClient webhookClient = mock(HttpClient.class);
+        @SuppressWarnings("unchecked") HttpResponse<String> response = mock(HttpResponse.class);
+        when(response.statusCode()).thenReturn(200);
+        when(response.body()).thenReturn("ok");
+        when(webhookClient.send(any(), org.mockito.ArgumentMatchers.<HttpResponse.BodyHandler<String>>any())).thenReturn(response);
+        ExecutorService worker = Executors.newSingleThreadExecutor();
+        ExecutorService immediateWorker = mock(ExecutorService.class);
+        // Force the worker to read on a separate connection before the submitting thread can clean up its transaction.
+        doAnswer(invocation -> {
+            worker.submit((Runnable) invocation.getArgument(0)).get(10, TimeUnit.SECONDS);
+            return null;
+        }).when(immediateWorker).execute(any(Runnable.class));
+        ObjectMapper json = new ObjectMapper();
+        NotificationService realNotifications = new NotificationService(notificationMapper, new NotificationTemplateService(json),
+                json, webhookClient, immediateWorker, new LinkPeekProperties(), clock);
+        doAnswer(invocation -> {
+            realNotifications.publishShareSummaryImageSuccess(invocation.getArgument(0), invocation.getArgument(1));
+            return null;
+        }).when(notifications).publishShareSummaryImageSuccess(any(), any());
+        try {
+            var revision = regeneration.regenerate(rootId, "notification-race");
+            textQueue.next(); imageQueue.next(); regeneration.reconcile();
+            assertEquals(0, jdbc.queryForObject("SELECT COUNT(*) FROM notification_delivery", Integer.class));
+            audioQueue.next(); regeneration.reconcile(); regeneration.reconcile();
+
+            assertEquals(revision.runId(), versions.publishedRunId(rootId));
+            assertEquals(1, jdbc.queryForObject("SELECT COUNT(*) FROM notification_delivery", Integer.class));
+            var delivery = notificationMapper.selectDelivery(jdbc.queryForObject("SELECT id FROM notification_delivery", Long.class));
+            assertEquals("SUCCESS", delivery.getStatus());
+            assertEquals(1, delivery.getAttemptCount());
+            assertEquals(200, delivery.getResponseStatus());
+            assertTrue(delivery.getRequestBody().contains(originalImage.getOgPageUrl()));
+            verify(webhookClient, times(1)).send(any(), org.mockito.ArgumentMatchers.<HttpResponse.BodyHandler<String>>any());
+        } finally {
+            worker.shutdownNow();
+        }
+    }
 
     @Test void publishesOnlyCompleteVersionAndKeepsOldUrlsHistoryAndWindow() throws Exception {
         var revision = regeneration.regenerate(rootId, "request-1");

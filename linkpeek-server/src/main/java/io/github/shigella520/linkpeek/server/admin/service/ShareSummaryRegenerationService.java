@@ -180,7 +180,7 @@ public class ShareSummaryRegenerationService {
     public void reconcile() {
         for (Revision snapshot : versions.active()) {
             try {
-                versions.locked(snapshot.rootRunId(), () -> {
+                ShareSummaryImageRecord publishedImage = versions.locked(snapshot.rootRunId(), () -> {
                     Revision current = versions.revision(snapshot.runId());
                     if (current == null || !current.active()) return null;
                     if (current.deadline() < clock.millis()) {
@@ -197,12 +197,9 @@ public class ShareSummaryRegenerationService {
                         ShareSummaryImageRecord image = current.imageId() == null ? null : imageMapper.selectImage(current.imageId());
                         ShareSummaryAudioRecord audio = current.audioId() == null ? null : audioMapper.selectAudio(current.audioId());
                         if (versions.publish(current)) {
-                            ShareSummaryVersionStore.afterCommit(() -> {
-                                String url = versions.shareUrl(current.rootRunId());
-                                if (url != null) image.setOgPageUrl(url);
-                                images.publishImageSuccess(image);
-                            });
-                            return null;
+                            String url = versions.shareUrl(current.rootRunId());
+                            if (url != null) image.setOgPageUrl(url);
+                            return image;
                         }
                         if (image != null && audio != null && terminal(image.getStatus()) && terminal(audio.getStatus())) {
                             String error = "图片：" + (image == null ? "未生成" : image.getStatus() + " " + nullToEmpty(image.getErrorMessage()))
@@ -213,6 +210,9 @@ public class ShareSummaryRegenerationService {
                     }
                     return null;
                 });
+                // afterCommit still has transaction-bound connections/sessions. Create the notification only
+                // after transaction cleanup, so its insert commits before an asynchronous worker reads it.
+                if (publishedImage != null) images.publishImageSuccess(publishedImage);
             } catch (RuntimeException e) {
                 log.warn("share_summary_regeneration_reconcile_failed runId={}", snapshot.runId(), e);
             }
