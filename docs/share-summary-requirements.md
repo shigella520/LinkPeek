@@ -16,6 +16,7 @@
 - 按 `max_links` 限制 AI 输入，按 `min_links` 控制最小触发数量。
 - 记录执行窗口、状态、链接数量、AI Provider、AI 耗时、报告和错误信息。
 - 成功报告自动触发 AI 分享图和 TTS 音频生成检查。
+- 整条分享总结重新生成、失败部分重试和版本历史，详见 [整体重新生成方案](share-summary-regeneration-plan.md)。
 
 当前实现不支持：
 
@@ -208,6 +209,9 @@ POST   /api/admin/share-summary/tasks/{taskId}/run
 GET    /api/admin/share-summary/runs
 GET    /api/admin/share-summary/runs/{runId}
 DELETE /api/admin/share-summary/runs/{runId}
+POST   /api/admin/share-summary/runs/{runId}/regenerate
+GET    /api/admin/share-summary/runs/{runId}/versions
+POST   /api/admin/share-summary/runs/{runId}/versions/{versionId}/retry
 ```
 
 图片和音频接口见对应现状说明及后台控制器。
@@ -235,3 +239,13 @@ DELETE /api/admin/share-summary/runs/{runId}
 - 进度仅保存在当前浏览器，不跨设备同步；系统朗读回退模式保持原有行为。
 
 播放器行为测试：`node --test linkpeek-server/src/test/js/share-summary-audio.test.mjs`。
+
+## 整体重新生成
+
+后台历史记录及详情提供「重新生成分享总结」。沿用原记录的执行窗口，在该窗口重新查询数据，并使用提交时的当前任务与模型配置生成新版本。文字先生成，图片与音频随后并行生成；三项全部成功后，原分享链接统一展示新版本。生成中、部分失败或无内容时，旧版本继续可用。
+
+整体重新生成要求三类服务可用，不受图片/音频 `auto_generate` 开关影响。任务已删除时不能发起新版本。失败后可「重试未完成部分」，沿用本次输入快照，复用已成功的文字和素材。后台可查看初始版本及后续版本。
+
+这两个 POST 接口异步返回 `202` 和版本状态，支持 `Idempotency-Key`。同一总结只允许一个活跃整体操作，期间限制单项生成和删除。状态包括 `QUEUED`、`TEXT`、`ASSETS`、`SUCCESS`、`PARTIAL_FAILED`、`FAILED`、`EMPTY`。普通执行记录接口展示当前公开版本的内容，保留原记录 ID 和触发方式；定时窗口的判断不受整体重新生成影响。
+
+新音频链接绑定独立音频 token，生成新音频不会改变旧文件链接。历史图片 token 形式的音频链接仍可使用。服务端分享页切换后，第三方平台已缓存的卡片可能延迟刷新。

@@ -18,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -83,6 +82,11 @@ public class ShareSummaryService {
         this.aiProviderDowngradeService = aiProviderDowngradeService;
         this.clock = clock;
     }
+
+    private ShareSummaryVersionStore versions;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setVersionStore(ShareSummaryVersionStore versions) { this.versions = versions; }
 
     public List<ShareSummaryTaskRecord> tasks() {
         return shareSummaryMapper.selectTasks();
@@ -149,8 +153,24 @@ public class ShareSummaryService {
         return withShareAssetSummaries(run);
     }
 
-    @Transactional
     public DeleteRunResponse deleteRun(long runId) {
+        if (versions == null) return deleteSingleRun(runId);
+        return versions.locked(runId, () -> {
+            versions.requireIdle(runId);
+            int deletedImages = 0;
+            int deletedAudios = 0;
+            for (ShareSummaryVersionStore.Revision version : versions.revisions(runId)) {
+                DeleteRunResponse deleted = deleteSingleRun(version.runId());
+                deletedImages += deleted.deletedImages();
+                deletedAudios += deleted.deletedAudios();
+            }
+            DeleteRunResponse deleted = deleteSingleRun(runId);
+            versions.deleteMetadata(runId);
+            return new DeleteRunResponse(deleted.deleted(), deletedImages + deleted.deletedImages(), deletedAudios + deleted.deletedAudios());
+        });
+    }
+
+    private DeleteRunResponse deleteSingleRun(long runId) {
         ShareSummaryRunRecord run = shareSummaryMapper.selectRun(runId);
         if (run == null) {
             throw new IllegalArgumentException("Share summary run was not found.");
@@ -438,48 +458,77 @@ public class ShareSummaryService {
         return run;
     }
 
+    public PreparedInput prepareRegeneration(ShareSummaryRunRecord original) {
+        ShareSummaryTaskRecord task = existingTask(original.getTaskId());
+        task.setPeriodType(original.getPeriodType());
+        List<AiProviderRecord> providers = aiProviderMapper.selectEnabledProviders().stream().map(provider -> {
+            AiProviderRecord snapshot = new AiProviderRecord();
+            org.springframework.beans.BeanUtils.copyProperties(provider, snapshot);
+            return snapshot;
+        }).toList();
+        if (providers.isEmpty()) throw new IllegalArgumentException("请先配置可用的文字 AI Provider。");
+        // No credentials are written to the persisted input snapshot.
+        providers.forEach(provider -> provider.setApiKey(null));
+        Window window = new Window(original.getWindowStart(), original.getWindowEnd());
+        List<ShareSummaryLinkRow> links = shareSummaryLinkMapper.selectSummaryLinks(window.startMillis(), window.endMillis());
+        return new PreparedInput(task, links.stream().limit(task.getMaxLinks()).toList(), links.size(),
+                shareSummaryLinkMapper.countCreatedEvents(window.startMillis(), window.endMillis()), providers);
+    }
+
+    public ShareSummaryRunRecord newRevisionRun(ShareSummaryRunRecord original, PreparedInput input) {
+        ShareSummaryRunRecord run = createRunningRun(input.task(), new Window(original.getWindowStart(), original.getWindowEnd()), ShareSummaryTriggerType.RETRY);
+        return run;
+    }
+
+    public void computeRevision(ShareSummaryRunRecord run, PreparedInput input) {
+        List<AiProviderRecord> current = aiProviderMapper.selectEnabledProviders();
+        for (AiProviderRecord provider : input.providers()) {
+            AiProviderRecord credential = current.stream().filter(p -> p.getId().equals(provider.getId())).findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("本次快照中的文字 AI Provider 已禁用或删除。"));
+            provider.setApiKey(credential.getApiKey());
+        }
+        computeRun(run, input.task(), new Window(run.getWindowStart(), run.getWindowEnd()), input.links(),
+                input.uniqueCount(), input.linkCount(), input.providers());
+    }
+
     private void executeRun(ShareSummaryRunRecord run, ShareSummaryTaskRecord task, Window window) {
-        int linkCount = shareSummaryLinkMapper.countCreatedEvents(window.startMillis(), window.endMillis());
-        List<ShareSummaryLinkRow> summaryLinks = shareSummaryLinkMapper.selectSummaryLinks(window.startMillis(), window.endMillis());
-        int uniqueCount = summaryLinks.size();
-        List<ShareSummaryLinkRow> inputLinks = summaryLinks.stream()
-                .limit(task.getMaxLinks())
-                .toList();
+        List<ShareSummaryLinkRow> links = shareSummaryLinkMapper.selectSummaryLinks(window.startMillis(), window.endMillis());
+        computeRun(run, task, window, links.stream().limit(task.getMaxLinks()).toList(), links.size(),
+                shareSummaryLinkMapper.countCreatedEvents(window.startMillis(), window.endMillis()), aiProviderMapper.selectEnabledProviders());
+        shareSummaryMapper.updateRun(run);
+    }
+
+    private void computeRun(ShareSummaryRunRecord run, ShareSummaryTaskRecord task, Window window,
+            List<ShareSummaryLinkRow> inputLinks, int uniqueCount, int linkCount, List<AiProviderRecord> providers) {
         run.setLinkCount(linkCount);
         run.setUniqueLinkCount(uniqueCount);
         run.setInputLinkCount(inputLinks.size());
-        if (inputLinks.isEmpty()) {
+        if (inputLinks.isEmpty() || uniqueCount < task.getMinLinks()) {
             run.setStatus(ShareSummaryRunStatus.EMPTY.name());
             run.setReport("");
-            run.setErrorMessage("No link titles were found in the summary window.");
+            run.setErrorMessage(inputLinks.isEmpty() ? "No link titles were found in the summary window."
+                    : "Link title count %d is below the configured minimum %d.".formatted(uniqueCount, task.getMinLinks()));
             run.setFinishedAt(now());
-            shareSummaryMapper.updateRun(run);
             return;
         }
-        if (uniqueCount < task.getMinLinks()) {
-            run.setStatus(ShareSummaryRunStatus.EMPTY.name());
-            run.setReport("");
-            run.setErrorMessage("Link title count %d is below the configured minimum %d.".formatted(uniqueCount, task.getMinLinks()));
-            run.setFinishedAt(now());
-            shareSummaryMapper.updateRun(run);
-            return;
-        }
-
-        AiSummaryResult result = requestAiSummary(task, window, inputLinks);
+        AiSummaryResult result = requestAiSummary(task, window, inputLinks, providers);
         run.setStatus(ShareSummaryRunStatus.SUCCESS.name());
         run.setAiProviderNames(String.join("/", result.providerNames()));
         run.setAiDurationMs(result.durationMs());
         run.setReport(result.report());
+        run.setErrorMessage(null);
         run.setFinishedAt(now());
-        shareSummaryMapper.updateRun(run);
     }
+
+    public record PreparedInput(ShareSummaryTaskRecord task, List<ShareSummaryLinkRow> links,
+            int uniqueCount, int linkCount, List<AiProviderRecord> providers) {}
 
     private AiSummaryResult requestAiSummary(
             ShareSummaryTaskRecord task,
             Window window,
-            List<ShareSummaryLinkRow> links
+            List<ShareSummaryLinkRow> links,
+            List<AiProviderRecord> providers
     ) {
-        List<AiProviderRecord> providers = aiProviderMapper.selectEnabledProviders();
         if (providers.isEmpty()) {
             throw new IllegalStateException("No enabled AI provider is configured.");
         }
@@ -737,6 +786,11 @@ public class ShareSummaryService {
         if (run == null || run.getId() == null) {
             return run;
         }
+        long identity = run.getId();
+        String originalTrigger = run.getTriggerType();
+        long displayId = versions == null ? identity : versions.displayRunId(identity);
+        if (displayId != identity) run = shareSummaryMapper.selectRun(displayId);
+        run.setPublishedRunId(displayId);
         if (shareSummaryImageService != null) {
             ShareSummaryImageService.ImageSummary summary = shareSummaryImageService.imageSummary(run.getId());
             run.setImageStatus(summary.imageStatus());
@@ -754,6 +808,17 @@ public class ShareSummaryService {
             run.setAudioUrl(summary.audioUrl());
             run.setAudioPlayCount(summary.playCount());
             run.setAudioErrorMessage(summary.audioErrorMessage());
+        }
+        if (versions != null && versions.revision(identity) == null) {
+            run.setId(identity);
+            run.setTriggerType(originalTrigger);
+            ShareSummaryVersionStore.Revision latest = versions.latest(identity);
+            if (latest != null) {
+                run.setRegenerationStatus(latest.status());
+                run.setRegenerationRunId(latest.runId());
+            }
+            String url = versions.shareUrl(identity);
+            if (StringUtils.hasText(url)) { run.setOgPageUrl(url); run.setOgShareUrl(url); }
         }
         return run;
     }

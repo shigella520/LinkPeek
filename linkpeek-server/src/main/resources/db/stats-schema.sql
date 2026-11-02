@@ -264,3 +264,45 @@ CREATE INDEX IF NOT EXISTS idx_notification_delivery_event_key ON notification_d
 CREATE INDEX IF NOT EXISTS idx_notification_delivery_status_created ON notification_delivery (status, created_at);
 CREATE INDEX IF NOT EXISTS idx_notification_delivery_task_created ON notification_delivery (notification_task_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_notification_delivery_channel_created ON notification_delivery (channel_id, created_at);
+
+-- A version reuses a run for immutable text and its own image/audio attempts.
+-- The root run remains the stable identity used by schedules and existing links.
+CREATE TABLE IF NOT EXISTS share_summary_publication (
+    root_run_id INTEGER PRIMARY KEY,
+    published_run_id INTEGER NOT NULL,
+    share_url TEXT
+);
+CREATE TABLE IF NOT EXISTS share_summary_revision (
+    run_id INTEGER PRIMARY KEY,
+    root_run_id INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    attempt INTEGER NOT NULL DEFAULT 1,
+    request_key TEXT NOT NULL,
+    input_snapshot TEXT NOT NULL,
+    image_config_snapshot TEXT NOT NULL,
+    audio_config_snapshot TEXT NOT NULL,
+    title TEXT NOT NULL,
+    description TEXT NOT NULL,
+    image_id INTEGER,
+    audio_id INTEGER,
+    error_message TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    deadline INTEGER NOT NULL,
+    UNIQUE(root_run_id, request_key)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_share_summary_revision_active
+    ON share_summary_revision(root_run_id) WHERE status IN ('QUEUED', 'TEXT', 'ASSETS');
+
+CREATE TABLE IF NOT EXISTS share_summary_regeneration_request (
+    root_run_id INTEGER NOT NULL,
+    request_key TEXT NOT NULL,
+    run_id INTEGER NOT NULL,
+    PRIMARY KEY(root_run_id, request_key)
+);
+
+-- New audio links identify an immutable audio attempt, independently of image completion.
+CREATE TABLE IF NOT EXISTS share_summary_audio_token (
+    audio_id INTEGER PRIMARY KEY,
+    public_token TEXT NOT NULL UNIQUE
+);

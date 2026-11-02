@@ -193,6 +193,7 @@
             error_message = 'RUNNING timeout exceeded.',
             finished_at = #{finishedAt}
         WHERE status = 'RUNNING'
+          AND NOT EXISTS (SELECT 1 FROM share_summary_revision v WHERE v.run_id = share_summary_run.id)
           AND started_at &lt; #{threshold}
     </update>
 
@@ -229,12 +230,14 @@
     </select>
 
     <sql id="runFilter">
-        1 = 1
+        NOT EXISTS (SELECT 1 FROM share_summary_revision v WHERE v.run_id = share_summary_run.id)
         <if test="taskId != null">
             AND task_id = #{taskId}
         </if>
         <if test="status != null and status != ''">
-            AND status = #{status}
+            AND COALESCE((SELECT published.status FROM share_summary_publication p
+                JOIN share_summary_run published ON published.id = p.published_run_id
+                WHERE p.root_run_id = share_summary_run.id), status) = #{status}
         </if>
         <if test="triggerType != null and triggerType != ''">
             AND trigger_type = #{triggerType}

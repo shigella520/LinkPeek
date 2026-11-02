@@ -172,6 +172,7 @@
             started_at = #{startedAt},
             finished_at = #{finishedAt}
         WHERE id = #{id}
+          AND status IN ('PENDING', 'GENERATING')
     </update>
 
     <update id="markStaleActiveImagesFailed">
@@ -181,6 +182,8 @@
             error_message = #{errorMessage},
             finished_at = #{finishedAt}
         WHERE status IN ('PENDING', 'GENERATING')
+          AND NOT EXISTS (SELECT 1 FROM share_summary_revision v WHERE v.run_id = share_summary_image.run_id
+              AND v.status IN ('QUEUED', 'TEXT', 'ASSETS'))
           AND COALESCE(started_at, created_at) &lt; #{threshold}
     </update>
 

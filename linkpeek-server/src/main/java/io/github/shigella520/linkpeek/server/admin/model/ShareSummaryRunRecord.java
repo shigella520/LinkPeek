@@ -1,6 +1,17 @@
 package io.github.shigella520.linkpeek.server.admin.model;
 
 public class ShareSummaryRunRecord {
+    private Long publishedRunId;
+    private String regenerationStatus;
+    private Long regenerationRunId;
+
+    public Long getPublishedRunId() { return publishedRunId; }
+    public void setPublishedRunId(Long value) { publishedRunId = value; }
+    public String getRegenerationStatus() { return regenerationStatus; }
+    public void setRegenerationStatus(String value) { regenerationStatus = value; }
+    public Long getRegenerationRunId() { return regenerationRunId; }
+    public void setRegenerationRunId(Long value) { regenerationRunId = value; }
+
     private Long id;
     private long taskId;
     private String taskName;

@@ -294,7 +294,7 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("/admin/styles.css?v=20260622-share-summary-image-centered")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
                 .andExpect(content().string(containsString("brand-text")))
-                .andExpect(content().string(containsString("/admin/app.js?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("/admin/app.js?v=20261102-share-summary-regeneration-v2")))
                 .andExpect(content().string(containsString("id=\"share-summary-image-viewer\"")))
                 .andExpect(content().string(containsString("share-summary-image-viewer-stage")))
                 .andExpect(content().string(containsString("share-summary-image-viewer-img")))

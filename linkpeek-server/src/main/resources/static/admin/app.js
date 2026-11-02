@@ -47,6 +47,10 @@
             totalPages: 0
         },
         activeShareSummaryRunId: null,
+        shareSummaryRefreshTimer: null,
+        shareSummarySubmitting: false,
+        activeShareSummaryBusy: false,
+        shareSummaryDetailSignature: null,
         aiProviderDowngradeSaveTimer: null,
         aiProviderDowngradeSaveVersion: 0,
         logRefreshTimer: null,
@@ -889,6 +893,7 @@
         setFeedback("share-summary-history-feedback", "正在读取分享总结记录...", "");
         try {
             state.shareSummaryRuns = await fetchJson(`/api/admin/share-summary/runs?${params.toString()}`);
+            scheduleShareSummaryRefresh();
             renderShareSummaryRuns();
             setFeedback("share-summary-history-feedback", `已加载 ${state.shareSummaryRuns.items.length} 条，共 ${state.shareSummaryRuns.total} 条。`, "is-success");
         } catch (error) {
@@ -1794,19 +1799,36 @@
         `;
     }
 
+    function shareSummaryBusy(run) {
+        return ["QUEUED", "TEXT", "ASSETS"].includes(run.regenerationStatus)
+            || run.status === "RUNNING" || ["PENDING", "GENERATING"].includes(run.imageStatus)
+            || ["PENDING", "GENERATING"].includes(run.audioStatus);
+    }
+
+    function regenerationLabel(status) {
+        return {QUEUED: "排队中", TEXT: "生成文字中", ASSETS: "生成图片和音频中", SUCCESS: "已完成",
+            PARTIAL_FAILED: "素材生成失败", FAILED: "生成失败", EMPTY: "无可生成内容"}[status] || status || "";
+    }
+
+    function renderRegenerationButton(run) {
+        return `<button type="button" data-regenerate-share-summary="${escapeAttribute(run.id)}" ${shareSummaryBusy(run) ? "disabled" : ""}>重新生成分享总结</button>`;
+    }
+
     function renderShareSummaryRunActions(run) {
         const canGenerate = run.status === "SUCCESS";
         const hasImage = Boolean(run.ogImageUrl);
         const hasAudio = Boolean(run.audioUrl);
         return `
             <div class="row-actions share-summary-run-actions">
+                ${renderRegenerationButton(run)}
+                ${run.regenerationStatus ? `<span class="keyline">整体生成：${escapeHtml(regenerationLabel(run.regenerationStatus))}</span>` : ""}
                 <button type="button" class="secondary" data-view-share-run="${escapeAttribute(run.id)}">详情</button>
                 ${renderShareSummaryImageActionButton(run, canGenerate, hasImage)}
                 ${renderShareSummaryAudioActionButton(run, canGenerate, hasAudio)}
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG链接</button>
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图片</button>
                 <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.audioUrl || "")}" ${run.audioUrl ? "" : "disabled"}>复制音频</button>
-                <button type="button" class="danger" data-delete-share-run="${escapeAttribute(run.id)}">删除</button>
+                <button type="button" class="danger" data-delete-share-run="${escapeAttribute(run.id)}" ${shareSummaryBusy(run) ? "disabled" : ""}>删除</button>
             </div>
         `;
     }
@@ -1814,13 +1836,13 @@
     function renderShareSummaryImageActionButton(run, canGenerate = run.status === "SUCCESS", hasImage = Boolean(run.ogImageUrl)) {
         const imageActionAttribute = hasImage ? "data-regenerate-share-image" : "data-generate-share-image";
         const imageActionLabel = hasImage ? "重新生成图片" : "生成图片";
-        return `<button type="button" class="secondary" ${imageActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate ? "" : "disabled"}>${imageActionLabel}</button>`;
+        return `<button type="button" class="secondary" ${imageActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate && !shareSummaryBusy(run) ? "" : "disabled"}>${imageActionLabel}</button>`;
     }
 
     function renderShareSummaryAudioActionButton(run, canGenerate = run.status === "SUCCESS", hasAudio = Boolean(run.audioUrl)) {
         const audioActionAttribute = hasAudio ? "data-regenerate-share-audio" : "data-generate-share-audio";
         const audioActionLabel = hasAudio ? "重新生成音频" : "生成音频";
-        return `<button type="button" class="secondary" ${audioActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate ? "" : "disabled"}>${audioActionLabel}</button>`;
+        return `<button type="button" class="secondary" ${audioActionAttribute}="${escapeAttribute(run.id)}" ${canGenerate && !shareSummaryBusy(run) ? "" : "disabled"}>${audioActionLabel}</button>`;
     }
 
     function renderShareSummaryRunPagination(payload) {
@@ -1985,6 +2007,12 @@
     }
 
     function bindShareSummaryAssetButtons(root) {
+        root.querySelectorAll("[data-regenerate-share-summary]").forEach(button => {
+            button.addEventListener("click", () => regenerateShareSummary(button.dataset.regenerateShareSummary));
+        });
+        root.querySelectorAll("[data-retry-share-version]").forEach(button => {
+            button.addEventListener("click", () => regenerateShareSummary(button.dataset.rootRun, button.dataset.retryShareVersion));
+        });
         root.querySelectorAll("[data-generate-share-image]").forEach((button) => {
             button.addEventListener("click", () => generateShareSummaryImage(button.dataset.generateShareImage, false));
         });
@@ -2051,6 +2079,47 @@
         }
         const imageWidth = Math.min(stageRect.height, stageRect.width * 1200 / 630);
         stage.style.setProperty("--share-summary-image-viewer-mobile-width", `${Math.floor(imageWidth)}px`);
+    }
+
+    async function regenerateShareSummary(runId, versionId = null) {
+        if (state.shareSummarySubmitting) return;
+        state.shareSummarySubmitting = true;
+        document.querySelectorAll("[data-regenerate-share-summary], [data-retry-share-version]").forEach(button => { button.disabled = true; });
+        setFeedback("share-summary-history-feedback", "正在提交重新生成任务...", "");
+        try {
+            const path = versionId ? `versions/${encodeURIComponent(versionId)}/retry` : "regenerate";
+            await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/${path}`, {
+                method: "POST",
+                headers: {Accept: "application/json", "Content-Type": "application/json", "Idempotency-Key": crypto.randomUUID()}
+            });
+            await loadShareSummaryRuns();
+            await openShareSummaryRunDetail(runId);
+            setFeedback("share-summary-run-modal-feedback", "已提交。三项全部成功后原链接统一更新，完成前继续展示旧版本。", "is-success");
+        } catch (error) {
+            setFeedback("share-summary-history-feedback", error.message, "is-error");
+            setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
+        } finally {
+            state.shareSummarySubmitting = false;
+            // Refresh eligibility from server state after both successful and failed admission.
+            await loadShareSummaryRuns();
+            if (state.activeShareSummaryRunId) refreshShareSummaryRunDetail(state.activeShareSummaryRunId).catch(() => {});
+        }
+    }
+
+    function scheduleShareSummaryRefresh() {
+        window.clearTimeout(state.shareSummaryRefreshTimer);
+        const busy = (state.shareSummaryRuns.items || []).some(shareSummaryBusy);
+        if (!busy && !(state.activeShareSummaryRunId && state.activeShareSummaryBusy)) return;
+        state.shareSummaryRefreshTimer = window.setTimeout(async () => {
+            try {
+                await loadShareSummaryRuns();
+                if (state.activeShareSummaryRunId) await refreshShareSummaryRunDetail(state.activeShareSummaryRunId);
+            } catch (error) {
+                setFeedback("share-summary-history-feedback", error.message, "is-error");
+            } finally {
+                scheduleShareSummaryRefresh();
+            }
+        }, 3000);
     }
 
     async function generateShareSummaryImage(runId, regenerate) {
@@ -3130,26 +3199,66 @@
 
     async function openShareSummaryRunDetail(runId) {
         state.activeShareSummaryRunId = runId;
+        state.shareSummaryDetailSignature = null;
         openModal("share-summary-run-modal");
         document.getElementById("share-summary-run-detail").innerHTML = `<p class="muted">正在读取详情...</p>`;
         setFeedback("share-summary-run-modal-feedback", "", "");
         try {
-            const run = await fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}`);
-            const [images, audios] = await Promise.all([
-                fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/images`),
-                fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/audios`)
-            ]);
-            document.getElementById("share-summary-run-modal-title").textContent = `分享总结详情：${run.taskName || run.id}`;
-            document.getElementById("share-summary-run-detail").innerHTML = renderShareSummaryRunDetail(run, images, audios);
-            bindShareSummaryAssetButtons(document.getElementById("share-summary-run-detail"));
+            await refreshShareSummaryRunDetail(runId);
+            scheduleShareSummaryRefresh();
         } catch (error) {
             setFeedback("share-summary-run-modal-feedback", error.message, "is-error");
         }
     }
 
+    async function refreshShareSummaryRunDetail(runId) {
+        const [run, versions] = await Promise.all([
+            fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}`),
+            fetchJson(`/api/admin/share-summary/runs/${encodeURIComponent(runId)}/versions`)
+        ]);
+        if (String(state.activeShareSummaryRunId) !== String(runId)) return;
+        state.activeShareSummaryBusy = shareSummaryBusy(run);
+        if (run.regenerationStatus === "SUCCESS") {
+            setFeedback("share-summary-run-modal-feedback", "整体重新生成已完成，原分享链接已更新。", "is-success");
+        }
+        const signature = JSON.stringify([run, versions]);
+        if (signature === state.shareSummaryDetailSignature) return;
+        state.shareSummaryDetailSignature = signature;
+        const current = versions.find(version => Number(version.run.id) === Number(run.publishedRunId || run.id));
+        const detail = document.getElementById("share-summary-run-detail");
+        // Preserve expanded history across progress refreshes.
+        const expanded = new Set(Array.from(detail.querySelectorAll("details[data-version-id][open]")).map(node => node.dataset.versionId));
+        document.getElementById("share-summary-run-modal-title").textContent = `分享总结详情：${run.taskName || run.id}`;
+        detail.innerHTML = renderShareSummaryRunDetail(run, current?.images || [], current?.audios || [], versions)
+            + renderShareSummaryVersions(run, versions);
+        detail.querySelectorAll("details[data-version-id]").forEach(node => { node.open = expanded.has(node.dataset.versionId); });
+        bindShareSummaryAssetButtons(detail);
+    }
+
+    function renderShareSummaryProgress(run, versions) {
+        const latest = versions.find(version => version.revision);
+        const progress = latest ? `<p>最近一次整体生成：${escapeHtml(regenerationLabel(latest.revision.status))}</p>
+            <p>文字：${escapeHtml(latest.run.status)} · 图片：${escapeHtml(latest.run.imageStatus || "未生成")} · 音频：${escapeHtml(latest.run.audioStatus || "未生成")}</p>
+            ${latest.revision.errorMessage ? `<p class="is-error">${escapeHtml(latest.revision.errorMessage)}</p>` : ""}
+            ${["FAILED", "PARTIAL_FAILED"].includes(latest.revision.status) ? `<button type="button" data-retry-share-version="${escapeAttribute(latest.run.id)}" data-root-run="${escapeAttribute(run.id)}" ${shareSummaryBusy(run) ? "disabled" : ""}>重试未完成部分</button>` : ""}` : "";
+        return progress;
+    }
+
+    function renderShareSummaryVersions(run, versions) {
+        return `<section class="summary-detail-section"><h4>版本历史</h4>
+            ${versions.map(version => `<details data-version-id="${escapeAttribute(version.run.id)}">
+                <summary>${version.revision ? `版本 #${escapeHtml(version.run.id)}` : "初始版本"} · ${escapeHtml(formatTimestamp(version.revision?.createdAt || version.run.startedAt))} · ${version.published ? "当前展示" : escapeHtml(regenerationLabel(version.revision?.status) || version.run.status)}</summary>
+                ${version.run.errorMessage ? `<p>${escapeHtml(version.run.errorMessage)}</p>` : ""}
+                <article class="summary-report">${renderSummaryReport(version.run.report || "尚无文字内容")}</article>
+                ${version.images.filter(image => image.status === "SUCCESS").map(image => `<p><a href="${escapeAttribute(image.ogImageUrl)}" target="_blank" rel="noopener">查看图片 #${escapeHtml(image.id)}</a></p>`).join("")}
+                ${version.audios.filter(audio => audio.status === "SUCCESS").map(audio => `<p><a href="${escapeAttribute(audio.audioUrl)}" target="_blank" rel="noopener">收听音频 #${escapeHtml(audio.id)}</a></p>`).join("")}
+            </details>`).join("")}</section>`;
+    }
+
     function closeShareSummaryRunModal() {
         closeModal("share-summary-run-modal");
         state.activeShareSummaryRunId = null;
+        state.activeShareSummaryBusy = false;
         setFeedback("share-summary-run-modal-feedback", "", "");
     }
 
@@ -3381,8 +3490,13 @@
         return `<div class="keyline summary-error-hint" title="${escapeAttribute(errorMessage)}">${escapeHtml(errorMessage)}</div>`;
     }
 
-    function renderShareSummaryRunDetail(run, images = [], audios = []) {
+    function renderShareSummaryRunDetail(run, images = [], audios = [], versions = []) {
         return `
+            <section class="summary-detail-section">
+                <div class="row-actions">${renderRegenerationButton(run)}</div>
+                <p class="muted">沿用本条总结的时间范围，按当前配置重新生成文字、图片和音频。全部成功后原分享链接统一更新，旧版本保留。</p>
+                ${renderShareSummaryProgress(run, versions)}
+            </section>
             <div class="summary-detail-grid">
                 <div><b>状态</b><span>${renderRunStatus(run.status)}</span></div>
                 <div><b>触发方式</b><span>${escapeHtml(run.triggerType || "-")}</span></div>

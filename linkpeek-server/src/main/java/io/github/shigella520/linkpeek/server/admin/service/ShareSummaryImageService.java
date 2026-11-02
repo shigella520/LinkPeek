@@ -120,12 +120,28 @@ public class ShareSummaryImageService {
         return ConfigResponse.fromRecord(normalized);
     }
 
+    private ShareSummaryVersionStore versions;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setVersionStore(ShareSummaryVersionStore versions) { this.versions = versions; }
+
+    public ShareSummaryImageConfigRecord readyConfig() {
+        ShareSummaryImageConfigRecord config = configRecord();
+        validateReadyConfig(config);
+        return config;
+    }
+
     public ImageResponse generateImage(long runId, boolean regenerate) {
+        if (versions != null) return versions.assetOperation(runId, id -> generateImageForVersion(id, regenerate));
+        return generateImageForVersion(runId, regenerate);
+    }
+
+    ImageResponse generateImageForVersion(long runId, boolean regenerate) {
         ShareSummaryRunRecord run = existingRun(runId);
         if (!ShareSummaryRunStatus.SUCCESS.name().equals(run.getStatus())) {
             throw new IllegalArgumentException("Only successful share summary runs can generate images.");
         }
-        ShareSummaryImageConfigRecord config = configRecord();
+        ShareSummaryImageConfigRecord config = versions == null ? configRecord() : versions.imageConfig(runId, configRecord());
         validateReadyConfig(config);
         markStaleActiveImagesFailed();
         ShareSummaryImageRecord active = imageMapper.selectActiveImage(runId);
@@ -141,7 +157,7 @@ public class ShareSummaryImageService {
 
         ShareSummaryImageRecord image = createPendingImage(run, config);
         imageMapper.insertImage(image);
-        submitImageGeneration(image.getId());
+        ShareSummaryVersionStore.afterCommit(() -> submitImageGeneration(image.getId()));
         return ImageResponse.fromRecord(imageMapper.selectImage(image.getId()));
     }
 
@@ -161,6 +177,7 @@ public class ShareSummaryImageService {
     }
 
     public List<ImageResponse> images(long runId) {
+        if (versions != null) runId = versions.displayRunId(runId);
         existingRun(runId);
         return imageMapper.selectImagesForRun(runId).stream()
                 .map(ImageResponse::fromRecord)
@@ -224,7 +241,19 @@ public class ShareSummaryImageService {
 
     public PublicReport publicReport(String publicToken) {
         ShareSummaryImageRecord image = existingPublicImage(publicToken);
-        ShareSummaryRunRecord run = existingRun(image.getRunId());
+        long runId = image.getRunId();
+        if (versions != null) {
+            long rootId = versions.rootRunId(runId);
+            long publishedId = versions.publishedRunId(rootId);
+            if (versions.latest(rootId) != null) {
+                image = imageMapper.selectLatestSuccessfulImage(publishedId);
+                if (image == null) throw new IllegalArgumentException("Share summary is not published.");
+                runId = publishedId;
+                String stableUrl = versions.shareUrl(rootId);
+                if (StringUtils.hasText(stableUrl)) image.setOgPageUrl(stableUrl);
+            }
+        }
+        ShareSummaryRunRecord run = existingRun(runId);
         return new PublicReport(image, run);
     }
 
@@ -232,14 +261,17 @@ public class ShareSummaryImageService {
         try {
             executor.execute(() -> generateImageNow(imageId));
         } catch (RejectedExecutionException exception) {
-            ShareSummaryImageRecord image = imageMapper.selectImage(imageId);
-            if (image != null) {
-                image.setStatus(ShareSummaryImageStatus.FAILED.name());
-                image.setErrorMessage("IMAGE_QUEUE_FULL");
-                image.setFinishedAt(now());
-                imageMapper.updateImage(image);
-                publishImageFailed(image, RejectedExecutionException.class.getSimpleName(), "IMAGE_QUEUE_FULL");
-            }
+            Runnable rejected = () -> {
+                ShareSummaryImageRecord image = imageMapper.selectImage(imageId);
+                if (image != null) {
+                    image.setStatus(ShareSummaryImageStatus.FAILED.name());
+                    image.setErrorMessage("IMAGE_QUEUE_FULL");
+                    image.setFinishedAt(now());
+                    imageMapper.updateImage(image);
+                    publishImageFailed(image, RejectedExecutionException.class.getSimpleName(), "IMAGE_QUEUE_FULL");
+                }
+            };
+            if (versions == null) rejected.run(); else versions.independent(rejected);
         }
     }
 
@@ -251,9 +283,9 @@ public class ShareSummaryImageService {
         long startedAt = now();
         image.setStatus(ShareSummaryImageStatus.GENERATING.name());
         image.setStartedAt(startedAt);
-        imageMapper.updateImage(image);
+        if (imageMapper.updateImage(image) == 0) return;
         try {
-            ShareSummaryImageConfigRecord config = configRecord();
+            ShareSummaryImageConfigRecord config = versions == null ? configRecord() : versions.imageConfig(image.getRunId(), configRecord());
             OpenAiCompatibleImageClient.ImageGenerationResult result = imageClient.generate(config, image.getPromptSnapshot());
             byte[] sourceBytes = StringUtils.hasText(result.base64())
                     ? decodeBase64Image(result.base64())
@@ -269,8 +301,9 @@ public class ShareSummaryImageService {
             image.setStatus(ShareSummaryImageStatus.SUCCESS.name());
             image.setErrorMessage(null);
             image.setFinishedAt(now());
-            imageMapper.updateImage(image);
-            publishImageSuccess(image);
+            if (imageMapper.updateImage(image) == 0) return;
+            ShareSummaryVersionStore.Revision version = versions == null ? null : versions.revision(image.getRunId());
+            if (version == null || "SUCCESS".equals(version.status())) publishImageSuccess(image);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             failImage(image, ShareSummaryImageStatus.FAILED, exception, "Image generation was interrupted.");
@@ -422,7 +455,7 @@ public class ShareSummaryImageService {
         return "LinkPeek - %d年第%02d周周报".formatted(year, week);
     }
 
-    private String ogDescription(ShareSummaryRunRecord run) {
+    public String ogDescription(ShareSummaryRunRecord run) {
         return "本报告汇总了 %s 至 %s 的链接分享与内容洞察。".formatted(
                 dateLabel(run.getWindowStart()),
                 dateLabel(run.getWindowEnd())
@@ -558,7 +591,7 @@ public class ShareSummaryImageService {
         }
     }
 
-    private void publishImageSuccess(ShareSummaryImageRecord image) {
+    void publishImageSuccess(ShareSummaryImageRecord image) {
         if (notificationService == null) {
             return;
         }

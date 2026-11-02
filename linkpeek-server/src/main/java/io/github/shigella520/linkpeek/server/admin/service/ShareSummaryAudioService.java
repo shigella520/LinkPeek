@@ -147,12 +147,28 @@ public class ShareSummaryAudioService {
         }
     }
 
+    private ShareSummaryVersionStore versions;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setVersionStore(ShareSummaryVersionStore versions) { this.versions = versions; }
+
+    public ShareSummaryAudioConfigRecord readyConfig() {
+        ShareSummaryAudioConfigRecord config = configRecord();
+        validateReadyConfig(config);
+        return config;
+    }
+
     public AudioResponse generateAudio(long runId, boolean regenerate) {
+        if (versions != null) return versions.assetOperation(runId, id -> generateAudioForVersion(id, regenerate));
+        return generateAudioForVersion(runId, regenerate);
+    }
+
+    AudioResponse generateAudioForVersion(long runId, boolean regenerate) {
         ShareSummaryRunRecord run = existingRun(runId);
         if (!ShareSummaryRunStatus.SUCCESS.name().equals(run.getStatus())) {
             throw new IllegalArgumentException("Only successful share summary runs can generate audio.");
         }
-        ShareSummaryAudioConfigRecord config = configRecord();
+        ShareSummaryAudioConfigRecord config = versions == null ? configRecord() : versions.audioConfig(runId, configRecord());
         validateReadyConfig(config);
         markStaleActiveAudiosFailed();
         ShareSummaryAudioRecord active = audioMapper.selectActiveAudio(runId);
@@ -168,7 +184,8 @@ public class ShareSummaryAudioService {
 
         ShareSummaryAudioRecord audio = createPendingAudio(run, config);
         audioMapper.insertAudio(audio);
-        submitAudioGeneration(audio.getId());
+        if (versions != null) versions.createAudioToken(audio.getId());
+        ShareSummaryVersionStore.afterCommit(() -> submitAudioGeneration(audio.getId()));
         return AudioResponse.fromRecord(audioMapper.selectAudio(audio.getId()), publicAudioUrl(audio));
     }
 
@@ -188,6 +205,7 @@ public class ShareSummaryAudioService {
     }
 
     public List<AudioResponse> audios(long runId) {
+        if (versions != null) runId = versions.displayRunId(runId);
         existingRun(runId);
         return audioMapper.selectAudiosForRun(runId).stream()
                 .map(audio -> AudioResponse.fromRecord(audio, publicAudioUrl(audio)))
@@ -200,6 +218,7 @@ public class ShareSummaryAudioService {
             throw new IllegalStateException("Share summary audio generation is in progress.");
         }
         List<ShareSummaryAudioRecord> audios = audioMapper.selectAudiosForRun(runId);
+        if (versions != null) versions.deleteAudioTokens(runId);
         int deleted = audioMapper.deleteAudiosForRun(runId);
         deleteStoredAudiosAfterCommit(audios);
         return deleted;
@@ -214,6 +233,10 @@ public class ShareSummaryAudioService {
             log.warn("share_summary_audio_stale_active_marked_failed count={} threshold={}", updated, threshold);
         }
         return updated;
+    }
+
+    AudioResponse response(ShareSummaryAudioRecord audio) {
+        return AudioResponse.fromRecord(audio, publicAudioUrl(audio));
     }
 
     public AudioResponse audio(long audioId) {
@@ -269,14 +292,17 @@ public class ShareSummaryAudioService {
         try {
             executor.execute(() -> generateAudioNow(audioId));
         } catch (RejectedExecutionException exception) {
-            ShareSummaryAudioRecord audio = audioMapper.selectAudio(audioId);
-            if (audio != null) {
-                audio.setStatus(ShareSummaryAudioStatus.FAILED.name());
-                audio.setErrorMessage("AUDIO_QUEUE_FULL");
-                audio.setFinishedAt(now());
-                audioMapper.updateAudio(audio);
-                publishAudioFailed(audio, RejectedExecutionException.class.getSimpleName(), "AUDIO_QUEUE_FULL");
-            }
+            Runnable rejected = () -> {
+                ShareSummaryAudioRecord audio = audioMapper.selectAudio(audioId);
+                if (audio != null) {
+                    audio.setStatus(ShareSummaryAudioStatus.FAILED.name());
+                    audio.setErrorMessage("AUDIO_QUEUE_FULL");
+                    audio.setFinishedAt(now());
+                    audioMapper.updateAudio(audio);
+                    publishAudioFailed(audio, RejectedExecutionException.class.getSimpleName(), "AUDIO_QUEUE_FULL");
+                }
+            };
+            if (versions == null) rejected.run(); else versions.independent(rejected);
         }
     }
 
@@ -288,9 +314,9 @@ public class ShareSummaryAudioService {
         long startedAt = now();
         audio.setStatus(ShareSummaryAudioStatus.GENERATING.name());
         audio.setStartedAt(startedAt);
-        audioMapper.updateAudio(audio);
+        if (audioMapper.updateAudio(audio) == 0) return;
         try {
-            ShareSummaryAudioConfigRecord config = configRecord();
+            ShareSummaryAudioConfigRecord config = versions == null ? configRecord() : versions.audioConfig(audio.getRunId(), configRecord());
             ShareSummaryAudioProvider.AudioGenerationResult result = audioProvider(config).generate(config, audio.getTextSnapshot());
             byte[] bytes = result.audioBytes();
             if (bytes.length > MAX_AUDIO_BYTES) {
@@ -304,7 +330,7 @@ public class ShareSummaryAudioService {
             audio.setStatus(ShareSummaryAudioStatus.SUCCESS.name());
             audio.setErrorMessage(null);
             audio.setFinishedAt(now());
-            audioMapper.updateAudio(audio);
+            if (audioMapper.updateAudio(audio) == 0) return;
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             failAudio(audio, exception, "Audio generation was interrupted.");
@@ -325,7 +351,9 @@ public class ShareSummaryAudioService {
         audio.setPitch(config.getPitch());
         audio.setStyle(config.getStyle());
         audio.setOutputFormat(config.getOutputFormat());
-        audio.setTextSnapshot(audioText(run));
+        ShareSummaryVersionStore.Revision version = versions == null ? null : versions.revision(run.getId());
+        audio.setTextSnapshot(version == null ? audioText(run)
+                : (version.title() + "\n" + version.description() + "\n" + ShareSummaryMarkdownRenderer.toPlainText(run.getReport())).strip());
         audio.setCreatedAt(now());
         return audio;
     }
@@ -656,11 +684,12 @@ public class ShareSummaryAudioService {
         if (!StringUtils.hasText(publicToken)) {
             throw new IllegalArgumentException("Share summary audio token is required.");
         }
-        ShareSummaryImageRecord image = imageMapper.selectImageByPublicToken(publicToken.strip());
-        if (image == null) {
-            throw new IllegalArgumentException("Share summary audio was not found.");
+        ShareSummaryAudioRecord audio = versions == null ? null : versions.audioByToken(publicToken.strip());
+        if (audio == null) {
+            ShareSummaryImageRecord image = imageMapper.selectImageByPublicToken(publicToken.strip());
+            if (image == null) throw new IllegalArgumentException("Share summary audio was not found.");
+            audio = audioMapper.selectLatestSuccessfulAudio(image.getRunId());
         }
-        ShareSummaryAudioRecord audio = audioMapper.selectLatestSuccessfulAudio(image.getRunId());
         if (audio == null || !ShareSummaryAudioStatus.SUCCESS.name().equals(audio.getStatus()) || !StringUtils.hasText(audio.getStorageKey())) {
             throw new IllegalArgumentException("Share summary audio is not available.");
         }
@@ -681,6 +710,10 @@ public class ShareSummaryAudioService {
     private String publicAudioUrl(ShareSummaryAudioRecord audio) {
         if (audio == null) {
             return null;
+        }
+        String token = versions == null || audio.getId() == null ? null : versions.audioToken(audio.getId());
+        if (StringUtils.hasText(token)) {
+            return baseUrl() + "/share-summary/audios/" + token + "." + normalizeOutputFormat(audio.getOutputFormat(), audio.getProviderType());
         }
         ShareSummaryImageRecord image = imageMapper.selectLatestSuccessfulImage(audio.getRunId());
         if (image == null || !StringUtils.hasText(image.getPublicToken())) {
