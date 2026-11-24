@@ -343,7 +343,9 @@ URL 安全：
 
 - URL 必须是 `http` 或 `https`。
 - host 必须存在。
-- 解析出的地址不允许是 any-local、loopback、link-local、site-local 或 multicast。
+- 解析出的地址不允许是 any-local、loopback、link-local 或 multicast。
+- site-local 地址默认禁止；可通过环境变量 `WEBHOOK_ALLOWED_PRIVATE_HOSTS` 配置内网主机白名单。多个 IP 或域名用逗号分隔，精确匹配 URL host，不含协议、端口或路径，不支持通配符或 CIDR。
+- 保存渠道和发送通知均执行同一校验；白名单默认为空，配置变更需重启应用（Docker Compose 部署需重建容器）。
 
 ## 发送记录
 

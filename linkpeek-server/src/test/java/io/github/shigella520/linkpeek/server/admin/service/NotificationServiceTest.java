@@ -19,6 +19,8 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -263,19 +265,94 @@ class NotificationServiceTest {
         verify(mapper, never()).resetDeliveryForRetry(delivery);
     }
 
+    @Test
+    void privateWebhookIsRejectedByDefaultOnSaveAndSend() throws Exception {
+        NotificationMapper mapper = mock(NotificationMapper.class);
+        HttpClient client = mock(HttpClient.class);
+        NotificationChannelRecord channel = channel();
+        channel.setUrl("http://192.168.31.11:1234/api/v1/message/text");
+        when(mapper.selectChannel(3L)).thenReturn(channel);
+        NotificationService service = service(mapper, mock(ExecutorService.class), client, new LinkPeekProperties());
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.createChannel(channelRequest(channel.getUrl())));
+        assertTrue(error.getMessage().contains("WEBHOOK_ALLOWED_PRIVATE_HOSTS"));
+        verify(mapper, never()).insertChannel(any());
+        assertTrue(service.testChannel(3L).errorMessage().contains("WEBHOOK_ALLOWED_PRIVATE_HOSTS"));
+        verify(client, never()).send(any(), any());
+    }
+
+    @Test
+    void privateWebhookAllowlistAppliesToSaveAndSend() throws Exception {
+        NotificationMapper mapper = mock(NotificationMapper.class);
+        HttpClient client = mock(HttpClient.class);
+        LinkPeekProperties properties = new LinkPeekProperties();
+        properties.setWebhookAllowedPrivateHosts(List.of("192.168.31.12", " 192.168.31.11 "));
+        NotificationChannelRecord channel = channel();
+        channel.setUrl("http://192.168.31.11:1234/api/v1/message/text");
+        doAnswer(invocation -> {
+            NotificationChannelRecord saved = invocation.getArgument(0);
+            saved.setId(3L);
+            return null;
+        }).when(mapper).insertChannel(any());
+        when(mapper.selectChannel(3L)).thenReturn(channel);
+        HttpResponse<String> response = mock(HttpResponse.class);
+        when(response.statusCode()).thenReturn(200);
+        when(response.body()).thenReturn("ok");
+        when(client.send(any(HttpRequest.class), org.mockito.ArgumentMatchers.<HttpResponse.BodyHandler<String>>any()))
+                .thenReturn(response);
+        NotificationService service = service(mapper, mock(ExecutorService.class), client, properties);
+
+        assertEquals(channel.getUrl(), service.createChannel(channelRequest(channel.getUrl())).url());
+        assertTrue(service.testChannel(3L).success());
+        ArgumentCaptor<HttpRequest> request = ArgumentCaptor.forClass(HttpRequest.class);
+        verify(client).send(request.capture(), any());
+        assertEquals(channel.getUrl(), request.getValue().uri().toString());
+
+        properties.setWebhookAllowedPrivateHosts(List.of());
+        assertTrue(service.testChannel(3L).errorMessage().contains("WEBHOOK_ALLOWED_PRIVATE_HOSTS"));
+        verify(client).send(any(), any());
+    }
+
+    @Test
+    void privateWebhookAllowlistDoesNotAllowOtherHostsOrSpecialAddresses() {
+        NotificationMapper mapper = mock(NotificationMapper.class);
+        LinkPeekProperties properties = new LinkPeekProperties();
+        properties.setWebhookAllowedPrivateHosts(List.of(
+                "192.168.31.11", "127.0.0.1", "169.254.169.254", "0.0.0.0", "224.0.0.1"));
+        NotificationService service = service(mapper, mock(ExecutorService.class), mock(HttpClient.class), properties);
+
+        for (String host : List.of("192.168.31.110", "10.0.0.1", "127.0.0.1", "169.254.169.254", "0.0.0.0", "224.0.0.1")) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.createChannel(channelRequest("http://" + host + "/webhook")), host);
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> service.createChannel(channelRequest("ftp://192.168.31.11/webhook")));
+        verify(mapper, never()).insertChannel(any());
+    }
+
+    private NotificationService.ChannelRequest channelRequest(String url) {
+        return new NotificationService.ChannelRequest("BlueBubbles", true, url, null, null, null, 10);
+    }
+
     private NotificationService service(NotificationMapper mapper) {
         return service(mapper, directExecutor());
     }
 
     private NotificationService service(NotificationMapper mapper, ExecutorService executor) {
+        return service(mapper, executor, HttpClient.newHttpClient(), new LinkPeekProperties());
+    }
+
+    private NotificationService service(NotificationMapper mapper, ExecutorService executor,
+                                        HttpClient client, LinkPeekProperties properties) {
         ObjectMapper objectMapper = new ObjectMapper();
         return new NotificationService(
                 mapper,
                 new NotificationTemplateService(objectMapper),
                 objectMapper,
-                HttpClient.newHttpClient(),
+                client,
                 executor,
-                new LinkPeekProperties(),
+                properties,
                 Clock.fixed(Instant.parse("2026-06-04T02:00:00Z"), ZoneId.of("Asia/Shanghai"))
         );
     }

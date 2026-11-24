@@ -25,6 +25,7 @@ public class LinkPeekProperties {
     private boolean previewWarmupEnabled = true;
     private int previewWarmupThreads = 2;
     private int previewWarmupQueueCapacity = 64;
+    private List<String> webhookAllowedPrivateHosts = List.of();
     private List<String> crawlerSignatures = List.of(
             "facebookexternalhit",
             "Facebot",
@@ -170,6 +171,14 @@ public class LinkPeekProperties {
 
     public List<String> getCrawlerSignatures() {
         return crawlerSignatures;
+    }
+
+    public List<String> getWebhookAllowedPrivateHosts() {
+        return webhookAllowedPrivateHosts;
+    }
+
+    public void setWebhookAllowedPrivateHosts(List<String> webhookAllowedPrivateHosts) {
+        this.webhookAllowedPrivateHosts = webhookAllowedPrivateHosts == null ? List.of() : webhookAllowedPrivateHosts;
     }
 
     public void setCrawlerSignatures(List<String> crawlerSignatures) {

@@ -53,6 +53,7 @@ linkpeek:
   preview-warmup-enabled: ${PREVIEW_WARMUP_ENABLED:true}
   preview-warmup-threads: ${PREVIEW_WARMUP_THREADS:2}
   preview-warmup-queue-capacity: ${PREVIEW_WARMUP_QUEUE_CAPACITY:64}
+  webhook-allowed-private-hosts: ${WEBHOOK_ALLOWED_PRIVATE_HOSTS:}
   crawler-signatures:
     - facebookexternalhit
     - Facebot

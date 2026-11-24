@@ -581,9 +581,14 @@ public class NotificationService {
             if (address.isAnyLocalAddress()
                     || address.isLoopbackAddress()
                     || address.isLinkLocalAddress()
-                    || address.isSiteLocalAddress()
                     || address.isMulticastAddress()) {
                 throw new IOException("Webhook URL host is not allowed.");
+            }
+            if (address.isSiteLocalAddress() && properties.getWebhookAllowedPrivateHosts().stream()
+                    .filter(StringUtils::hasText)
+                    .noneMatch(allowedHost -> host.equalsIgnoreCase(allowedHost.strip()))) {
+                throw new IOException("Webhook URL host is private and is not allowed. "
+                        + "Configure WEBHOOK_ALLOWED_PRIVATE_HOSTS to allow this host.");
             }
         }
     }

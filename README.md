@@ -73,6 +73,16 @@ LinkPeek 是一个面向聊天分享场景的链接预览代理服务。它用 J
 
 Webhook 发送使用异步线程池，默认最多尝试 3 次。请求支持自定义 Header、Body 模板、HMAC-SHA256 签名、SSRF 防护、请求体保存、响应摘要和失败重试。
 
+向局域网 BlueBubbles 等服务发送通知时，在 Docker Compose 的 `environment` 下配置环境变量：
+
+```yaml
+WEBHOOK_ALLOWED_PRIVATE_HOSTS: "192.168.31.11"
+```
+
+多个主机用逗号分隔，例如 `192.168.31.11,192.168.31.12`。填写 URL 中的主机 IP 或域名，不含协议、端口、路径，不支持通配符或 CIDR。默认留空，禁止内网目标；白名单仅放行精确匹配的内网主机，回环、link-local、any-local 和 multicast 地址仍禁止访问。保存渠道和发送通知都会校验。
+
+仓库的 Compose 文件也支持从宿主环境或 `.env` 读取此变量，可直接执行 `WEBHOOK_ALLOWED_PRIVATE_HOSTS=192.168.31.11 docker compose up -d --build`。使用 `docker run` 时添加 `-e WEBHOOK_ALLOWED_PRIVATE_HOSTS=192.168.31.11`。修改配置后需重建容器，且容器必须能访问目标地址。
+
 ## 效果预览
 
 ![LinkPeek Usage](docs/preview-usage.png)
@@ -296,6 +306,7 @@ AI Provider 按启用和排序 fallback，失败会记录事件并可触发自�
 | `PREVIEW_WARMUP_ENABLED` | `true` | 是否启用普通浏览器打开后的异步元数据预热 |
 | `PREVIEW_WARMUP_THREADS` | `2` | 异步预热线程数 |
 | `PREVIEW_WARMUP_QUEUE_CAPACITY` | `64` | 异步预热队列上限 |
+| `WEBHOOK_ALLOWED_PRIVATE_HOSTS` | 空 | Webhook 内网主机白名单，逗号分隔的 IP 或域名，精确匹配 URL host |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 | `LOG_FILE_PATH` | `/data/logs/linkpeek.log` | 服务滚动日志路径，也供后台日志页面读取 |
 | `LOG_FILE_MAX_SIZE` | `10MB` | 单个滚动日志文件上限 |
