@@ -23,7 +23,6 @@ import io.github.shigella520.linkpeek.server.stats.model.StatisticsClientType;
 import io.github.shigella520.linkpeek.server.stats.service.StatisticsEventDeduplicator;
 import io.github.shigella520.linkpeek.server.stats.service.StatisticsRecorder;
 import jakarta.servlet.http.Cookie;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -75,6 +74,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
+@org.springframework.test.annotation.DirtiesContext
+@org.springframework.test.context.TestExecutionListeners(listeners = PreviewControllerTest.CleanupListener.class, mergeMode = org.springframework.test.context.TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 @AutoConfigureMockMvc
 class PreviewControllerTest {
     private static final Path TEST_CACHE_DIR;
@@ -184,7 +185,14 @@ class PreviewControllerTest {
         statisticsEventDeduplicator.clear();
     }
 
-    @AfterAll
+    public static class CleanupListener extends org.springframework.test.context.support.AbstractTestExecutionListener {
+        @Override public int getOrder() { return 1000; }
+        @Override public void afterTestClass(org.springframework.test.context.TestContext context) throws IOException {
+            // Runs after DirtiesContext has stopped schedulers and closed the cached context.
+            cleanUp();
+        }
+    }
+
     static void cleanUp() throws IOException {
         Files.walk(TEST_CACHE_DIR)
                 .sorted(Comparator.reverseOrder())
@@ -256,7 +264,7 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("LinkPeek Dashboard")))
-                .andExpect(content().string(containsString("Copy LinkPeek URL")))
+                .andExpect(result -> org.junit.jupiter.api.Assertions.assertTrue(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8).contains("复制分享链接")))
                 .andExpect(content().string(containsString("link-builder-input")))
                 .andExpect(content().string(containsString("link-builder-style")))
                 .andExpect(content().string(containsString("/dashboard/styles.css?v=20260612-dashboard-mobile-compact-2")))
@@ -291,10 +299,10 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("LinkPeek Admin")))
-                .andExpect(content().string(containsString("/admin/styles.css?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20261125-report-workspace")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
                 .andExpect(content().string(containsString("brand-text")))
-                .andExpect(content().string(containsString("/admin/app.js?v=20261102-share-summary-regeneration-v2")))
+                .andExpect(content().string(containsString("/admin/app.js?v=20261125-report-workspace")))
                 .andExpect(content().string(containsString("id=\"share-summary-image-viewer\"")))
                 .andExpect(content().string(containsString("share-summary-image-viewer-stage")))
                 .andExpect(content().string(containsString("share-summary-image-viewer-img")))
@@ -350,7 +358,7 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("login-form")))
-                .andExpect(content().string(containsString("/admin/styles.css?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20261125-report-workspace")))
                 .andExpect(content().string(containsString("class=\"login-head brand-mark\"")))
                 .andExpect(content().string(containsString("class=\"brand-text\"")))
                 .andExpect(content().string(not(containsString(">Management<"))))
@@ -1365,7 +1373,8 @@ class PreviewControllerTest {
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(runId))
-                .andExpect(jsonPath("$.report").value("分享总结报告"));
+                .andExpect(jsonPath("$.report").value("分享总结报告"))
+                .andExpect(jsonPath("$.reportHtml").value("<p>分享总结报告</p>"));
 
         mockMvc.perform(delete("/api/admin/share-summary/tasks/{taskId}", taskId)
                         .cookie(cookie))

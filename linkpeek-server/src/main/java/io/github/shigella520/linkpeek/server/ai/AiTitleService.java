@@ -211,6 +211,7 @@ public class AiTitleService {
     public PreviewKey styledPreviewKey(URI canonicalUrl, StylePrompt stylePrompt) {
         return PreviewKey.fromStableValue(canonicalUrl.toString()
                 + "\nlinkpeek-style=" + stylePrompt.style()
+                + "\ntitle-format-version=2"
                 + "\nprompt-sha256=" + stylePrompt.promptHash());
     }
 
@@ -249,7 +250,7 @@ public class AiTitleService {
                     recordAiProviderSuccess(provider);
                     return attemptStats.result(Optional.of(withTitle(metadata, generated.get())));
                 }
-                recordAiProviderFailure(provider, durationMs, new IllegalStateException("AI provider returned empty title."));
+                recordAiProviderFailure(provider, durationMs, new IllegalStateException("AI provider returned an empty or invalid title."));
             } catch (InterruptedException exception) {
                 long durationMs = elapsedMillis(startedAt);
                 attemptStats.record(provider, durationMs);
@@ -292,16 +293,18 @@ public class AiTitleService {
                 .replace("```", "")
                 .replace('\r', '\n')
                 .strip();
-        String firstLine = cleaned.lines()
-                .map(String::strip)
-                .filter(line -> !line.isBlank())
-                .findFirst()
-                .orElse("");
-        firstLine = removePrefix(firstLine, "- ");
-        firstLine = removePrefix(firstLine, "标题：");
-        firstLine = removePrefix(firstLine, "标题:");
-        firstLine = stripMatchingQuotes(firstLine.strip());
-        return truncate(CardTextSanitizer.sanitize(firstLine), MAX_TITLE_CODE_POINTS);
+        List<String> lines = cleaned.lines().map(String::strip).filter(line -> !line.isBlank()).toList();
+        if (lines.size() != 1) {
+            return "";
+        }
+        String title = removePrefix(removePrefix(removePrefix(lines.get(0), "- "), "标题："), "标题:");
+        title = stripMatchingQuotes(title.strip());
+        if (title.codePointCount(0, title.length()) > MAX_TITLE_CODE_POINTS
+                || title.startsWith("{") || title.startsWith("[{")
+                || title.matches("(?is).*<(?:think|analysis|reasoning)(?:\\s[^>]*)?>.*")) {
+            return "";
+        }
+        return CardTextSanitizer.sanitize(title);
     }
 
     private PreviewMetadata withTitle(PreviewMetadata metadata, String title) {
@@ -346,14 +349,6 @@ public class AiTitleService {
         };
     }
 
-    private String truncate(String value, int maxCodePoints) {
-        int codePoints = value.codePointCount(0, value.length());
-        if (codePoints <= maxCodePoints) {
-            return value;
-        }
-        int end = value.offsetByCodePoints(0, maxCodePoints);
-        return value.substring(0, end).stripTrailing();
-    }
 
     private String sha256(String value) {
         try {

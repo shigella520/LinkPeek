@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>LinkPeek Admin</title>
     <link rel="icon" href="/favicon.ico">
-    <link rel="stylesheet" href="/admin/styles.css?v=20260622-share-summary-image-centered">
+    <link rel="stylesheet" href="/admin/styles.css?v=20261125-report-workspace">
 </head>
 <body>
 <header class="topbar">
@@ -261,6 +261,11 @@
                         <h2>分享总结</h2>
                     </div>
                 </div>
+                <div class="summary-tabs" role="tablist" aria-label="分享总结视图">
+                    <button type="button" role="tab" id="summary-reports-tab" aria-controls="summary-reports-panel" aria-selected="true" data-summary-view="reports">报告</button>
+                    <button type="button" role="tab" id="summary-tasks-tab" aria-controls="summary-tasks-panel" aria-selected="false" data-summary-view="tasks">定时任务与配置</button>
+                </div>
+                <div id="summary-tasks-panel" role="tabpanel" aria-labelledby="summary-tasks-tab" hidden>
                 <div class="panel-action-row">
                     <button type="button" class="secondary" id="share-summary-image-config-button">AI 生图配置</button>
                     <button type="button" class="secondary" id="share-summary-audio-config-button">TTS 配置</button>
@@ -282,11 +287,12 @@
                     </table>
                 </div>
 
-                <div class="prompt-subsection">
+                </div>
+                <div class="prompt-subsection" id="summary-reports-panel" role="tabpanel" aria-labelledby="summary-reports-tab">
                     <div class="subsection-head subsection-head-actions">
                         <div>
                             <p class="panel-kicker">History</p>
-                            <h3>历史记录</h3>
+                            <h3>报告记录</h3>
                         </div>
                         <button type="button" class="secondary" id="share-summary-refresh-runs">刷新记录</button>
                     </div>
@@ -299,19 +305,19 @@
                             <span>状态</span>
                             <select id="share-summary-run-filter-status">
                                 <option value="">全部</option>
-                                <option value="RUNNING">RUNNING</option>
-                                <option value="SUCCESS">SUCCESS</option>
-                                <option value="EMPTY">EMPTY</option>
-                                <option value="FAILED">FAILED</option>
-                                <option value="SKIPPED">SKIPPED</option>
+                                <option value="RUNNING">生成中</option>
+                                <option value="SUCCESS">成功</option>
+                                <option value="EMPTY">无可总结内容</option>
+                                <option value="FAILED">失败</option>
+                                <option value="SKIPPED">已跳过</option>
                             </select>
                         </label>
                         <label>
                             <span>执行类型</span>
                             <select id="share-summary-run-filter-trigger">
                                 <option value="">全部</option>
-                                <option value="SCHEDULED">SCHEDULED</option>
-                                <option value="MANUAL">MANUAL</option>
+                                <option value="SCHEDULED">定时执行</option>
+                                <option value="MANUAL">手动执行</option>
                             </select>
                         </label>
                         <label>
@@ -326,19 +332,7 @@
                     <p id="share-summary-history-feedback" class="feedback" role="status" aria-live="polite"></p>
                     <div class="table-shell share-summary-run-shell">
                         <table class="share-summary-run-table">
-                            <thead>
-                            <tr>
-                                <th>执行时间</th>
-                                <th>任务</th>
-                                <th>窗口</th>
-                                <th>状态</th>
-                                <th>链接</th>
-                                <th>AI</th>
-                                <th>分享图</th>
-                                <th>语音</th>
-                                <th>操作</th>
-                            </tr>
-                            </thead>
+                            <thead><tr><th>报告</th><th>统计窗口</th><th>生成状态</th><th>操作</th></tr></thead>
                             <tbody id="share-summary-run-table"></tbody>
                         </table>
                     </div>
@@ -427,9 +421,9 @@
                             <span>状态</span>
                             <select id="notification-delivery-filter-status">
                                 <option value="">全部</option>
-                                <option value="PENDING">PENDING</option>
-                                <option value="SUCCESS">SUCCESS</option>
-                                <option value="FAILED">FAILED</option>
+                                <option value="PENDING">待发送 / 过期待处理</option>
+                                <option value="SUCCESS">成功</option>
+                                <option value="FAILED">失败</option>
                             </select>
                         </label>
                         <label>
@@ -598,6 +592,7 @@
                         <input id="log-auto-refresh" type="checkbox">
                         <span>自动刷新</span>
                     </label>
+                    <label class="checkbox-row"><input id="log-follow-latest" type="checkbox" checked><span>跟随最新</span></label>
                 </form>
                 <p id="log-feedback" class="feedback" role="status" aria-live="polite"></p>
                 <p id="log-meta" class="log-meta"></p>
@@ -1135,6 +1130,6 @@
     </div>
 </div>
 
-<script src="/admin/app.js?v=20261102-share-summary-regeneration-v2"></script>
+<script src="/admin/app.js?v=20261125-report-workspace"></script>
 </body>
 </html>

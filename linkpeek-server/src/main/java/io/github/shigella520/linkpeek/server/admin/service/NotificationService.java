@@ -48,6 +48,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
@@ -81,6 +82,8 @@ public class NotificationService {
     private final ExecutorService executor;
     private final LinkPeekProperties properties;
     private final Clock clock;
+    private final Set<Long> activeDeliveries = ConcurrentHashMap.newKeySet();
+    private static final long PENDING_REVIEW_AGE_MS = Duration.ofHours(24).toMillis();
 
     public NotificationService(
             NotificationMapper notificationMapper,
@@ -230,6 +233,7 @@ public class NotificationService {
                 normalizedSize,
                 offset
         );
+        items.forEach(this::annotatePendingDelivery);
         return new DeliveryPage(items, normalizedPage, normalizedSize, total, totalPages);
     }
 
@@ -238,7 +242,14 @@ public class NotificationService {
         if (delivery == null) {
             throw new IllegalArgumentException("Notification delivery was not found.");
         }
+        annotatePendingDelivery(delivery);
         return delivery;
+    }
+
+    private void annotatePendingDelivery(NotificationDeliveryRecord delivery) {
+        delivery.setPendingExpired("PENDING".equals(delivery.getStatus())
+                && !activeDeliveries.contains(delivery.getId())
+                && delivery.getCreatedAt() < now() - PENDING_REVIEW_AGE_MS);
     }
 
     public DeleteResponse deleteDelivery(long deliveryId) {
@@ -248,11 +259,15 @@ public class NotificationService {
         return new DeleteResponse(notificationMapper.deleteDelivery(deliveryId));
     }
 
-    public NotificationDeliveryRecord retryDelivery(long deliveryId) {
+    public synchronized NotificationDeliveryRecord retryDelivery(long deliveryId) {
+        if (activeDeliveries.contains(deliveryId)) {
+            throw new IllegalStateException("Notification delivery is already queued or sending.");
+        }
         NotificationDeliveryRecord delivery = delivery(deliveryId);
         NotificationChannelRecord channel = existingChannel(delivery.getChannelId());
         String body = retryRequestBody(delivery);
         delivery.setStatus(NotificationDeliveryStatus.PENDING.name());
+        delivery.setPendingExpired(false);
         delivery.setAttemptCount(0);
         delivery.setRequestUrl(channel.getUrl());
         delivery.setRequestBody(body);
@@ -444,9 +459,14 @@ public class NotificationService {
     }
 
     private void submitDelivery(long deliveryId, NotificationChannelRecord channel, String eventType, long occurredAt, String body) {
+        if (!activeDeliveries.add(deliveryId)) return;
         try {
-            executor.execute(() -> deliver(deliveryId, channel, eventType, occurredAt, body));
+            executor.execute(() -> {
+                try { deliver(deliveryId, channel, eventType, occurredAt, body); }
+                finally { activeDeliveries.remove(deliveryId); }
+            });
         } catch (RejectedExecutionException exception) {
+            activeDeliveries.remove(deliveryId);
             NotificationDeliveryRecord delivery = notificationMapper.selectDelivery(deliveryId);
             if (delivery != null) {
                 delivery.setStatus(NotificationDeliveryStatus.FAILED.name());
@@ -470,7 +490,7 @@ public class NotificationService {
             if (result.success() || !result.retryable()) {
                 break;
             }
-            sleepBeforeRetry(attempts);
+            if (attempts < 3) sleepBeforeRetry(attempts);
         } while (attempts < 3);
 
         delivery.setAttemptCount(attempts);
@@ -515,11 +535,7 @@ public class NotificationService {
         long startedAt = System.nanoTime();
         try {
             URI uri = URI.create(channel.getUrl());
-            try {
-                validateWebhookUri(uri);
-            } catch (IOException exception) {
-                throw new IllegalArgumentException(exception.getMessage(), exception);
-            }
+            validateWebhookUri(uri);
             HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(channel.getTimeoutSeconds()))
                     .header("Content-Type", "application/json")
@@ -571,26 +587,30 @@ public class NotificationService {
     private void validateWebhookUri(URI uri) throws IOException {
         String scheme = uri.getScheme();
         if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
-            throw new IOException("Webhook URL must use http or https.");
+            throw new IllegalArgumentException("Webhook URL must use http or https.");
         }
         String host = uri.getHost();
         if (!StringUtils.hasText(host)) {
-            throw new IOException("Webhook URL host is required.");
+            throw new IllegalArgumentException("Webhook URL host is required.");
         }
-        for (InetAddress address : InetAddress.getAllByName(host)) {
+        for (InetAddress address : resolveWebhookHost(host)) {
             if (address.isAnyLocalAddress()
                     || address.isLoopbackAddress()
                     || address.isLinkLocalAddress()
                     || address.isMulticastAddress()) {
-                throw new IOException("Webhook URL host is not allowed.");
+                throw new IllegalArgumentException("Webhook URL host is not allowed.");
             }
             if (address.isSiteLocalAddress() && properties.getWebhookAllowedPrivateHosts().stream()
                     .filter(StringUtils::hasText)
                     .noneMatch(allowedHost -> host.equalsIgnoreCase(allowedHost.strip()))) {
-                throw new IOException("Webhook URL host is private and is not allowed. "
+                throw new IllegalArgumentException("Webhook URL host is private and is not allowed. "
                         + "Configure WEBHOOK_ALLOWED_PRIVATE_HOSTS to allow this host.");
             }
         }
+    }
+
+    InetAddress[] resolveWebhookHost(String host) throws IOException {
+        return InetAddress.getAllByName(host);
     }
 
     private String signature(String secret, long occurredAt, String body) {

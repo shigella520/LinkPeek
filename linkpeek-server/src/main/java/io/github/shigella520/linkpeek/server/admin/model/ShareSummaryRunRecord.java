@@ -27,6 +27,11 @@ public class ShareSummaryRunRecord {
     private String aiProviderNames;
     private long aiDurationMs;
     private String report;
+    private String reportHtml;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    public String getReportHtml() { return reportHtml; }
+    public void setReportHtml(String value) { reportHtml = value; }
     private String errorMessage;
     private long startedAt;
     private Long finishedAt;

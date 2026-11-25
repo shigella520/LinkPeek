@@ -123,7 +123,7 @@ class OpenAiCompatibleTextClientTest {
     }
 
     @Test
-    void includesResponseBodySnippetWhenProviderReturnsHttpError() {
+    void excludesResponseBodyWhenProviderReturnsHttpError() {
         CapturingHttpClient httpClient = new CapturingHttpClient(503, """
                 {"error":{"message":"upstream overloaded","type":"service_unavailable"}}
                 """);
@@ -138,7 +138,58 @@ class OpenAiCompatibleTextClientTest {
         );
 
         assertTrue(exception.getMessage().contains("HTTP 503"));
-        assertTrue(exception.getMessage().contains("upstream overloaded"));
+        assertTrue(!exception.getMessage().contains("upstream overloaded"));
+    }
+
+    @Test
+    void extractsOnlyFinalAssistantTextAndNeverReasoning() throws Exception {
+        String response = """
+                {"status":"completed","output":[
+                  {"type":"reasoning","content":[{"type":"reasoning_text","text":"synthetic internal notes"}]},
+                  {"type":"function_call","content":[{"type":"output_text","text":"tool output"}]},
+                  {"type":"message","role":"user","content":[{"type":"output_text","text":"user input"}]},
+                  {"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"最终标题"}]}
+                ]}
+                """;
+        assertEquals(Optional.of("最终标题"), parseResponse(response, "RESPONSES"));
+    }
+
+    @Test
+    void rejectsIncompleteRefusedOrReasoningOnlyResponses() throws Exception {
+        for (String response : List.of(
+                "{\"status\":\"incomplete\",\"output_text\":\"截断结果\"}",
+                "{\"status\":\"failed\",\"output_text\":\"错误结果\"}",
+                "{\"incomplete_details\":{\"reason\":\"max_output_tokens\"},\"output_text\":\"截断结果\"}",
+                "{\"output\":[{\"type\":\"reasoning\",\"content\":[{\"type\":\"reasoning_text\",\"text\":\"notes\"}]}]}",
+                "{\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"refusal\",\"refusal\":\"no\"}]}]}",
+                "{\"output\":[],\"output_text\":\"untrusted duplicate\"}",
+                "{}")) {
+            assertEquals(Optional.empty(), parseResponse(response, "RESPONSES"));
+        }
+    }
+
+    @Test
+    void acceptsConvenienceTextAndUsesLastAssistantMessage() throws Exception {
+        assertEquals(Optional.of("标题"), parseResponse("{\"output_text\":\"标题\"}", "RESPONSES"));
+        assertEquals(Optional.of("最终回答"), parseResponse("""
+                {"output":[
+                  {"type":"message","role":"assistant","content":[{"type":"output_text","text":"前一条回答"}]},
+                  {"type":"message","role":"assistant","content":[{"type":"output_text","text":"最终回答"}]}
+                ]}
+                """, "RESPONSES"));
+    }
+
+    @Test
+    void rejectsTruncatedAndFilteredChatCompletions() throws Exception {
+        for (String finish : List.of("length", "content_filter", "tool_calls")) {
+            assertEquals(Optional.empty(), parseResponse("{\"choices\":[{\"finish_reason\":\"" + finish
+                    + "\",\"message\":{\"content\":\"不完整回答\"}}]}", "CHAT_COMPLETIONS"));
+        }
+    }
+
+    private Optional<String> parseResponse(String body, String apiKind) throws Exception {
+        return new OpenAiCompatibleTextClient(new CapturingHttpClient(200, body), objectMapper)
+                .generateTitle(provider("https://api.example.com/v1", apiKind, "model", "", ""), prompt());
     }
 
     private AiProviderRecord provider(String baseUrl, String apiKind, String model, String effort, String apiKey) {

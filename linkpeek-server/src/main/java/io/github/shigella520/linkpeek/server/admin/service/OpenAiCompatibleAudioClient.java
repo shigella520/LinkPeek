@@ -50,7 +50,7 @@ public class OpenAiCompatibleAudioClient implements ShareSummaryAudioProvider {
                 timeout.toMillis(),
                 body.length
         );
-        log.info(
+        log.debug(
                 "share_summary_audio_request_body providerType={} model={} voice={} endpoint={} requestBody={}",
                 config.getProviderType(),
                 config.getModel(),

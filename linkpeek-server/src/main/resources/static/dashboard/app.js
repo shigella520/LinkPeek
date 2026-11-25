@@ -1,3 +1,5 @@
+import {createLinkBuilder, checkPreviewSupport} from "./link-builder.mjs";
+
 (function () {
     const RANGE_VALUES = ["7d", "30d", "90d", "180d"];
     const DEFAULT_STYLE = "FREESTYLE";
@@ -68,48 +70,41 @@
             return;
         }
 
-        const refresh = () => {
-            const previewUrl = buildPreviewUrl(input.value.trim(), styleSelect.value);
-            output.textContent = previewUrl || "https://your-linkpeek-host/preview?url=...";
-            output.classList.toggle("is-ready", Boolean(previewUrl));
-            button.disabled = !previewUrl;
-
-            if (!input.value.trim()) {
-                setBuilderFeedback(feedback, "Paste any http/https URL to generate a share link.", "");
-                return;
-            }
-            if (!previewUrl) {
-                setBuilderFeedback(feedback, "Please enter a valid http/https URL.", "is-error");
-                return;
-            }
-            setBuilderFeedback(feedback, "Ready to copy.", "is-ready");
+        const messages = {
+            empty: "粘贴链接，先检查平台是否支持预览。",
+            invalid: "请输入完整的 http/https 链接。",
+            checking: "正在检查平台支持情况…",
+            supported: "支持预览。复制分享链接后，聊天应用抓取时生成卡片。",
+            unsupported: "暂不支持此平台，可以复制原链接。",
+            error: "暂时无法验证平台支持情况，可以复制原链接或重新输入重试。"
         };
-
-        input.addEventListener("input", refresh);
-        styleSelect.addEventListener("change", refresh);
-        input.addEventListener("keydown", (event) => {
-            if (event.key === "Enter") {
-                event.preventDefault();
-                button.click();
+        const builder = createLinkBuilder({
+            checkSupport: checkPreviewSupport,
+            buildPreviewUrl,
+            onChange(result) {
+                output.textContent = result.copyUrl || "等待输入可用链接";
+                output.classList.toggle("is-ready", Boolean(result.copyUrl));
+                button.disabled = !result.copyUrl;
+                button.textContent = result.kind === "supported" ? "复制分享链接" : "复制原链接";
+                setBuilderFeedback(feedback, messages[result.kind], result.kind === "error" || result.kind === "invalid" ? "is-error" : "");
             }
         });
+        const refresh = () => builder.update(input.value, styleSelect.value);
+        input.addEventListener("input", refresh);
+        styleSelect.addEventListener("change", refresh);
         button.addEventListener("click", async () => {
-            const previewUrl = buildPreviewUrl(input.value.trim(), styleSelect.value);
-            if (!previewUrl) {
-                setBuilderFeedback(feedback, "Please enter a valid http/https URL.", "is-error");
-                return;
-            }
-
+            const selected = builder.value;
+            if (!selected.copyUrl) return;
+            button.disabled = true;
             try {
-                await copyToClipboard(previewUrl);
-                output.textContent = previewUrl;
-                output.classList.add("is-ready");
-                button.classList.add("is-copied");
-                window.setTimeout(() => button.classList.remove("is-copied"), 1400);
-                setBuilderFeedback(feedback, "Copied LinkPeek URL to clipboard.", "is-success");
-            } catch (error) {
-                console.error("Failed to copy LinkPeek URL", error);
-                setBuilderFeedback(feedback, "Copy failed. Please copy the generated URL manually.", "is-error");
+                await copyToClipboard(selected.copyUrl);
+                if (builder.value !== selected) return;
+                setBuilderFeedback(feedback, selected.kind === "supported"
+                        ? "分享链接已复制；卡片将在聊天应用抓取时生成。" : "原链接已复制。", "is-success");
+            } catch {
+                if (builder.value === selected) setBuilderFeedback(feedback, "复制失败，请手动复制下方链接。", "is-error");
+            } finally {
+                button.disabled = !builder.value.copyUrl;
             }
         });
 
@@ -148,7 +143,7 @@
         state.styles.forEach((style) => {
             const option = document.createElement("option");
             option.value = style;
-            option.textContent = style;
+            option.textContent = style === "FREESTYLE" ? "随机风格 · FREESTYLE" : style;
             select.appendChild(option);
         });
 

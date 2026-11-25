@@ -331,6 +331,59 @@ class NotificationServiceTest {
         verify(mapper, never()).insertChannel(any());
     }
 
+    @Test
+    void oldPendingIsMarkedForReviewWithoutSendingOrChangingStoredStatus() {
+        NotificationMapper mapper = mock(NotificationMapper.class);
+        ExecutorService executor = mock(ExecutorService.class);
+        NotificationDeliveryRecord old = failedDelivery();
+        old.setStatus("PENDING"); old.setCreatedAt(1L);
+        when(mapper.selectDelivery(9L)).thenReturn(old);
+        NotificationService service = service(mapper, executor);
+        assertTrue(service.delivery(9L).isPendingExpired());
+        assertEquals("PENDING", old.getStatus());
+        verify(executor, never()).execute(any());
+        verify(mapper, never()).updateDelivery(any());
+    }
+
+    @Test
+    void temporaryDnsFailureIsRetriedButBlockedAddressesAreNot() throws Exception {
+        for (boolean dnsFailure : List.of(true, false)) {
+            NotificationMapper mapper = mock(NotificationMapper.class);
+            HttpClient client = mock(HttpClient.class);
+            NotificationDeliveryRecord delivery = failedDelivery();
+            delivery.setRequestBody("{}");
+            when(mapper.selectDelivery(9L)).thenReturn(delivery);
+            when(mapper.selectChannel(3L)).thenReturn(channel());
+            when(mapper.resetDeliveryForRetry(delivery)).thenReturn(1);
+            NotificationService service = org.mockito.Mockito.spy(service(mapper, directExecutor(), client, new LinkPeekProperties()));
+            if (dnsFailure) {
+                org.mockito.Mockito.doThrow(new java.net.UnknownHostException("temporary DNS failure"))
+                        .when(service).resolveWebhookHost(any());
+            } else {
+                org.mockito.Mockito.doReturn(new java.net.InetAddress[]{java.net.InetAddress.getLoopbackAddress()})
+                        .when(service).resolveWebhookHost(any());
+            }
+            service.retryDelivery(9L);
+            assertEquals(dnsFailure ? 3 : 1, delivery.getAttemptCount());
+            assertEquals("FAILED", delivery.getStatus());
+            verify(client, never()).send(any(), any());
+        }
+    }
+
+    @Test
+    void duplicateRetryIsRejectedWhileDeliveryIsQueued() {
+        NotificationMapper mapper = mock(NotificationMapper.class);
+        NotificationDeliveryRecord delivery = failedDelivery(); delivery.setRequestBody("{}");
+        when(mapper.selectDelivery(9L)).thenReturn(delivery);
+        when(mapper.selectChannel(3L)).thenReturn(channel());
+        when(mapper.resetDeliveryForRetry(delivery)).thenReturn(1);
+        ExecutorService executor = mock(ExecutorService.class);
+        NotificationService service = service(mapper, executor);
+        service.retryDelivery(9L);
+        assertThrows(IllegalStateException.class, () -> service.retryDelivery(9L));
+        verify(executor).execute(any());
+    }
+
     private NotificationService.ChannelRequest channelRequest(String url) {
         return new NotificationService.ChannelRequest("BlueBubbles", true, url, null, null, null, 10);
     }

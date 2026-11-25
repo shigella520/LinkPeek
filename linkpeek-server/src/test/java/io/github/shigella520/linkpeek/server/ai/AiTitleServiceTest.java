@@ -187,15 +187,34 @@ class AiTitleServiceTest {
     }
 
     @Test
-    void cleanTitleKeepsOnlyOnePlainTitleLine() {
+    void cleanTitleAcceptsOnePlainTitleLine() {
         AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
 
         assertEquals("一个更有点击欲的标题", service.cleanTitle("""
                 ```markdown
                 标题：“一个更有点击欲的标题”
-                解释：这里不应该保留
                 ```
                 """));
+    }
+
+    @Test
+    void invalidTitleDoesNotBecomeSuccessfulMetadata() {
+        FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of(provider(1L, 1))), client, null, null);
+        for (String invalid : List.of("解释内容\n最终标题", "长".repeat(121), "<think>notes</think>", "{\"title\":\"标题\"}")) {
+            client.title = invalid;
+            assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
+                    new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isEmpty());
+        }
+    }
+
+    @Test
+    void styledCacheDoesNotReuseLegacyOutputFormat() {
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
+        URI uri = URI.create("https://example.com/topic/1");
+        var style = new AiTitleService.StylePrompt("SUM", "风格", "格式", "hash");
+        var legacy = io.github.shigella520.linkpeek.core.model.PreviewKey.fromStableValue(uri + "\nlinkpeek-style=SUM\nprompt-sha256=hash");
+        assertNotEquals(legacy, service.styledPreviewKey(uri, style));
     }
 
     @Test

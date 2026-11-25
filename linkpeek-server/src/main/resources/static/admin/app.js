@@ -15,6 +15,8 @@
     const MIMO_TTS_DEFAULT_STYLE = "四川话";
 
     const state = {
+        requests: {},
+        modalOpeners: new Map(),
         prompts: [],
         aiProviders: [],
         aiProviderDowngradeConfig: {},
@@ -334,6 +336,8 @@
             const activePanelId = panelIdFromLocation();
             syncLogAutoRefreshForActivePanel(activePanelId);
             await loadAdminPanel(activePanelId, {force: true});
+            const reportId = new URLSearchParams(location.search).get("report");
+            if (activePanelId === "share-summary" && /^\d+$/.test(reportId || "")) await openShareSummaryRunDetail(reportId);
             return;
         }
         redirectToLogin();
@@ -508,6 +512,12 @@
             await loadLogs();
         });
         document.getElementById("log-auto-refresh").addEventListener("change", updateLogAutoRefresh);
+        const output = document.getElementById("log-output");
+        const follow = document.getElementById("log-follow-latest");
+        output.addEventListener("scroll", () => {
+            if (output.scrollHeight - output.scrollTop - output.clientHeight > 24) follow.checked = false;
+        });
+        follow.addEventListener("change", () => { if (follow.checked) output.scrollTop = output.scrollHeight; });
     }
 
     function bindPreviewEvents() {
@@ -537,6 +547,10 @@
     }
 
     function bindShareSummary() {
+        document.querySelectorAll("[data-summary-view]").forEach(button => {
+            button.addEventListener("click", () => setSummaryView(button.dataset.summaryView));
+        });
+        setSummaryView(new URLSearchParams(location.search).get("summaryView") || "reports", false);
         document.getElementById("share-summary-new-button").addEventListener("click", openShareSummaryTaskModalForCreate);
         document.getElementById("share-summary-image-config-button").addEventListener("click", openShareSummaryImageConfigModal);
         document.getElementById("share-summary-image-config-cancel-button").addEventListener("click", closeShareSummaryImageConfigModal);
@@ -617,7 +631,43 @@
         });
     }
 
+    function setSummaryView(view, updateUrl = true) {
+        const selected = view === "tasks" ? "tasks" : "reports";
+        for (const name of ["reports", "tasks"]) {
+            document.getElementById(`summary-${name}-panel`).hidden = selected !== name;
+            document.getElementById(`summary-${name}-tab`).setAttribute("aria-selected", String(selected === name));
+        }
+        if (updateUrl) {
+            const url = new URL(location.href);
+            url.searchParams.set("summaryView", selected);
+            history.replaceState(null, "", url);
+        }
+    }
+
+    function isVisibleModalControl(node, modal) {
+        if (node.disabled || !node.getClientRects().length) return false;
+        for (let parent = node.parentElement; parent && parent !== modal; parent = parent.parentElement) {
+            if (parent.tagName === "DETAILS" && !parent.open
+                    && !parent.querySelector(":scope > summary")?.contains(node)) return false;
+        }
+        return true;
+    }
+
     function bindModalClose() {
+        document.addEventListener("keydown", event => {
+            if (event.key !== "Tab") return;
+            const modal = Array.from(document.querySelectorAll(".modal-shell:not([hidden])")).at(-1);
+            if (!modal) return;
+            const focusable = Array.from(modal.querySelectorAll("button, input, select, textarea, a[href], summary"))
+                .filter(node => isVisibleModalControl(node, modal));
+            const first = focusable[0], last = focusable.at(-1);
+            if (!first) { event.preventDefault(); return; }
+            if (event.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+                event.preventDefault(); last.focus();
+            } else if (!event.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+                event.preventDefault(); first.focus();
+            }
+        });
         document.querySelectorAll("[data-close-modal]").forEach((node) => {
             node.addEventListener("click", () => {
                 if (node.dataset.closeModal === "prompt") {
@@ -834,6 +884,8 @@
     }
 
     async function loadPreviewEvents() {
+        const request = (state.requests.loadPreviewEvents || 0) + 1;
+        state.requests.loadPreviewEvents = request;
         const params = new URLSearchParams();
         params.set("page", String(state.previewEvents.page || 1));
         params.set("size", document.getElementById("preview-event-size").value || "20");
@@ -844,10 +896,13 @@
 
         setFeedback("preview-event-feedback", "正在读取链接创建记录...", "");
         try {
-            state.previewEvents = await fetchJson(`/api/admin/preview-events?${params.toString()}`);
+            const result = await fetchJson(`/api/admin/preview-events?${params.toString()}`);
+            if (state.requests.loadPreviewEvents !== request) return;
+            state.previewEvents = result;
             renderPreviewEvents();
             setFeedback("preview-event-feedback", `已加载 ${state.previewEvents.items.length} 条，共 ${state.previewEvents.total} 条。`, "is-success");
         } catch (error) {
+            if (state.requests.loadPreviewEvents !== request) return;
             setFeedback("preview-event-feedback", error.message, "is-error");
         }
     }
@@ -874,6 +929,8 @@
     }
 
     async function loadShareSummaryRuns() {
+        const request = (state.requests.loadShareSummaryRuns || 0) + 1;
+        state.requests.loadShareSummaryRuns = request;
         const params = new URLSearchParams();
         params.set("page", String(state.shareSummaryRuns.page || 1));
         params.set("size", document.getElementById("share-summary-run-size").value || "20");
@@ -892,11 +949,14 @@
 
         setFeedback("share-summary-history-feedback", "正在读取分享总结记录...", "");
         try {
-            state.shareSummaryRuns = await fetchJson(`/api/admin/share-summary/runs?${params.toString()}`);
+            const result = await fetchJson(`/api/admin/share-summary/runs?${params.toString()}`);
+            if (state.requests.loadShareSummaryRuns !== request) return;
+            state.shareSummaryRuns = result;
             scheduleShareSummaryRefresh();
             renderShareSummaryRuns();
             setFeedback("share-summary-history-feedback", `已加载 ${state.shareSummaryRuns.items.length} 条，共 ${state.shareSummaryRuns.total} 条。`, "is-success");
         } catch (error) {
+            if (state.requests.loadShareSummaryRuns !== request) return;
             setFeedback("share-summary-history-feedback", error.message, "is-error");
         }
     }
@@ -926,6 +986,8 @@
     }
 
     async function loadNotificationDeliveries() {
+        const request = (state.requests.loadNotificationDeliveries || 0) + 1;
+        state.requests.loadNotificationDeliveries = request;
         const params = new URLSearchParams();
         params.set("page", String(state.notificationDeliveries.page || 1));
         params.set("size", document.getElementById("notification-delivery-size").value || "20");
@@ -943,10 +1005,13 @@
         }
         setFeedback("notification-delivery-feedback", "正在读取发送记录...", "");
         try {
-            state.notificationDeliveries = await fetchJson(`/api/admin/notifications/deliveries?${params.toString()}`);
+            const result = await fetchJson(`/api/admin/notifications/deliveries?${params.toString()}`);
+            if (state.requests.loadNotificationDeliveries !== request) return;
+            state.notificationDeliveries = result;
             renderNotificationDeliveries();
             setFeedback("notification-delivery-feedback", `已加载 ${state.notificationDeliveries.items.length} 条，共 ${state.notificationDeliveries.total} 条。`, "is-success");
         } catch (error) {
+            if (state.requests.loadNotificationDeliveries !== request) return;
             setFeedback("notification-delivery-feedback", error.message, "is-error");
         }
     }
@@ -1007,6 +1072,8 @@
     }
 
     async function loadLogs() {
+        const request = (state.requests.loadLogs || 0) + 1;
+        state.requests.loadLogs = request;
         const params = new URLSearchParams();
         params.set("lines", document.getElementById("log-lines").value || "300");
         const level = document.getElementById("log-level").value;
@@ -1021,8 +1088,10 @@
         setFeedback("log-feedback", "正在读取服务日志...", "");
         try {
             const result = await fetchJson(`/api/admin/logs?${params.toString()}`);
+            if (state.requests.loadLogs !== request) return;
             renderLogs(result);
         } catch (error) {
+            if (state.requests.loadLogs !== request) return;
             setFeedback("log-feedback", error.message, "is-error");
         }
     }
@@ -1299,7 +1368,10 @@
         const filterOptions = [`<option value="">全部任务</option>`]
                 .concat(state.shareSummaryTasks.map((task) => `<option value="${escapeAttribute(task.id)}">${escapeHtml(task.name)}</option>`))
                 .join("");
-        document.getElementById("share-summary-run-filter-task").innerHTML = filterOptions;
+        const select = document.getElementById("share-summary-run-filter-task");
+        const selected = select.value;
+        select.innerHTML = filterOptions;
+        if (state.shareSummaryTasks.some(task => String(task.id) === selected)) select.value = selected;
         renderNotificationFilterOptions();
     }
 
@@ -1577,7 +1649,7 @@
                     <td class="nowrap">${escapeHtml(formatTimestamp(delivery.createdAt))}</td>
                     <td>${escapeHtml(delivery.notificationTaskName || "-")}<div class="keyline">${escapeHtml(delivery.channelName || "-")}</div></td>
                     <td>${renderNotificationDeliveryEvent(delivery)}</td>
-                    <td>${renderNotificationStatus(delivery.status)}${delivery.errorMessage ? `<div class="keyline summary-error-hint" title="${escapeAttribute(delivery.errorMessage)}">${escapeHtml(delivery.errorMessage)}</div>` : ""}</td>
+                    <td>${renderNotificationStatus(delivery.pendingExpired ? "EXPIRED_PENDING" : delivery.status)}${delivery.errorMessage ? `<div class="keyline summary-error-hint" title="${escapeAttribute(delivery.errorMessage)}">${escapeHtml(delivery.errorMessage)}</div>` : ""}</td>
                     <td>${escapeHtml(delivery.responseStatus || "-")}<div class="keyline">${escapeHtml(delivery.attemptCount || 0)} 次</div></td>
                     <td>${escapeHtml(formatDuration(delivery.durationMs))}</td>
                     <td>
@@ -1599,6 +1671,8 @@
     }
 
     async function retryNotificationDelivery(button) {
+        const delivery = state.notificationDeliveries.items.find(item => String(item.id) === button.dataset.retryNotificationDelivery);
+        if (delivery?.pendingExpired && !window.confirm("这条通知已等待超过 24 小时，重发会向原渠道发送历史消息。确认重发？")) return;
         button.disabled = true;
         setFeedback("notification-delivery-feedback", "正在重新发送 Webhook...", "");
         try {
@@ -1711,21 +1785,22 @@
         const items = Array.isArray(payload.items) ? payload.items : [];
         const body = document.getElementById("share-summary-run-table");
         if (!items.length) {
-            body.innerHTML = `<tr><td colspan="9" class="muted">暂无分享总结记录</td></tr>`;
+            body.innerHTML = `<tr><td colspan="4" class="muted">暂无分享总结记录</td></tr>`;
         } else {
-            body.innerHTML = items.map((run) => `
+            body.innerHTML = items.map(run => `
                 <tr class="share-summary-run-row">
-                    <td class="nowrap share-summary-run-start-cell">${escapeHtml(formatTimestamp(run.startedAt))}</td>
-                    <td class="share-summary-run-task-cell">${escapeHtml(run.taskName || "-")}<div class="keyline">${escapeHtml(run.triggerType || "-")}</div></td>
-                    <td class="summary-window-cell">${renderSummaryWindow(run.windowStart, run.windowEnd)}</td>
-                    <td class="share-summary-run-status-cell">${renderRunStatus(run.status)}${renderRunErrorHint(run.errorMessage)}</td>
-                    <td class="share-summary-run-count-cell">${escapeHtml(run.inputLinkCount || 0)}</td>
-                    <td class="share-summary-run-ai-cell">${escapeHtml(run.aiProviderNames || "-")}<div class="keyline">${escapeHtml(formatDuration(run.aiDurationMs))}</div></td>
-                    <td class="share-summary-run-image-cell">${renderShareSummaryImageCell(run)}</td>
-                    <td class="share-summary-run-audio-cell">${renderShareSummaryAudioCell(run)}</td>
-                    <td class="share-summary-run-action-cell">${renderShareSummaryRunActions(run)}</td>
-                </tr>
-            `).join("");
+                    <td data-label="报告"><strong>${escapeHtml(run.ogTitle || run.taskName || "分享总结")}</strong>
+                        <div class="keyline">${escapeHtml(run.taskName || "")} · ${run.triggerType === "MANUAL" ? "手动" : "定时"} · ${escapeHtml(run.inputLinkCount || 0)} 条链接</div>
+                        <div class="keyline">${escapeHtml(formatTimestamp(run.startedAt))}</div></td>
+                    <td data-label="统计窗口" class="summary-window-cell">${renderSummaryWindow(run.windowStart, run.windowEnd)}</td>
+                    <td data-label="生成状态"><div class="summary-stage-list">
+                        <span>文字 ${renderRunStatus(run.status)}</span>
+                        <span>图片 ${renderImageStatus(run.imageStatus)}</span>
+                        <span>音频 ${renderAudioStatus(run.audioStatus)}</span>
+                        ${run.regenerationStatus ? `<span>整体生成：${escapeHtml(regenerationLabel(run.regenerationStatus))}</span>` : ""}
+                    </div>${renderRunErrorHint(run.errorMessage)}</td>
+                    <td data-label="操作" class="share-summary-run-action-cell">${renderShareSummaryRunActions(run)}</td>
+                </tr>`).join("");
         }
         body.querySelectorAll("[data-view-share-run]").forEach((button) => {
             button.addEventListener("click", () => openShareSummaryRunDetail(button.dataset.viewShareRun));
@@ -1818,19 +1893,21 @@
         const canGenerate = run.status === "SUCCESS";
         const hasImage = Boolean(run.ogImageUrl);
         const hasAudio = Boolean(run.audioUrl);
-        return `
-            <div class="row-actions share-summary-run-actions">
+        return `<div class="row-actions share-summary-run-actions">
+            <button type="button" class="secondary" data-view-share-run="${escapeAttribute(run.id)}">查看</button>
+            <details class="summary-action-menu"><summary>分享</summary><div class="summary-action-options">
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制分享链接</button>
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${hasImage ? "" : "disabled"}>复制图片链接</button>
+                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.audioUrl || "")}" ${hasAudio ? "" : "disabled"}>复制音频链接</button>
+                ${!hasImage && !hasAudio ? '<span class="keyline">素材生成后可分享</span>' : ''}
+            </div></details>
+            <details class="summary-action-menu"><summary>更多</summary><div class="summary-action-options">
                 ${renderRegenerationButton(run)}
-                ${run.regenerationStatus ? `<span class="keyline">整体生成：${escapeHtml(regenerationLabel(run.regenerationStatus))}</span>` : ""}
-                <button type="button" class="secondary" data-view-share-run="${escapeAttribute(run.id)}">详情</button>
                 ${renderShareSummaryImageActionButton(run, canGenerate, hasImage)}
                 ${renderShareSummaryAudioActionButton(run, canGenerate, hasAudio)}
-                <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG链接</button>
-                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图片</button>
-                <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.audioUrl || "")}" ${run.audioUrl ? "" : "disabled"}>复制音频</button>
-                <button type="button" class="danger" data-delete-share-run="${escapeAttribute(run.id)}" ${shareSummaryBusy(run) ? "disabled" : ""}>删除</button>
-            </div>
-        `;
+                <button type="button" class="danger" data-delete-share-run="${escapeAttribute(run.id)}" ${shareSummaryBusy(run) ? "disabled" : ""}>删除报告</button>
+            </div></details>
+        </div>`;
     }
 
     function renderShareSummaryImageActionButton(run, canGenerate = run.status === "SUCCESS", hasImage = Boolean(run.ogImageUrl)) {
@@ -1859,7 +1936,8 @@
     function renderRunStatus(status) {
         const normalized = status || "-";
         const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" ? "is-warning" : "";
-        return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+        const labels = {SUCCESS: "已完成", RUNNING: "生成中", EMPTY: "无可总结内容", FAILED: "失败", SKIPPED: "已跳过"};
+        return `<span class="status-pill ${className}" title="${escapeAttribute(normalized)}">${escapeHtml(labels[normalized] || normalized)}</span>`;
     }
 
     function renderSummaryWindow(start, end) {
@@ -1874,7 +1952,8 @@
     function renderImageStatus(status) {
         const normalized = status || "NOT_GENERATED";
         const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" || normalized === "TIMEOUT" ? "is-warning" : "";
-        return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+        const labels = {NOT_GENERATED: "未生成", PENDING: "排队中", GENERATING: "生成中", SUCCESS: "已完成", FAILED: "失败", TIMEOUT: "超时"};
+        return `<span class="status-pill ${className}" title="${escapeAttribute(normalized)}">${escapeHtml(labels[normalized] || normalized)}</span>`;
     }
 
     function renderImageStatusCompact(status) {
@@ -1883,7 +1962,7 @@
             NOT_GENERATED: "未生成",
             PENDING: "排队",
             GENERATING: "生成中",
-            SUCCESS: "SUCCESS",
+            SUCCESS: "已完成",
             FAILED: "失败",
             TIMEOUT: "超时"
         };
@@ -1897,8 +1976,9 @@
 
     function renderNotificationStatus(status) {
         const normalized = status || "-";
-        const className = normalized === "SUCCESS" ? "is-success" : normalized === "FAILED" ? "is-warning" : "";
-        return `<span class="status-pill ${className}">${escapeHtml(normalized)}</span>`;
+        const className = normalized === "SUCCESS" ? "is-success" : (normalized === "FAILED" || normalized === "EXPIRED_PENDING") ? "is-warning" : "";
+        const labels = {PENDING: "等待发送", SUCCESS: "已送达", FAILED: "投递失败", EXPIRED_PENDING: "过期待处理"};
+        return `<span class="status-pill ${className}" title="${escapeAttribute(normalized)}">${escapeHtml(labels[normalized] || normalized)}</span>`;
     }
 
     function renderNotificationPlaceholders() {
@@ -2008,7 +2088,13 @@
 
     function bindShareSummaryAssetButtons(root) {
         root.querySelectorAll("[data-regenerate-share-summary]").forEach(button => {
-            button.addEventListener("click", () => regenerateShareSummary(button.dataset.regenerateShareSummary));
+            button.addEventListener("click", () => {
+                const run = state.shareSummaryRuns.items.find(item => String(item.id) === button.dataset.regenerateShareSummary);
+                const windowLabel = run ? formatWindow(run.windowStart, run.windowEnd) : "本条报告的原统计窗口";
+                if (window.confirm(`重新生成文字、图片和音频？\n统计窗口：${windowLabel}\n全部完成后更新原分享链接，完成前继续展示旧版。`)) {
+                    regenerateShareSummary(button.dataset.regenerateShareSummary);
+                }
+            });
         });
         root.querySelectorAll("[data-retry-share-version]").forEach(button => {
             button.addEventListener("click", () => regenerateShareSummary(button.dataset.rootRun, button.dataset.retryShareVersion));
@@ -2537,7 +2623,7 @@
         }
 
         output.textContent = lines.length ? lines.join("\n") : "没有匹配日志。";
-        output.scrollTop = output.scrollHeight;
+        if (document.getElementById("log-follow-latest").checked) output.scrollTop = output.scrollHeight;
         const truncated = result.truncated ? "，已截断" : "";
         setFeedback("log-feedback", `已加载 ${lines.length} 行${truncated}。`, "is-success");
     }
@@ -3198,6 +3284,10 @@
     }
 
     async function openShareSummaryRunDetail(runId) {
+        const url = new URL(location.href);
+        url.searchParams.set("report", runId);
+        url.hash = "share-summary";
+        history.replaceState(null, "", url);
         state.activeShareSummaryRunId = runId;
         state.shareSummaryDetailSignature = null;
         openModal("share-summary-run-modal");
@@ -3226,6 +3316,8 @@
         state.shareSummaryDetailSignature = signature;
         const current = versions.find(version => Number(version.run.id) === Number(run.publishedRunId || run.id));
         const detail = document.getElementById("share-summary-run-detail");
+        const audio = detail.querySelector("audio");
+        const playback = audio ? {src: audio.getAttribute("src"), time: audio.currentTime, paused: audio.paused, rate: audio.playbackRate} : null;
         // Preserve expanded history across progress refreshes.
         const expanded = new Set(Array.from(detail.querySelectorAll("details[data-version-id][open]")).map(node => node.dataset.versionId));
         document.getElementById("share-summary-run-modal-title").textContent = `分享总结详情：${run.taskName || run.id}`;
@@ -3233,12 +3325,26 @@
             + renderShareSummaryVersions(run, versions);
         detail.querySelectorAll("details[data-version-id]").forEach(node => { node.open = expanded.has(node.dataset.versionId); });
         bindShareSummaryAssetButtons(detail);
+        restoreReportPlayback(detail.querySelector("audio"), playback);
+    }
+
+    function restoreReportPlayback(audio, playback) {
+        if (!audio || !playback || audio.getAttribute("src") !== playback.src) return;
+        const restore = () => {
+            audio.playbackRate = playback.rate;
+            if (Number.isFinite(playback.time) && playback.time >= 0) {
+                audio.currentTime = Number.isFinite(audio.duration) ? Math.min(playback.time, audio.duration) : playback.time;
+            }
+            if (!playback.paused) audio.play()?.catch(() => {});
+        };
+        if (audio.readyState >= 1) restore();
+        else audio.addEventListener("loadedmetadata", restore, {once: true});
     }
 
     function renderShareSummaryProgress(run, versions) {
         const latest = versions.find(version => version.revision);
         const progress = latest ? `<p>最近一次整体生成：${escapeHtml(regenerationLabel(latest.revision.status))}</p>
-            <p>文字：${escapeHtml(latest.run.status)} · 图片：${escapeHtml(latest.run.imageStatus || "未生成")} · 音频：${escapeHtml(latest.run.audioStatus || "未生成")}</p>
+            <p>文字：${renderRunStatus(latest.run.status)} · 图片：${renderImageStatus(latest.run.imageStatus)} · 音频：${renderAudioStatus(latest.run.audioStatus)}</p>
             ${latest.revision.errorMessage ? `<p class="is-error">${escapeHtml(latest.revision.errorMessage)}</p>` : ""}
             ${["FAILED", "PARTIAL_FAILED"].includes(latest.revision.status) ? `<button type="button" data-retry-share-version="${escapeAttribute(latest.run.id)}" data-root-run="${escapeAttribute(run.id)}" ${shareSummaryBusy(run) ? "disabled" : ""}>重试未完成部分</button>` : ""}` : "";
         return progress;
@@ -3256,6 +3362,7 @@
     }
 
     function closeShareSummaryRunModal() {
+        const url = new URL(location.href); url.searchParams.delete("report"); history.replaceState(null, "", url);
         closeModal("share-summary-run-modal");
         state.activeShareSummaryRunId = null;
         state.activeShareSummaryBusy = false;
@@ -3263,12 +3370,18 @@
     }
 
     function openModal(id) {
-        document.getElementById(id).hidden = false;
+        const modal = document.getElementById(id);
+        if (modal.hidden) state.modalOpeners.set(id, document.activeElement);
+        modal.hidden = false;
+        modal.querySelector("button, input, select, textarea, [href]")?.focus();
         document.body.classList.add("modal-open");
     }
 
     function closeModal(id) {
         document.getElementById(id).hidden = true;
+        const opener = state.modalOpeners.get(id);
+        if (opener?.isConnected) opener.focus();
+        state.modalOpeners.delete(id);
         if (document.querySelectorAll(".modal-shell:not([hidden])").length === 0) {
             document.body.classList.remove("modal-open");
         }
@@ -3462,7 +3575,9 @@
         if (!Number.isFinite(duration) || duration <= 0) {
             return "-";
         }
-        return `${Math.round(duration)}ms`;
+        if (duration < 1000) return `${Math.round(duration)} 毫秒`;
+        if (duration < 60000) return `${(duration / 1000).toFixed(1)} 秒`;
+        return `${Math.floor(duration / 60000)} 分 ${Math.floor((duration % 60000) / 1000)} 秒`;
     }
 
     function formatWindow(start, end) {
@@ -3493,13 +3608,18 @@
     function renderShareSummaryRunDetail(run, images = [], audios = [], versions = []) {
         return `
             <section class="summary-detail-section">
+                <h4>报告预览</h4>
+                <article class="summary-report summary-report-main summary-rendered">${run.reportHtml || renderSummaryReport(run.report || "尚无报告内容")}</article>
+                <details><summary>查看原始 Markdown</summary><pre class="summary-report">${escapeHtml(run.report || "")}</pre></details>
+            </section>
+            <section class="summary-detail-section">${renderShareSummaryProgress(run, versions)}</section>
+            <details class="summary-detail-section"><summary>重新生成与版本说明</summary>
                 <div class="row-actions">${renderRegenerationButton(run)}</div>
                 <p class="muted">沿用本条总结的时间范围，按当前配置重新生成文字、图片和音频。全部成功后原分享链接统一更新，旧版本保留。</p>
-                ${renderShareSummaryProgress(run, versions)}
-            </section>
+            </details>
             <div class="summary-detail-grid">
-                <div><b>状态</b><span>${renderRunStatus(run.status)}</span></div>
-                <div><b>触发方式</b><span>${escapeHtml(run.triggerType || "-")}</span></div>
+                <div><b>文字状态</b><span>${renderRunStatus(run.status)}</span></div>
+                <div><b>触发方式</b><span>${run.triggerType === "MANUAL" ? "手动执行" : "定时执行"}</span></div>
                 <div><b>窗口</b><span>${escapeHtml(formatWindow(run.windowStart, run.windowEnd))}</span></div>
                 <div><b>链接</b><span>${escapeHtml(run.inputLinkCount || 0)}</span></div>
                 <div><b>AI Provider</b><span>${escapeHtml(run.aiProviderNames || "-")}</span></div>
@@ -3510,7 +3630,7 @@
                     <h4>分享图</h4>
                     <div class="row-actions">
                         ${renderShareSummaryImageActionButton(run)}
-                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制OG链接</button>
+                        <button type="button" class="secondary" data-copy-url="${escapeAttribute(shareSummaryOgShareUrl(run))}" ${shareSummaryOgShareUrl(run) ? "" : "disabled"}>复制分享链接</button>
                         <button type="button" class="secondary" data-copy-url="${escapeAttribute(run.ogImageUrl || "")}" ${run.ogImageUrl ? "" : "disabled"}>复制图片链接</button>
                     </div>
                 </div>
@@ -3527,14 +3647,10 @@
                 ${renderShareSummaryAudioDetail(run, audios)}
             </section>
             ${run.errorMessage ? `<section class="summary-detail-section"><h4>错误信息</h4><pre class="summary-report is-error">${escapeHtml(run.errorMessage)}</pre></section>` : ""}
-            <section class="summary-detail-section">
-                <h4>总结报告</h4>
-                <article class="summary-report summary-report-main">${renderSummaryReport(run.report || "")}</article>
-            </section>
-            <section class="summary-detail-section">
-                <h4>提示词快照</h4>
+            <details class="summary-detail-section">
+                <summary>提示词快照</summary>
                 <pre class="summary-report summary-report-prompt">${escapeHtml(run.promptSnapshot || "")}</pre>
-            </section>
+            </details>
         `;
     }
 

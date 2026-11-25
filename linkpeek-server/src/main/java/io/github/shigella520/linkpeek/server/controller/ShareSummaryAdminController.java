@@ -168,7 +168,9 @@ public class ShareSummaryAdminController {
     public ShareSummaryRunRecord run(HttpServletRequest request, @PathVariable long runId) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return shareSummaryService.run(runId);
+            ShareSummaryRunRecord run = shareSummaryService.run(runId);
+            run.setReportHtml(io.github.shigella520.linkpeek.server.render.ShareSummaryMarkdownRenderer.toHtml(run.getReport()));
+            return run;
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }

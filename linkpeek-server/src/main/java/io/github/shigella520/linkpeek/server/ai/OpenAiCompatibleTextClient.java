@@ -14,7 +14,6 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -28,7 +27,6 @@ public class OpenAiCompatibleTextClient {
 
     public static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 45;
     private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(DEFAULT_REQUEST_TIMEOUT_SECONDS);
-    private static final int MAX_BODY_LOG_CHARS = 2_000;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -71,15 +69,14 @@ public class OpenAiCompatibleTextClient {
                 ? requestTimeout(provider)
                 : timeout;
         log.info(
-                "{}_request_start providerId={} apiKind={} model={} baseUrl={} timeoutMs={} requestBytes={} requestBody={}",
+                "{}_request_start providerId={} apiKind={} model={} baseUrl={} timeoutMs={} requestBytes={}",
                 operation,
                 provider.getId(),
                 apiKind,
                 provider.getModel(),
                 endpointUri,
                 requestTimeout.toMillis(),
-                body.length,
-                bodySnippet(body)
+                body.length
         );
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(endpointUri)
@@ -94,10 +91,9 @@ public class OpenAiCompatibleTextClient {
         long startedAt = System.nanoTime();
         HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
         long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
-        if (response.statusCode() >= 400) {
-            String responseBody = bodySnippet(response.body());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
             log.warn(
-                    "{}_http_error providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBody={}",
+                    "{}_http_error providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={}",
                     operation,
                     provider.getId(),
                     apiKind,
@@ -105,15 +101,13 @@ public class OpenAiCompatibleTextClient {
                     endpointUri,
                     response.statusCode(),
                     durationMs,
-                    requestId(response.headers()),
-                    responseBody
+                    requestId(response.headers())
             );
-            throw new IOException("AI provider returned HTTP " + response.statusCode() + " body=" + responseBody);
+            throw new IOException("AI provider returned HTTP " + response.statusCode());
         }
 
-        String responseBody = bodySnippet(response.body());
         log.info(
-                "{}_request_success providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBytes={} responseBody={}",
+                "{}_request_success providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBytes={}",
                 operation,
                 provider.getId(),
                 apiKind,
@@ -122,8 +116,7 @@ public class OpenAiCompatibleTextClient {
                 response.statusCode(),
                 durationMs,
                 requestId(response.headers()),
-                response.body().length,
-                responseBody
+                response.body().length
         );
         JsonNode payload = objectMapper.readTree(response.body());
         Optional<String> title = switch (apiKind) {
@@ -182,41 +175,67 @@ public class OpenAiCompatibleTextClient {
     }
 
     private Optional<String> extractResponsesText(JsonNode payload) {
-        String outputText = payload.path("output_text").asText("");
-        if (StringUtils.hasText(outputText)) {
-            return Optional.of(outputText);
-        }
-
-        JsonNode output = payload.path("output");
-        if (!output.isArray()) {
+        if (!completedOrUnspecified(payload.path("status"))
+                || payload.hasNonNull("incomplete_details") || payload.hasNonNull("error")) {
             return Optional.empty();
         }
-        StringBuilder text = new StringBuilder();
-        for (JsonNode item : output) {
-            JsonNode content = item.path("content");
-            if (!content.isArray()) {
-                continue;
-            }
-            for (JsonNode contentItem : content) {
-                String value = contentItem.path("text").asText("");
-                if (StringUtils.hasText(value)) {
-                    if (text.length() > 0) {
-                        text.append('\n');
+        JsonNode output = payload.path("output");
+        String finalText = null;
+        if (output.isArray()) {
+            for (JsonNode item : output) {
+                // Some compatible gateways omit type/role, but content must still be output_text.
+                if (!"message".equals(item.path("type").asText("message"))
+                        || !"assistant".equals(item.path("role").asText("assistant"))) {
+                    continue;
+                }
+                if (!completedOrUnspecified(item.path("status"))) {
+                    return Optional.empty();
+                }
+                JsonNode content = item.path("content");
+                if (!content.isArray()) {
+                    continue;
+                }
+                List<String> parts = new ArrayList<>();
+                for (JsonNode part : content) {
+                    if ("refusal".equals(part.path("type").asText())) {
+                        return Optional.empty();
                     }
-                    text.append(value);
+                    if ("output_text".equals(part.path("type").asText())
+                            && part.path("text").isTextual() && StringUtils.hasText(part.path("text").asText())) {
+                        parts.add(part.path("text").asText());
+                    }
+                }
+                if (!parts.isEmpty()) {
+                    finalText = String.join("\n", parts);
                 }
             }
+            // Never use a top-level convenience field to override typed reasoning/refusal output.
+            return Optional.ofNullable(finalText);
         }
-        return text.length() == 0 ? Optional.empty() : Optional.of(text.toString());
+        JsonNode text = payload.path("output_text");
+        return text.isTextual() && StringUtils.hasText(text.asText())
+                ? Optional.of(text.asText()) : Optional.empty();
+    }
+
+    private boolean completedOrUnspecified(JsonNode status) {
+        return status.isMissingNode() || status.isNull() || "completed".equals(status.asText());
     }
 
     private Optional<String> extractChatText(JsonNode payload) {
         JsonNode choices = payload.path("choices");
-        if (!choices.isArray() || choices.isEmpty()) {
+        if (!choices.isArray() || choices.isEmpty() || payload.hasNonNull("error")) {
             return Optional.empty();
         }
-        String content = choices.get(0).path("message").path("content").asText("");
-        return StringUtils.hasText(content) ? Optional.of(content) : Optional.empty();
+        JsonNode choice = choices.get(0);
+        String finish = choice.path("finish_reason").asText("");
+        JsonNode message = choice.path("message");
+        if ((!finish.isEmpty() && !"stop".equals(finish)) || message.hasNonNull("refusal")
+                || !"assistant".equals(message.path("role").asText("assistant"))) {
+            return Optional.empty();
+        }
+        JsonNode content = message.path("content");
+        return content.isTextual() && StringUtils.hasText(content.asText())
+                ? Optional.of(content.asText()) : Optional.empty();
     }
 
     private String requestId(HttpHeaders headers) {
@@ -225,21 +244,6 @@ public class OpenAiCompatibleTextClient {
                 .or(() -> headers.firstValue("openai-request-id"))
                 .or(() -> headers.firstValue("cf-ray"))
                 .orElse("n/a");
-    }
-
-    private String bodySnippet(byte[] body) {
-        if (body == null || body.length == 0) {
-            return "";
-        }
-        String text = new String(body, StandardCharsets.UTF_8)
-                .replace('\r', ' ')
-                .replace('\n', ' ')
-                .replaceAll("\\s+", " ")
-                .strip();
-        if (text.length() <= MAX_BODY_LOG_CHARS) {
-            return text;
-        }
-        return text.substring(0, MAX_BODY_LOG_CHARS).stripTrailing() + "...";
     }
 
     public record TitleResult(Optional<String> title, long durationMs) {

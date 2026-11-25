@@ -46,14 +46,14 @@ public class OpenAiCompatibleImageClient {
                 timeout.toMillis(),
                 body.length
         );
-        log.info(
+        log.debug(
                 "share_summary_image_request_body providerType={} model={} endpoint={} requestBody={}",
                 config.getProviderType(),
                 config.getModel(),
                 endpoint,
                 requestBodyLog(body)
         );
-        log.info(
+        log.debug(
                 "share_summary_image_request_curl providerType={} model={} endpoint={} curl={}",
                 config.getProviderType(),
                 config.getModel(),
