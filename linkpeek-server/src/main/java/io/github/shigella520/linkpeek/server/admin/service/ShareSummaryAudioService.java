@@ -18,8 +18,6 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import java.io.IOException;
@@ -27,10 +25,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.WeekFields;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -42,7 +36,6 @@ public class ShareSummaryAudioService {
     private static final Logger log = LoggerFactory.getLogger(ShareSummaryAudioService.class);
     private static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 120;
     private static final int MAX_REQUEST_TIMEOUT_SECONDS = 1800;
-    private static final long STALE_ACTIVE_BUFFER_MILLIS = 60_000L;
     private static final long MAX_AUDIO_BYTES = 20L * 1024L * 1024L;
     private static final String DEFAULT_PROVIDER_TYPE = "OPENAI_COMPATIBLE";
     private static final String DEFAULT_BASE_URL = "https://tts.wangwangit.com";
@@ -65,7 +58,6 @@ public class ShareSummaryAudioService {
     private static final String TEST_AUDIO_STORAGE_DIR = "share-summary/test-audio";
     private static final String TEST_AUDIO_STORAGE_BASENAME = "tts-test";
     private static final List<String> TEST_AUDIO_OUTPUT_FORMATS = List.of("mp3", "wav");
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
 
     private final ShareSummaryAudioMapper audioMapper;
     private final ShareSummaryMapper shareSummaryMapper;
@@ -73,8 +65,9 @@ public class ShareSummaryAudioService {
     private final List<ShareSummaryAudioProvider> audioProviders;
     private final ExecutorService executor;
     private final NotificationService notificationService;
-    private final LinkPeekProperties properties;
     private final Clock clock;
+    private final ShareSummaryAssetStorage storage;
+    private final ShareSummaryReportTitles titles;
 
     public ShareSummaryAudioService(
             ShareSummaryAudioMapper audioMapper,
@@ -100,8 +93,9 @@ public class ShareSummaryAudioService {
         this.audioProviders = List.copyOf(providers);
         this.executor = executor;
         this.notificationService = notificationService;
-        this.properties = properties;
         this.clock = clock;
+        this.storage = new ShareSummaryAssetStorage(properties, "audio", log);
+        this.titles = new ShareSummaryReportTitles(clock);
     }
 
     public ConfigResponse config() {
@@ -143,7 +137,7 @@ public class ShareSummaryAudioService {
             Thread.currentThread().interrupt();
             return new TestResponse(false, "测试中断。", 0, elapsedMillis(startedAt), "InterruptedException", null);
         } catch (RuntimeException | IOException exception) {
-            return new TestResponse(false, errorMessage(exception, null, "TTS test failed."), 0, elapsedMillis(startedAt), errorType(exception, "AudioProviderException"), null);
+            return new TestResponse(false, ShareSummaryAssetErrors.errorMessage(exception, null, "TTS test failed."), 0, elapsedMillis(startedAt), ShareSummaryAssetErrors.errorType(exception, "AudioProviderException"), null);
         }
     }
 
@@ -220,15 +214,15 @@ public class ShareSummaryAudioService {
         List<ShareSummaryAudioRecord> audios = audioMapper.selectAudiosForRun(runId);
         if (versions != null) versions.deleteAudioTokens(runId);
         int deleted = audioMapper.deleteAudiosForRun(runId);
-        deleteStoredAudiosAfterCommit(audios);
+        storage.deleteAfterCommit(audios, ShareSummaryAudioRecord::getId, ShareSummaryAudioRecord::getStorageKey);
         return deleted;
     }
 
     public int markStaleActiveAudiosFailed() {
         ShareSummaryAudioConfigRecord config = configRecord();
         long now = now();
-        long threshold = now - staleActiveTimeoutMillis(config.getRequestTimeoutSeconds());
-        int updated = audioMapper.markStaleActiveAudiosFailed(threshold, now, "GENERATION timeout exceeded.");
+        long threshold = ShareSummaryAssetLifecycle.staleActiveThreshold(now, config.getRequestTimeoutSeconds());
+        int updated = audioMapper.markStaleActiveAudiosFailed(threshold, now, ShareSummaryAssetLifecycle.STALE_ACTIVE_ERROR_MESSAGE);
         if (updated > 0) {
             log.warn("share_summary_audio_stale_active_marked_failed count={} threshold={}", updated, threshold);
         }
@@ -262,10 +256,8 @@ public class ShareSummaryAudioService {
 
     public PublicAudio publicAudio(String publicToken, String ext) {
         ShareSummaryAudioRecord audio = publicSuccessfulAudio(publicToken, ext);
-        Path path = storageRoot().resolve(audio.getStorageKey()).normalize();
-        if (!path.startsWith(storageRoot()) || !Files.isRegularFile(path)) {
-            throw new IllegalArgumentException("Share summary audio file was not found.");
-        }
+        Path path = storage.existingFile(audio.getStorageKey())
+                .orElseThrow(() -> new IllegalArgumentException("Share summary audio file was not found."));
         return new PublicAudio(new FileSystemResource(path), mediaTypeFor(audio.getOutputFormat()));
     }
 
@@ -289,21 +281,16 @@ public class ShareSummaryAudioService {
     }
 
     private void submitAudioGeneration(long audioId) {
-        try {
-            executor.execute(() -> generateAudioNow(audioId));
-        } catch (RejectedExecutionException exception) {
-            Runnable rejected = () -> {
-                ShareSummaryAudioRecord audio = audioMapper.selectAudio(audioId);
-                if (audio != null) {
-                    audio.setStatus(ShareSummaryAudioStatus.FAILED.name());
-                    audio.setErrorMessage("AUDIO_QUEUE_FULL");
-                    audio.setFinishedAt(now());
-                    audioMapper.updateAudio(audio);
-                    publishAudioFailed(audio, RejectedExecutionException.class.getSimpleName(), "AUDIO_QUEUE_FULL");
-                }
-            };
-            if (versions == null) rejected.run(); else versions.independent(rejected);
-        }
+        ShareSummaryAssetLifecycle.submit(executor, () -> generateAudioNow(audioId), versions, () -> {
+            ShareSummaryAudioRecord audio = audioMapper.selectAudio(audioId);
+            if (audio != null) {
+                audio.setStatus(ShareSummaryAudioStatus.FAILED.name());
+                audio.setErrorMessage("AUDIO_QUEUE_FULL");
+                audio.setFinishedAt(now());
+                audioMapper.updateAudio(audio);
+                publishAudioFailed(audio, RejectedExecutionException.class.getSimpleName(), "AUDIO_QUEUE_FULL");
+            }
+        });
     }
 
     private void generateAudioNow(long audioId) {
@@ -418,11 +405,6 @@ public class ShareSummaryAudioService {
         defaults.setRequestTimeoutSeconds(DEFAULT_REQUEST_TIMEOUT_SECONDS);
         defaults.setUpdatedAt(0);
         return defaults;
-    }
-
-    private long staleActiveTimeoutMillis(int requestTimeoutSeconds) {
-        int seconds = Math.max(1, requestTimeoutSeconds);
-        return seconds * 2_000L + STALE_ACTIVE_BUFFER_MILLIS;
     }
 
     private void validateReadyConfig(ShareSummaryAudioConfigRecord config) {
@@ -544,14 +526,7 @@ public class ShareSummaryAudioService {
         if (image != null && StringUtils.hasText(image.getOgTitle())) {
             return image.getOgTitle();
         }
-        io.github.shigella520.linkpeek.server.admin.model.ShareSummaryPeriodType periodType =
-                io.github.shigella520.linkpeek.server.admin.model.ShareSummaryPeriodType.fromValue(run.getPeriodType());
-        LocalDate start = millisToDate(run.getWindowStart());
-        return switch (periodType) {
-            case DAILY -> "LinkPeek - " + start.format(DATE_FORMATTER) + " 日报";
-            case WEEKLY -> weeklyTitle(start);
-            case MONTHLY -> "LinkPeek - " + start.getYear() + "年" + start.getMonthValue() + "月月报";
-        };
+        return titles.title(run);
     }
 
     private String ogDescription(ShareSummaryRunRecord run) {
@@ -559,46 +534,18 @@ public class ShareSummaryAudioService {
         if (image != null && StringUtils.hasText(image.getOgDescription())) {
             return image.getOgDescription();
         }
-        return "本报告汇总了 %s 至 %s 的链接分享与内容洞察。".formatted(
-                dateLabel(run.getWindowStart()),
-                dateLabel(run.getWindowEnd())
-        );
-    }
-
-    private String weeklyTitle(LocalDate start) {
-        WeekFields weekFields = WeekFields.ISO;
-        int week = start.get(weekFields.weekOfWeekBasedYear());
-        int year = start.get(weekFields.weekBasedYear());
-        return "LinkPeek - %d年第%02d周周报".formatted(year, week);
-    }
-
-    private LocalDate millisToDate(long millis) {
-        ZoneId zone = clock.getZone();
-        return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate();
-    }
-
-    private String dateLabel(long millis) {
-        return millisToDate(millis).format(DATE_FORMATTER);
+        return titles.description(run);
     }
 
     private String saveAudioBytes(ShareSummaryAudioRecord audio, byte[] bytes) throws IOException {
         String storageKey = "share-summary/audios/%d/%d.%s".formatted(audio.getRunId(), audio.getId(), audio.getOutputFormat());
-        Path path = storageRoot().resolve(storageKey).normalize();
-        if (!path.startsWith(storageRoot())) {
-            throw new IOException("Audio storage path is invalid.");
-        }
-        Path parent = path.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        Files.write(path, bytes);
-        return storageKey;
+        return storage.save(storageKey, bytes);
     }
 
     private String saveTestAudioBytes(String outputFormat, byte[] bytes) throws IOException {
         String normalizedOutputFormat = normalizeOutputFormat(outputFormat, DEFAULT_PROVIDER_TYPE);
-        Path directory = storageRoot().resolve(TEST_AUDIO_STORAGE_DIR).normalize();
-        if (!directory.startsWith(storageRoot())) {
+        Path directory = storage.root().resolve(TEST_AUDIO_STORAGE_DIR).normalize();
+        if (!directory.startsWith(storage.root())) {
             throw new IOException("Audio storage path is invalid.");
         }
         Files.createDirectories(directory);
@@ -612,10 +559,10 @@ public class ShareSummaryAudioService {
 
     private void failAudio(ShareSummaryAudioRecord audio, Throwable exception, String fallbackMessage) {
         audio.setStatus(ShareSummaryAudioStatus.FAILED.name());
-        audio.setErrorMessage(errorMessage(exception, fallbackMessage, "Audio generation failed."));
+        audio.setErrorMessage(ShareSummaryAssetErrors.errorMessage(exception, fallbackMessage, "Audio generation failed."));
         audio.setFinishedAt(now());
         audioMapper.updateAudio(audio);
-        publishAudioFailed(audio, errorType(exception, "AudioGenerationException"), audio.getErrorMessage());
+        publishAudioFailed(audio, ShareSummaryAssetErrors.errorType(exception, "AudioGenerationException"), audio.getErrorMessage());
     }
 
     private void publishAudioFailed(ShareSummaryAudioRecord audio, String errorType, String errorMessage) {
@@ -628,36 +575,6 @@ public class ShareSummaryAudioService {
         } catch (RuntimeException exception) {
             log.warn("share_summary_audio_failed_notification_failed audioId={} runId={} message={}", audio.getId(), audio.getRunId(), exception.getMessage(), exception);
         }
-    }
-
-    private void deleteStoredAudio(ShareSummaryAudioRecord audio) {
-        if (audio == null || !StringUtils.hasText(audio.getStorageKey())) {
-            return;
-        }
-        try {
-            Path path = storageRoot().resolve(audio.getStorageKey()).normalize();
-            if (!path.startsWith(storageRoot())) {
-                log.warn("share_summary_audio_delete_skipped_invalid_path audioId={} storageKey={}", audio.getId(), audio.getStorageKey());
-                return;
-            }
-            Files.deleteIfExists(path);
-        } catch (IOException exception) {
-            log.warn("share_summary_audio_file_delete_failed audioId={} storageKey={} message={}", audio.getId(), audio.getStorageKey(), exception.getMessage(), exception);
-        }
-    }
-
-    private void deleteStoredAudiosAfterCommit(List<ShareSummaryAudioRecord> audios) {
-        Runnable cleanup = () -> audios.forEach(this::deleteStoredAudio);
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            cleanup.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                cleanup.run();
-            }
-        });
     }
 
     private ShareSummaryRunRecord existingRun(long runId) {
@@ -674,10 +591,6 @@ public class ShareSummaryAudioService {
             throw new IllegalArgumentException("Share summary audio was not found.");
         }
         return audio;
-    }
-
-    private Path storageRoot() {
-        return properties.getCacheDir().toAbsolutePath().normalize();
     }
 
     private ShareSummaryAudioRecord publicSuccessfulAudio(String publicToken, String ext) {
@@ -701,7 +614,7 @@ public class ShareSummaryAudioService {
     }
 
     private Path testAudioPath(String outputFormat) {
-        return storageRoot()
+        return storage.root()
                 .resolve(TEST_AUDIO_STORAGE_DIR)
                 .resolve(TEST_AUDIO_STORAGE_BASENAME + "." + outputFormat)
                 .normalize();
@@ -713,24 +626,13 @@ public class ShareSummaryAudioService {
         }
         String token = versions == null || audio.getId() == null ? null : versions.audioToken(audio.getId());
         if (StringUtils.hasText(token)) {
-            return baseUrl() + "/share-summary/audios/" + token + "." + normalizeOutputFormat(audio.getOutputFormat(), audio.getProviderType());
+            return storage.publicBaseUrl() + "/share-summary/audios/" + token + "." + normalizeOutputFormat(audio.getOutputFormat(), audio.getProviderType());
         }
         ShareSummaryImageRecord image = imageMapper.selectLatestSuccessfulImage(audio.getRunId());
         if (image == null || !StringUtils.hasText(image.getPublicToken())) {
             return null;
         }
-        return baseUrl() + "/share-summary/audios/" + image.getPublicToken() + "." + normalizeOutputFormat(audio.getOutputFormat(), audio.getProviderType());
-    }
-
-    private String baseUrl() {
-        String value = properties.getBaseUrl();
-        if (!StringUtils.hasText(value)) {
-            return "";
-        }
-        while (value.endsWith("/")) {
-            value = value.substring(0, value.length() - 1);
-        }
-        return value;
+        return storage.publicBaseUrl() + "/share-summary/audios/" + image.getPublicToken() + "." + normalizeOutputFormat(audio.getOutputFormat(), audio.getProviderType());
     }
 
     private String normalizeProviderType(String providerType) {
@@ -804,33 +706,6 @@ public class ShareSummaryAudioService {
 
     private String optionalStrip(String value) {
         return StringUtils.hasText(value) ? value.strip() : "";
-    }
-
-    private String errorType(Throwable exception, String fallbackType) {
-        return exception == null ? fallbackType : exception.getClass().getSimpleName();
-    }
-
-    private String errorMessage(Throwable exception, String fallbackMessage, String defaultMessage) {
-        String message = firstErrorMessage(exception);
-        if (!StringUtils.hasText(message)) {
-            message = fallbackMessage;
-        }
-        if (!StringUtils.hasText(message)) {
-            message = defaultMessage;
-        }
-        String stripped = message.strip();
-        return stripped.length() <= 500 ? stripped : stripped.substring(0, 500);
-    }
-
-    private String firstErrorMessage(Throwable exception) {
-        Throwable current = exception;
-        while (current != null) {
-            if (StringUtils.hasText(current.getMessage())) {
-                return current.getMessage();
-            }
-            current = current.getCause();
-        }
-        return "";
     }
 
     private long now() {
