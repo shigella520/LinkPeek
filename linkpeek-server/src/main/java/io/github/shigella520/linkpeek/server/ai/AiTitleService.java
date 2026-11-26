@@ -1,5 +1,8 @@
 package io.github.shigella520.linkpeek.server.ai;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.shigella520.linkpeek.core.model.PreviewKey;
 import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
 import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
@@ -28,6 +31,7 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
@@ -44,6 +48,18 @@ public class AiTitleService {
     private static final long FREESTYLE_PENDING_CLEANUP_MILLIS = 3_600_000;
     private static final Pattern STYLE_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
     private static final int MAX_TITLE_CODE_POINTS = 120;
+    private static final Pattern REASONING_BLOCK = Pattern.compile(
+            "(?is)<(think|thinking|analysis|reasoning)(?:\\s[^>]*)?>.*?</\\1\\s*>");
+    private static final Pattern REASONING_OPEN = Pattern.compile("(?i)<(?:think|thinking|analysis|reasoning)(?:\\s[^>]*)?>");
+    private static final Pattern REASONING_CLOSE = Pattern.compile("(?i)</(?:think|thinking|analysis|reasoning)\\s*>");
+    private static final Pattern TITLE_LABEL = Pattern.compile("^(?:#+\\s*)?(?:\\*\\*)?(?:标题|title)(?:\\*\\*)?\\s*[：:]\\s*", Pattern.CASE_INSENSITIVE);
+    // Conversational openers ("好的，以下是标题") and labelled side notes ("解释：…"). Ordinary words such as
+    // "这是"/"分析" are deliberately not listed unless followed by a colon, because real titles start with them.
+    private static final Pattern PREAMBLE_LINE = Pattern.compile(
+            "^(?:(?:好的|当然|以下是|下面是|sure\\b|here(?:'s| is)\\b)"
+                    + "|(?:解释|说明|理由|备注|注|分析|思路|note|explanation)\\s*[：:])",
+            Pattern.CASE_INSENSITIVE);
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     private final AdminPromptMapper adminPromptMapper;
     private final AiProviderMapper aiProviderMapper;
@@ -250,7 +266,19 @@ public class AiTitleService {
                     recordAiProviderSuccess(provider);
                     return attemptStats.result(Optional.of(withTitle(metadata, generated.get())));
                 }
-                recordAiProviderFailure(provider, durationMs, new IllegalStateException("AI provider returned an empty or invalid title."));
+                if (result.title().filter(StringUtils::hasText).isPresent()) {
+                    // The provider answered; the content just was not usable as a title. That is an
+                    // output-quality problem, not an availability failure, so it must not count
+                    // towards automatic downgrade. Only the length is logged to keep model text out of logs.
+                    log.warn(
+                            "ai_title_invalid_output providerId={} style={} outputChars={}",
+                            provider.getId(),
+                            stylePrompt.style(),
+                            result.title().get().length()
+                    );
+                    continue;
+                }
+                recordAiProviderFailure(provider, durationMs, new IllegalStateException("AI provider returned an empty title."));
             } catch (InterruptedException exception) {
                 long durationMs = elapsedMillis(startedAt);
                 attemptStats.record(provider, durationMs);
@@ -293,18 +321,107 @@ public class AiTitleService {
                 .replace("```", "")
                 .replace('\r', '\n')
                 .strip();
-        List<String> lines = cleaned.lines().map(String::strip).filter(line -> !line.isBlank()).toList();
-        if (lines.size() != 1) {
+        cleaned = stripReasoningBlocks(cleaned);
+        if (cleaned == null) {
             return "";
         }
-        String title = removePrefix(removePrefix(removePrefix(lines.get(0), "- "), "标题："), "标题:");
+        // JSON may span several lines, so try it on the whole answer before picking a line.
+        // Titles like "[独家] …" are not JSON and fall through to line selection.
+        String title = jsonTitle(cleaned);
+        if (title == null) {
+            title = firstTitleLine(cleaned);
+        }
         title = stripMatchingQuotes(title.strip());
-        if (title.codePointCount(0, title.length()) > MAX_TITLE_CODE_POINTS
-                || title.startsWith("{") || title.startsWith("[{")
-                || title.matches("(?is).*<(?:think|analysis|reasoning)(?:\\s[^>]*)?>.*")) {
+        int codePoints = title.codePointCount(0, title.length());
+        // A single line far beyond any card title is almost certainly leaked reasoning or prose.
+        if (codePoints > MAX_TITLE_CODE_POINTS * 2) {
             return "";
         }
-        return CardTextSanitizer.sanitize(title);
+        return truncate(CardTextSanitizer.sanitize(title), MAX_TITLE_CODE_POINTS);
+    }
+
+    /**
+     * Removes inline reasoning blocks emitted by some reasoning models behind compatible gateways.
+     * Returns null when the whole output is reasoning (an unclosed opening tag).
+     */
+    private String stripReasoningBlocks(String value) {
+        String current = REASONING_BLOCK.matcher(value).replaceAll("\n").strip();
+        Matcher dangling = REASONING_CLOSE.matcher(current);
+        int lastClose = -1;
+        while (dangling.find()) {
+            lastClose = dangling.end();
+        }
+        if (lastClose >= 0) {
+            current = current.substring(lastClose).strip();
+        }
+        if (REASONING_OPEN.matcher(current).find()) {
+            return null;
+        }
+        return current;
+    }
+
+    private String firstTitleLine(String value) {
+        List<String> lines = value.lines().map(String::strip).filter(line -> !line.isBlank()).toList();
+        for (String line : lines) {
+            String labeled = stripTitleLabel(line);
+            if (!labeled.equals(line) && StringUtils.hasText(labeled)) {
+                return labeled;
+            }
+        }
+        String fallback = "";
+        for (String line : lines) {
+            String candidate = stripTitleLabel(removePrefix(line, "- "));
+            if (!StringUtils.hasText(candidate) || endsWithColon(candidate)) {
+                continue;
+            }
+            if (!PREAMBLE_LINE.matcher(candidate).find()) {
+                return candidate;
+            }
+            if (fallback.isEmpty()) {
+                fallback = candidate;
+            }
+        }
+        // Every line looked like an opener: a lone "好的设计胜过一切" is still a usable title.
+        return fallback;
+    }
+
+    private String stripTitleLabel(String line) {
+        Matcher matcher = TITLE_LABEL.matcher(line);
+        return matcher.find() ? line.substring(matcher.end()).strip() : line;
+    }
+
+    private boolean endsWithColon(String line) {
+        return line.endsWith("：") || line.endsWith(":");
+    }
+
+    /**
+     * Returns the title from a JSON answer such as {"title":"…"} or [{"title":"…"}], or null when the
+     * value is not JSON. Returns "" when it is JSON without a usable title.
+     */
+    private String jsonTitle(String value) {
+        if (!value.startsWith("{") && !value.startsWith("[")) {
+            return null;
+        }
+        JsonNode node;
+        try {
+            node = JSON.readTree(value);
+        } catch (JsonProcessingException exception) {
+            return null;
+        }
+        if (node.isArray() && !node.isEmpty()) {
+            node = node.get(0);
+        }
+        JsonNode title = node.path("title");
+        return title.isTextual() ? title.asText().replace('\n', ' ').strip() : "";
+    }
+
+    private String truncate(String value, int maxCodePoints) {
+        int codePoints = value.codePointCount(0, value.length());
+        if (codePoints <= maxCodePoints) {
+            return value;
+        }
+        int end = value.offsetByCodePoints(0, maxCodePoints);
+        return value.substring(0, end).stripTrailing();
     }
 
     private PreviewMetadata withTitle(PreviewMetadata metadata, String title) {

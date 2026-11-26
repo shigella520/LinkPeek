@@ -198,14 +198,85 @@ class AiTitleServiceTest {
     }
 
     @Test
-    void invalidTitleDoesNotBecomeSuccessfulMetadata() {
+    void cleanTitleRecoversTitleFromCommonModelOutputShapes() {
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
+
+        assertEquals("最终标题", service.cleanTitle("<think>synthetic notes\n第二行</think>\n最终标题"));
+        assertEquals("最终标题", service.cleanTitle("synthetic notes</think>\n最终标题"));
+        assertEquals("最终标题", service.cleanTitle("最终标题\n解释：这里是模型附带的说明"));
+        assertEquals("最终标题", service.cleanTitle("好的，以下是标题：\n最终标题"));
+        assertEquals("最终标题", service.cleanTitle("**标题**：最终标题\n理由：更吸引人"));
+        assertEquals("最终标题", service.cleanTitle("```json\n{\n  \"title\": \"最终标题\"\n}\n```"));
+        assertEquals("引号\"标题\"", service.cleanTitle("[{\"title\":\"\\u5f15\\u53f7\\\"标题\\\"\"}]"));
+        assertEquals("长".repeat(120), service.cleanTitle("长".repeat(130)));
+    }
+
+    @Test
+    void cleanTitleKeepsRealTitlesThatLookLikeOpeners() {
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
+
+        assertEquals("这是我见过最离谱的 Bug", service.cleanTitle("这是我见过最离谱的 Bug"));
+        assertEquals("分析师都看走眼了", service.cleanTitle("分析师都看走眼了"));
+        assertEquals("好的设计胜过一切", service.cleanTitle("好的设计胜过一切"));
+        assertEquals("[独家] 新品发布", service.cleanTitle("[独家] 新品发布"));
+    }
+
+    @Test
+    void cleanTitleRejectsOutputWithoutUsableTitle() {
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
+
+        assertEquals("", service.cleanTitle("<think>reasoning that never finished"));
+        assertEquals("", service.cleanTitle("<think>only reasoning</think>"));
+        assertEquals("", service.cleanTitle("{\"summary\":\"没有标题字段\"}"));
+        assertEquals("", service.cleanTitle("长".repeat(241)));
+    }
+
+    @Test
+    void invalidTitleFallsBackWithoutCountingTowardsDowngrade() {
+        AiProviderRecord first = provider(1L, 100);
+        AiProviderRecord second = provider(2L, 200);
+        FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(first, second));
         FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
-        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of(provider(1L, 1))), client, null, null);
-        for (String invalid : List.of("解释内容\n最终标题", "长".repeat(121), "<think>notes</think>", "{\"title\":\"标题\"}")) {
-            client.title = invalid;
-            assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
-                    new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isEmpty());
+        client.titlesByProvider.put(1L, "<think>never finished");
+        client.title = "备用标题";
+        CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
+        AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                FakeProviderConfigMapper.aiProviderDowngradeConfig(true, 1),
+                mapper,
+                Clock.fixed(Instant.ofEpochMilli(1234L), ZoneOffset.UTC),
+                eventPublisher
+        );
+        AiTitleService service = new AiTitleService(null, mapper, client, null, downgradeService);
+
+        for (int i = 0; i < 3; i++) {
+            Optional<PreviewMetadata> result = service.generateStyledMetadata(generatedTextMetadata(),
+                    new AiTitleService.StylePrompt("fun", "风格", "格式", "hash"));
+            assertEquals("备用标题", result.orElseThrow().title());
         }
+
+        assertIterableEquals(List.of(1L, 2L, 1L, 2L, 1L, 2L), client.requestedProviderIds);
+        assertEquals(100, first.getSortOrder());
+        assertEquals(0, eventPublisher.events.size());
+    }
+
+    @Test
+    void emptyProviderAnswerStillCountsAsFailure() {
+        AiProviderRecord first = provider(1L, 100);
+        FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(first));
+        FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+        client.title = null;
+        CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
+        AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                FakeProviderConfigMapper.aiProviderDowngradeConfig(true, 2),
+                mapper,
+                Clock.fixed(Instant.ofEpochMilli(1234L), ZoneOffset.UTC),
+                eventPublisher
+        );
+        AiTitleService service = new AiTitleService(null, mapper, client, null, downgradeService);
+
+        assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
+                new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isEmpty());
+        assertEquals(1, eventPublisher.events.stream().filter(AiProviderRequestFailedEvent.class::isInstance).count());
     }
 
     @Test
@@ -568,6 +639,7 @@ class AiTitleServiceTest {
         private final List<Long> failProviderIds = new ArrayList<>();
         private final List<Long> requestedProviderIds = new ArrayList<>();
         private final List<AiTitlePrompt> requestedPrompts = new ArrayList<>();
+        private final Map<Long, String> titlesByProvider = new HashMap<>();
         private String title = "AI 标题";
 
         private FakeOpenAiCompatibleTextClient() {
@@ -586,7 +658,7 @@ class AiTitleServiceTest {
             if (failProviderIds.contains(provider.getId())) {
                 throw new IOException("provider failed");
             }
-            return new TitleResult(Optional.ofNullable(title), 25);
+            return new TitleResult(Optional.ofNullable(titlesByProvider.getOrDefault(provider.getId(), title)), 25);
         }
     }
 

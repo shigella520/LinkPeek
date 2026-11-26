@@ -162,10 +162,42 @@ class OpenAiCompatibleTextClientTest {
                 "{\"incomplete_details\":{\"reason\":\"max_output_tokens\"},\"output_text\":\"截断结果\"}",
                 "{\"output\":[{\"type\":\"reasoning\",\"content\":[{\"type\":\"reasoning_text\",\"text\":\"notes\"}]}]}",
                 "{\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"refusal\",\"refusal\":\"no\"}]}]}",
-                "{\"output\":[],\"output_text\":\"untrusted duplicate\"}",
+                // Convenience text is not trusted once typed output shows reasoning, since some gateways concatenate it.
+                "{\"output\":[{\"type\":\"reasoning\",\"summary\":[]}],\"output_text\":\"notes plus title\"}",
                 "{}")) {
             assertEquals(Optional.empty(), parseResponse(response, "RESPONSES"));
         }
+    }
+
+    @Test
+    void acceptsResponsesShapesReturnedByCompatibleGateways() throws Exception {
+        for (String response : List.of(
+                // Content parts without a type field.
+                "{\"output\":[{\"content\":[{\"text\":\"网关标题\"}]}]}",
+                // Plain "text" part type and a status field echoed in a different case.
+                "{\"status\":\"COMPLETED\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"text\",\"text\":\"网关标题\"}]}]}",
+                // Content as a bare string.
+                "{\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":\"网关标题\"}]}",
+                // Empty typed output with the convenience field filled.
+                "{\"output\":[],\"output_text\":\"网关标题\"}",
+                // Null or empty placeholders for error fields.
+                "{\"error\":null,\"incomplete_details\":{},\"output_text\":\"网关标题\"}")) {
+            assertEquals(Optional.of("网关标题"), parseResponse(response, "RESPONSES"), response);
+        }
+    }
+
+    @Test
+    void acceptsChatShapesReturnedByCompatibleGateways() throws Exception {
+        for (String finish : List.of("stop", "STOP", "eos", "end_turn", "")) {
+            assertEquals(Optional.of("网关标题"), parseResponse("{\"choices\":[{\"finish_reason\":\"" + finish
+                    + "\",\"message\":{\"role\":\"assistant\",\"content\":\"网关标题\"}}]}", "CHAT_COMPLETIONS"), finish);
+        }
+        assertEquals(Optional.of("网关标题"), parseResponse(
+                "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"网关标题\"}]}}]}", "CHAT_COMPLETIONS"));
+        // DeepSeek-style separate reasoning field must not leak into the title.
+        assertEquals(Optional.of("网关标题"), parseResponse(
+                "{\"choices\":[{\"message\":{\"reasoning_content\":\"notes\",\"content\":\"网关标题\",\"refusal\":null}}]}",
+                "CHAT_COMPLETIONS"));
     }
 
     @Test

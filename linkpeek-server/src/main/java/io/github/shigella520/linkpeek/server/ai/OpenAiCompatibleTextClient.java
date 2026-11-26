@@ -18,8 +18,10 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 public class OpenAiCompatibleTextClient {
@@ -174,68 +176,108 @@ public class OpenAiCompatibleTextClient {
         return timeoutSeconds > 0 ? Duration.ofSeconds(timeoutSeconds) : DEFAULT_REQUEST_TIMEOUT;
     }
 
+    // Gateways differ in which optional fields they echo back. Only reject output that is
+    // positively identified as unfinished, refused, or non-final (reasoning, tool calls).
+    private static final Set<String> RESPONSES_FINAL_PART_TYPES = Set.of("output_text", "text");
+    private static final Set<String> RESPONSES_UNFINISHED_STATUSES = Set.of("incomplete", "failed", "cancelled", "in_progress", "queued");
+    private static final Set<String> CHAT_UNUSABLE_FINISH_REASONS = Set.of(
+            "length", "max_tokens", "content_filter", "tool_calls", "function_call", "safety", "recitation", "error");
+
     private Optional<String> extractResponsesText(JsonNode payload) {
-        if (!completedOrUnspecified(payload.path("status"))
-                || payload.hasNonNull("incomplete_details") || payload.hasNonNull("error")) {
+        if (isUnfinishedStatus(payload.path("status")) || isPresent(payload.path("error"))
+                || isPresent(payload.path("incomplete_details"))) {
             return Optional.empty();
         }
         JsonNode output = payload.path("output");
+        boolean typedNonFinalOutput = false;
         String finalText = null;
         if (output.isArray()) {
             for (JsonNode item : output) {
-                // Some compatible gateways omit type/role, but content must still be output_text.
-                if (!"message".equals(item.path("type").asText("message"))
-                        || !"assistant".equals(item.path("role").asText("assistant"))) {
+                String type = item.path("type").asText("message");
+                if (!"message".equals(type)) {
+                    typedNonFinalOutput = true;
                     continue;
                 }
-                if (!completedOrUnspecified(item.path("status"))) {
+                if (!"assistant".equals(item.path("role").asText("assistant"))) {
+                    continue;
+                }
+                if (isUnfinishedStatus(item.path("status"))) {
                     return Optional.empty();
                 }
                 JsonNode content = item.path("content");
-                if (!content.isArray()) {
-                    continue;
-                }
                 List<String> parts = new ArrayList<>();
-                for (JsonNode part : content) {
-                    if ("refusal".equals(part.path("type").asText())) {
-                        return Optional.empty();
-                    }
-                    if ("output_text".equals(part.path("type").asText())
-                            && part.path("text").isTextual() && StringUtils.hasText(part.path("text").asText())) {
-                        parts.add(part.path("text").asText());
+                if (content.isTextual() && StringUtils.hasText(content.asText())) {
+                    parts.add(content.asText());
+                } else if (content.isArray()) {
+                    for (JsonNode part : content) {
+                        String partType = part.path("type").asText("text");
+                        if ("refusal".equals(partType)) {
+                            return Optional.empty();
+                        }
+                        if (RESPONSES_FINAL_PART_TYPES.contains(partType)
+                                && part.path("text").isTextual() && StringUtils.hasText(part.path("text").asText())) {
+                            parts.add(part.path("text").asText());
+                        } else if (!RESPONSES_FINAL_PART_TYPES.contains(partType)) {
+                            typedNonFinalOutput = true;
+                        }
                     }
                 }
                 if (!parts.isEmpty()) {
                     finalText = String.join("\n", parts);
                 }
             }
-            // Never use a top-level convenience field to override typed reasoning/refusal output.
-            return Optional.ofNullable(finalText);
         }
+        if (finalText != null) {
+            return Optional.of(finalText);
+        }
+        // The top-level convenience field may concatenate reasoning on some gateways, so only
+        // trust it when the typed output does not contain anything other than final messages.
         JsonNode text = payload.path("output_text");
-        return text.isTextual() && StringUtils.hasText(text.asText())
+        return !typedNonFinalOutput && text.isTextual() && StringUtils.hasText(text.asText())
                 ? Optional.of(text.asText()) : Optional.empty();
     }
 
-    private boolean completedOrUnspecified(JsonNode status) {
-        return status.isMissingNode() || status.isNull() || "completed".equals(status.asText());
+    private boolean isUnfinishedStatus(JsonNode status) {
+        return status.isTextual() && RESPONSES_UNFINISHED_STATUSES.contains(status.asText().toLowerCase(Locale.ROOT));
+    }
+
+    private boolean isPresent(JsonNode node) {
+        if (node.isMissingNode() || node.isNull()) {
+            return false;
+        }
+        if (node.isTextual()) {
+            return StringUtils.hasText(node.asText());
+        }
+        return !node.isContainerNode() || !node.isEmpty();
     }
 
     private Optional<String> extractChatText(JsonNode payload) {
         JsonNode choices = payload.path("choices");
-        if (!choices.isArray() || choices.isEmpty() || payload.hasNonNull("error")) {
+        if (!choices.isArray() || choices.isEmpty() || isPresent(payload.path("error"))) {
             return Optional.empty();
         }
         JsonNode choice = choices.get(0);
-        String finish = choice.path("finish_reason").asText("");
+        String finish = choice.path("finish_reason").asText("").toLowerCase(Locale.ROOT);
         JsonNode message = choice.path("message");
-        if ((!finish.isEmpty() && !"stop".equals(finish)) || message.hasNonNull("refusal")
+        if (CHAT_UNUSABLE_FINISH_REASONS.contains(finish) || isPresent(message.path("refusal"))
                 || !"assistant".equals(message.path("role").asText("assistant"))) {
             return Optional.empty();
         }
         JsonNode content = message.path("content");
-        return content.isTextual() && StringUtils.hasText(content.asText())
-                ? Optional.of(content.asText()) : Optional.empty();
+        if (content.isTextual()) {
+            return StringUtils.hasText(content.asText()) ? Optional.of(content.asText()) : Optional.empty();
+        }
+        if (!content.isArray()) {
+            return Optional.empty();
+        }
+        List<String> parts = new ArrayList<>();
+        for (JsonNode part : content) {
+            if (RESPONSES_FINAL_PART_TYPES.contains(part.path("type").asText("text"))
+                    && part.path("text").isTextual() && StringUtils.hasText(part.path("text").asText())) {
+                parts.add(part.path("text").asText());
+            }
+        }
+        return parts.isEmpty() ? Optional.empty() : Optional.of(String.join("\n", parts));
     }
 
     private String requestId(HttpHeaders headers) {
