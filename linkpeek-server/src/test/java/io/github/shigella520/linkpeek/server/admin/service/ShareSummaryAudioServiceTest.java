@@ -54,7 +54,7 @@ class ShareSummaryAudioServiceTest {
         when(audioClient.supports(any(String.class))).thenReturn(true);
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
                 .thenThrow(new IOException("provider failed"));
-        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventPublisher notificationService = mock(NotificationEventPublisher.class);
         ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), notificationService);
 
         service.generateAudio(1, true);
@@ -73,7 +73,7 @@ class ShareSummaryAudioServiceTest {
     void publishesAudioFailedNotificationWhenQueueRejectsGeneration() {
         FakeAudioMapper audioMapper = new FakeAudioMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventPublisher notificationService = mock(NotificationEventPublisher.class);
         OpenAiCompatibleAudioClient audioClient = mock(OpenAiCompatibleAudioClient.class);
         when(audioClient.supports(any(String.class))).thenReturn(true);
         ShareSummaryAudioService service = service(
@@ -104,7 +104,7 @@ class ShareSummaryAudioServiceTest {
         when(audioClient.supports(any(String.class))).thenReturn(true);
         when(audioClient.generate(any(ShareSummaryAudioConfigRecord.class), any(String.class)))
                 .thenThrow(new IOException());
-        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventPublisher notificationService = mock(NotificationEventPublisher.class);
         ShareSummaryAudioService service = service(audioMapper, shareSummaryMapper, audioClient, new DirectExecutorService(), notificationService);
 
         service.generateAudio(1, true);
@@ -340,7 +340,7 @@ class ShareSummaryAudioServiceTest {
             FakeShareSummaryMapper shareSummaryMapper,
             OpenAiCompatibleAudioClient audioClient,
             ExecutorService executor,
-            NotificationService notificationService
+            NotificationEventPublisher notificationService
     ) {
         LinkPeekProperties properties = new LinkPeekProperties();
         properties.setBaseUrl("https://linkpeek.example.com");

@@ -2,7 +2,9 @@ package io.github.shigella520.linkpeek.server.controller;
 
 import io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord;
 import io.github.shigella520.linkpeek.server.admin.service.AdminAuthService;
-import io.github.shigella520.linkpeek.server.admin.service.NotificationService;
+import io.github.shigella520.linkpeek.server.admin.service.NotificationConfigService;
+import io.github.shigella520.linkpeek.server.admin.service.NotificationDeleteResponse;
+import io.github.shigella520.linkpeek.server.admin.service.NotificationDeliveryService;
 import io.github.shigella520.linkpeek.server.admin.service.NotificationTemplateService;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
@@ -25,70 +27,73 @@ import java.util.List;
 @Hidden
 public class NotificationAdminController {
     private final AdminAuthService adminAuthService;
-    private final NotificationService notificationService;
+    private final NotificationConfigService configService;
+    private final NotificationDeliveryService deliveryService;
 
     public NotificationAdminController(
             AdminAuthService adminAuthService,
-            NotificationService notificationService
+            NotificationConfigService configService,
+            NotificationDeliveryService deliveryService
     ) {
         this.adminAuthService = adminAuthService;
-        this.notificationService = notificationService;
+        this.configService = configService;
+        this.deliveryService = deliveryService;
     }
 
     @GetMapping("/events")
     public List<NotificationTemplateService.EventSchema> events(HttpServletRequest request) {
         adminAuthService.requireAuthenticated(request);
-        return notificationService.events();
+        return configService.events();
     }
 
     @GetMapping("/events/{eventType}/placeholders")
     public NotificationTemplateService.EventSchema eventSchema(HttpServletRequest request, @PathVariable String eventType) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.eventSchema(eventType);
+            return configService.eventSchema(eventType);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
     }
 
     @GetMapping("/channels")
-    public List<NotificationService.ChannelResponse> channels(HttpServletRequest request) {
+    public List<NotificationConfigService.ChannelResponse> channels(HttpServletRequest request) {
         adminAuthService.requireAuthenticated(request);
-        return notificationService.channels();
+        return configService.channels();
     }
 
     @PostMapping("/channels")
-    public NotificationService.ChannelResponse createChannel(
+    public NotificationConfigService.ChannelResponse createChannel(
             HttpServletRequest request,
-            @RequestBody NotificationService.ChannelRequest channelRequest
+            @RequestBody NotificationConfigService.ChannelRequest channelRequest
     ) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.createChannel(channelRequest);
+            return configService.createChannel(channelRequest);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
     }
 
     @PutMapping("/channels/{channelId}")
-    public NotificationService.ChannelResponse updateChannel(
+    public NotificationConfigService.ChannelResponse updateChannel(
             HttpServletRequest request,
             @PathVariable long channelId,
-            @RequestBody NotificationService.ChannelRequest channelRequest
+            @RequestBody NotificationConfigService.ChannelRequest channelRequest
     ) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.updateChannel(channelId, channelRequest);
+            return configService.updateChannel(channelId, channelRequest);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
     }
 
     @DeleteMapping("/channels/{channelId}")
-    public NotificationService.DeleteResponse deleteChannel(HttpServletRequest request, @PathVariable long channelId) {
+    public NotificationDeleteResponse deleteChannel(HttpServletRequest request, @PathVariable long channelId) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.deleteChannel(channelId);
+            return configService.deleteChannel(channelId);
         } catch (IllegalStateException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
         } catch (IllegalArgumentException exception) {
@@ -97,53 +102,53 @@ public class NotificationAdminController {
     }
 
     @PostMapping("/channels/{channelId}/test")
-    public NotificationService.TestResponse testChannel(HttpServletRequest request, @PathVariable long channelId) {
+    public NotificationConfigService.TestResponse testChannel(HttpServletRequest request, @PathVariable long channelId) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.testChannel(channelId);
+            return configService.testChannel(channelId);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
     }
 
     @GetMapping("/tasks")
-    public List<NotificationService.TaskResponse> tasks(HttpServletRequest request) {
+    public List<NotificationConfigService.TaskResponse> tasks(HttpServletRequest request) {
         adminAuthService.requireAuthenticated(request);
-        return notificationService.tasks();
+        return configService.tasks();
     }
 
     @PostMapping("/tasks")
-    public NotificationService.TaskResponse createTask(
+    public NotificationConfigService.TaskResponse createTask(
             HttpServletRequest request,
-            @RequestBody NotificationService.TaskRequest taskRequest
+            @RequestBody NotificationConfigService.TaskRequest taskRequest
     ) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.createTask(taskRequest);
+            return configService.createTask(taskRequest);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
     }
 
     @PutMapping("/tasks/{taskId}")
-    public NotificationService.TaskResponse updateTask(
+    public NotificationConfigService.TaskResponse updateTask(
             HttpServletRequest request,
             @PathVariable long taskId,
-            @RequestBody NotificationService.TaskRequest taskRequest
+            @RequestBody NotificationConfigService.TaskRequest taskRequest
     ) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.updateTask(taskId, taskRequest);
+            return configService.updateTask(taskId, taskRequest);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
     }
 
     @DeleteMapping("/tasks/{taskId}")
-    public NotificationService.DeleteResponse deleteTask(HttpServletRequest request, @PathVariable long taskId) {
+    public NotificationDeleteResponse deleteTask(HttpServletRequest request, @PathVariable long taskId) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.deleteTask(taskId);
+            return configService.deleteTask(taskId);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
@@ -152,18 +157,18 @@ public class NotificationAdminController {
     @PostMapping("/tasks/validate-template")
     public NotificationTemplateService.TemplateValidationResult validateTemplate(
             HttpServletRequest request,
-            @RequestBody NotificationService.ValidateTemplateRequest validateRequest
+            @RequestBody NotificationConfigService.ValidateTemplateRequest validateRequest
     ) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.validateTemplate(validateRequest);
+            return configService.validateTemplate(validateRequest);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
     }
 
     @GetMapping("/deliveries")
-    public NotificationService.DeliveryPage deliveries(
+    public NotificationDeliveryService.DeliveryPage deliveries(
             HttpServletRequest request,
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
@@ -174,7 +179,7 @@ public class NotificationAdminController {
     ) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.deliveries(page, size, eventType, taskId, channelId, status);
+            return deliveryService.deliveries(page, size, eventType, taskId, channelId, status);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
@@ -184,17 +189,17 @@ public class NotificationAdminController {
     public NotificationDeliveryRecord delivery(HttpServletRequest request, @PathVariable long deliveryId) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.delivery(deliveryId);
+            return deliveryService.delivery(deliveryId);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
     }
 
     @DeleteMapping("/deliveries/{deliveryId}")
-    public NotificationService.DeleteResponse deleteDelivery(HttpServletRequest request, @PathVariable long deliveryId) {
+    public NotificationDeleteResponse deleteDelivery(HttpServletRequest request, @PathVariable long deliveryId) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.deleteDelivery(deliveryId);
+            return deliveryService.deleteDelivery(deliveryId);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }
@@ -204,7 +209,7 @@ public class NotificationAdminController {
     public NotificationDeliveryRecord retryDelivery(HttpServletRequest request, @PathVariable long deliveryId) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return notificationService.retryDelivery(deliveryId);
+            return deliveryService.retryDelivery(deliveryId);
         } catch (IllegalStateException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
         } catch (IllegalArgumentException exception) {

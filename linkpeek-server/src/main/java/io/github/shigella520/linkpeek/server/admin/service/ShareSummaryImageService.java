@@ -71,7 +71,7 @@ public class ShareSummaryImageService {
     private final OpenAiCompatibleImageClient imageClient;
     private final HttpClient httpClient;
     private final ExecutorService executor;
-    private final NotificationService notificationService;
+    private final NotificationEventPublisher notificationService;
     private final LinkPeekProperties properties;
     private final Clock clock;
     private final SecureRandom secureRandom = new SecureRandom();
@@ -82,7 +82,7 @@ public class ShareSummaryImageService {
             OpenAiCompatibleImageClient imageClient,
             @Qualifier("shareSummaryImageHttpClient") HttpClient httpClient,
             @Qualifier("shareSummaryImageExecutor") ExecutorService executor,
-            NotificationService notificationService,
+            NotificationEventPublisher notificationService,
             LinkPeekProperties properties,
             Clock clock
     ) {

@@ -72,7 +72,7 @@ public class ShareSummaryAudioService {
     private final ShareSummaryImageMapper imageMapper;
     private final List<ShareSummaryAudioProvider> audioProviders;
     private final ExecutorService executor;
-    private final NotificationService notificationService;
+    private final NotificationEventPublisher notificationService;
     private final LinkPeekProperties properties;
     private final Clock clock;
 
@@ -83,7 +83,7 @@ public class ShareSummaryAudioService {
             OpenAiCompatibleAudioClient audioClient,
             MimoTtsAudioProvider mimoTtsAudioProvider,
             @Qualifier("shareSummaryAudioExecutor") ExecutorService executor,
-            NotificationService notificationService,
+            NotificationEventPublisher notificationService,
             LinkPeekProperties properties,
             Clock clock
     ) {
