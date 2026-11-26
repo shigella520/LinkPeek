@@ -2160,7 +2160,9 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(3))
                 .andExpect(jsonPath("$.defaultAutoDowngradeFailureThreshold").value(3))
                 .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(1.0))
-                .andExpect(jsonPath("$.defaultShareSummaryTimeoutMultiplier").value(1.0));
+                .andExpect(jsonPath("$.defaultShareSummaryTimeoutMultiplier").value(1.0))
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(60))
+                .andExpect(jsonPath("$.defaultAiTitleTotalTimeoutSeconds").value(60));
 
         mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
                         .cookie(cookie)
@@ -2169,7 +2171,41 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(true))
                 .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(2))
-                .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(4.0));
+                .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(4.0))
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(60));
+
+        mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2,\"shareSummaryTimeoutMultiplier\":4,\"aiTitleTotalTimeoutSeconds\":25}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(25))
+                .andExpect(jsonPath("$.defaultAiTitleTotalTimeoutSeconds").value(60));
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.Duration.ofSeconds(25), aiProviderDowngradeService.aiTitleTotalTimeout());
+
+        // Older clients that omit the field must not reset the saved value.
+        mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(25));
+
+        mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2,\"aiTitleTotalTimeoutSeconds\":181}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2,\"aiTitleTotalTimeoutSeconds\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(0));
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.Duration.ZERO, aiProviderDowngradeService.aiTitleTotalTimeout());
+        // The Spring context is shared with later tests; restore the default budget.
+        aiProviderDowngradeService.saveConfig(true, 2, 4.0, 60);
 
         mockMvc.perform(get("/api/admin/provider-config")
                         .cookie(cookie))

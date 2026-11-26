@@ -185,6 +185,14 @@
                         </label>
                         <span>倍，实际超时 = AI Provider Timeout × 倍率。</span>
                     </p>
+                    <p class="ai-downgrade-sentence">
+                        <span>AI 标题最多等待</span>
+                        <label class="inline-threshold-field">
+                            <span class="sr-only">AI 标题总耗时上限（秒）</span>
+                            <input id="ai-title-total-timeout-seconds" class="inline-threshold-input" type="number" min="0" max="180" step="1" value="60" required>
+                        </label>
+                        <span>秒，按顺序尝试的所有 Provider 共用这段时间，用尽后使用原标题；填 0 不限制。</span>
+                    </p>
                 </form>
                 <p id="ai-downgrade-config-feedback" class="feedback" role="status" aria-live="polite"></p>
                 <div class="table-shell">

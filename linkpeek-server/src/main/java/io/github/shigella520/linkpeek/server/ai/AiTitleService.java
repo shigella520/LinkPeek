@@ -51,7 +51,8 @@ public class AiTitleService {
     private static final long FREESTYLE_PENDING_CLEANUP_MILLIS = 3_600_000;
     private static final Pattern STYLE_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
     private static final int MAX_TITLE_CODE_POINTS = 120;
-    public static final Duration DEFAULT_TITLE_BUDGET = Duration.ofSeconds(30);
+    public static final Duration DEFAULT_TITLE_BUDGET =
+            Duration.ofSeconds(AiProviderDowngradeService.DEFAULT_AI_TITLE_TOTAL_TIMEOUT_SECONDS);
     private static final Pattern REASONING_BLOCK = Pattern.compile(
             "(?is)<(think|thinking|analysis|reasoning)(?:\\s[^>]*)?>.*?</\\1\\s*>");
     private static final Pattern REASONING_OPEN = Pattern.compile("(?i)<(?:think|thinking|analysis|reasoning)(?:\\s[^>]*)?>");
@@ -73,7 +74,9 @@ public class AiTitleService {
     private final Clock clock;
     private final ConcurrentHashMap<String, FreestyleSelection> freestyleSelections = new ConcurrentHashMap<>();
     // Total time a styled title may take across all providers; zero or negative disables the budget.
+    // Fallback when no downgrade service is wired; the admin setting lives in AiProviderDowngradeService.
     private Duration titleBudget = DEFAULT_TITLE_BUDGET;
+    private boolean titleBudgetOverridden;
     private LongSupplier nanoTime = System::nanoTime;
 
     @Autowired
@@ -102,6 +105,7 @@ public class AiTitleService {
 
     void setTitleBudget(Duration titleBudget, LongSupplier nanoTime) {
         this.titleBudget = titleBudget;
+        this.titleBudgetOverridden = true;
         this.nanoTime = nanoTime;
     }
 
@@ -272,8 +276,9 @@ public class AiTitleService {
         AiTitlePrompt prompt = buildPrompt(stylePrompt.prompt(), metadata.rawContent(), stylePrompt.titleFormatPrompt());
         List<AiProviderRecord> providers = aiProviderMapper.selectEnabledProviders();
         AiAttemptStats attemptStats = new AiAttemptStats();
-        boolean budgeted = titleBudget != null && !titleBudget.isZero() && !titleBudget.isNegative();
-        long deadline = budgeted ? nanoTime.getAsLong() + titleBudget.toNanos() : Long.MAX_VALUE;
+        Duration budget = currentTitleBudget();
+        boolean budgeted = budget != null && !budget.isZero() && !budget.isNegative();
+        long deadline = budgeted ? nanoTime.getAsLong() + budget.toNanos() : Long.MAX_VALUE;
         for (AiProviderRecord provider : providers) {
             long startedAt = System.nanoTime();
             // A request cut short by the shared budget says nothing about the provider's health.
@@ -284,7 +289,7 @@ public class AiTitleService {
                     long remainingMs = (deadline - nanoTime.getAsLong()) / 1_000_000;
                     if (remainingMs <= 0) {
                         log.warn("ai_title_budget_exhausted style={} budgetMs={} attemptedProviders={}",
-                                stylePrompt.style(), titleBudget.toMillis(), attemptStats.providerNames.size());
+                                stylePrompt.style(), budget.toMillis(), attemptStats.providerNames.size());
                         break;
                     }
                     if (remainingMs < textClient.requestTimeout(provider).toMillis()) {
@@ -327,7 +332,7 @@ public class AiTitleService {
                 attemptStats.record(provider, durationMs);
                 if (truncatedByBudget && exception instanceof java.net.http.HttpTimeoutException) {
                     log.warn("ai_title_budget_timeout providerId={} style={} budgetMs={}",
-                            provider.getId(), stylePrompt.style(), titleBudget.toMillis());
+                            provider.getId(), stylePrompt.style(), budget.toMillis());
                     break;
                 }
                 log.warn(
@@ -341,6 +346,19 @@ public class AiTitleService {
             }
         }
         return attemptStats.result(Optional.empty());
+    }
+
+    /** Read on every generation so a change in the admin panel applies to the next title without a restart. */
+    private Duration currentTitleBudget() {
+        if (titleBudgetOverridden || aiProviderDowngradeService == null) {
+            return titleBudget;
+        }
+        try {
+            return aiProviderDowngradeService.aiTitleTotalTimeout();
+        } catch (RuntimeException exception) {
+            log.warn("ai_title_budget_config_unavailable message={}", exception.getMessage());
+            return titleBudget;
+        }
     }
 
     public AiTitlePrompt buildPrompt(String stylePrompt, String rawContent) {

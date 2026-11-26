@@ -340,6 +340,44 @@ class AiTitleServiceTest {
     }
 
     @Test
+    void savedAdminTitleTimeoutIsUsedAsBudgetAndZeroDisablesIt() {
+        for (String saved : List.of("5", "0")) {
+            FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(provider(1L, 1)));
+            FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+            AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                    new FakeProviderConfigMapper(Map.of(FakeProviderConfigMapper.key(AiProviderDowngradeService.PROVIDER_AI_PROVIDER,
+                            AiProviderDowngradeService.AI_TITLE_TOTAL_TIMEOUT_SECONDS_KEY), saved)),
+                    mapper, Clock.fixed(Instant.ofEpochMilli(1234L), ZoneOffset.UTC));
+            AiTitleService service = new AiTitleService(null, mapper, client, null, downgradeService);
+
+            assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
+                    new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isPresent());
+            java.time.Duration timeout = client.requestedTimeouts.get(0);
+            if (saved.equals("0")) {
+                assertEquals(null, timeout);
+            } else {
+                assertTrue(timeout.compareTo(java.time.Duration.ofSeconds(5)) <= 0 && timeout.compareTo(java.time.Duration.ofSeconds(4)) > 0, timeout.toString());
+            }
+        }
+    }
+
+    @Test
+    void deploymentDefaultTitleTimeoutAppliesUntilAnAdminSavesOne() {
+        AiProviderDowngradeService service = new AiProviderDowngradeService(
+                new FakeProviderConfigMapper(Map.of()), new FakeAiProviderMapper(List.of()), Clock.systemUTC());
+        assertEquals(60, service.config().aiTitleTotalTimeoutSeconds());
+        assertEquals(java.time.Duration.ofSeconds(60), service.aiTitleTotalTimeout());
+
+        io.github.shigella520.linkpeek.server.config.LinkPeekProperties properties = new io.github.shigella520.linkpeek.server.config.LinkPeekProperties();
+        properties.setAiTitleTotalTimeout(java.time.Duration.ofMillis(1500));
+        service.setLinkPeekProperties(properties);
+        assertEquals(2, service.config().defaultAiTitleTotalTimeoutSeconds(), "rounded up to whole seconds");
+        properties.setAiTitleTotalTimeout(java.time.Duration.ofMinutes(10));
+        service.setLinkPeekProperties(properties);
+        assertEquals(180, service.config().aiTitleTotalTimeoutSeconds(), "clamped to the admin maximum");
+    }
+
+    @Test
     void emptyProviderAnswerStillCountsAsFailure() {
         AiProviderRecord first = provider(1L, 100);
         FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(first));

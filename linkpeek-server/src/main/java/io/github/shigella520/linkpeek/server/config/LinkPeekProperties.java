@@ -20,7 +20,7 @@ public class LinkPeekProperties {
     private String statsAdminPassword;
     private Path serviceLogPath = Path.of("/data/logs/linkpeek.log");
     private Duration downloadTimeout = Duration.ofSeconds(120);
-    private Duration aiTitleTotalTimeout = Duration.ofSeconds(30);
+    private Duration aiTitleTotalTimeout = Duration.ofSeconds(60);
     private String adminCookieSecure = "auto";
     private String logLevel = "INFO";
     private int videoMaxQuality = 480;

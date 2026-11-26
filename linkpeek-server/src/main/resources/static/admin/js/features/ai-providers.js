@@ -9,6 +9,7 @@ export function bindAiProviderDowngradeConfig() {
     const enabledToggle = document.getElementById("ai-auto-downgrade-enabled-toggle");
     const thresholdInput = document.getElementById("ai-auto-downgrade-failure-threshold");
     const shareSummaryTimeoutMultiplierInput = document.getElementById("ai-share-summary-timeout-multiplier");
+    const titleTimeoutInput = document.getElementById("ai-title-total-timeout-seconds");
     form.addEventListener("submit", (event) => {
         event.preventDefault();
         scheduleAiProviderDowngradeSave();
@@ -19,6 +20,7 @@ export function bindAiProviderDowngradeConfig() {
     });
     thresholdInput.addEventListener("input", scheduleAiProviderDowngradeSave);
     shareSummaryTimeoutMultiplierInput.addEventListener("input", scheduleAiProviderDowngradeSave);
+    titleTimeoutInput.addEventListener("input", scheduleAiProviderDowngradeSave);
 }
 
 export function bindAiForm() {
@@ -85,7 +87,7 @@ function scheduleAiProviderDowngradeSave() {
 
     const payload = readAiProviderDowngradePayload();
     if (!payload) {
-        setFeedback("ai-downgrade-config-feedback", "失败阈值降级次数必须是 1-100 的整数，分享总结超时倍率必须是 1-20。", "is-error");
+        setFeedback("ai-downgrade-config-feedback", "失败阈值降级次数必须是 1-100 的整数，分享总结超时倍率必须是 1-20，AI 标题等待时间必须是 0-180 的整数秒。", "is-error");
         return;
     }
 
@@ -100,17 +102,22 @@ function readAiProviderDowngradePayload() {
     const autoDowngradeEnabled = document.getElementById("ai-auto-downgrade-enabled-toggle").dataset.enabled === "true";
     const autoDowngradeFailureThreshold = Number(document.getElementById("ai-auto-downgrade-failure-threshold").value || 0);
     const shareSummaryTimeoutMultiplier = Number(document.getElementById("ai-share-summary-timeout-multiplier").value || 0);
+    const titleTimeoutValue = document.getElementById("ai-title-total-timeout-seconds").value;
+    const aiTitleTotalTimeoutSeconds = titleTimeoutValue === "" ? NaN : Number(titleTimeoutValue);
+    if (!Number.isInteger(aiTitleTotalTimeoutSeconds) || aiTitleTotalTimeoutSeconds < 0 || aiTitleTotalTimeoutSeconds > 180) {
+        return null;
+    }
     if (!Number.isInteger(autoDowngradeFailureThreshold) || autoDowngradeFailureThreshold < 1 || autoDowngradeFailureThreshold > 100) {
         return null;
     }
     if (!Number.isFinite(shareSummaryTimeoutMultiplier) || shareSummaryTimeoutMultiplier < 1 || shareSummaryTimeoutMultiplier > 20) {
         return null;
     }
-    return {autoDowngradeEnabled, autoDowngradeFailureThreshold, shareSummaryTimeoutMultiplier};
+    return {autoDowngradeEnabled, autoDowngradeFailureThreshold, shareSummaryTimeoutMultiplier, aiTitleTotalTimeoutSeconds};
 }
 
 async function saveAiProviderDowngradeConfig(payload, saveVersion) {
-    setFeedback("ai-downgrade-config-feedback", "正在保存自动降级配置...", "");
+    setFeedback("ai-downgrade-config-feedback", "正在保存 AI Provider 配置...", "");
     try {
         const response = await fetchJson("/api/admin/ai-provider-downgrade-config", {
             method: "PUT",
@@ -121,7 +128,7 @@ async function saveAiProviderDowngradeConfig(payload, saveVersion) {
         }
         state.aiProviderDowngradeConfig = response;
         renderAiProviderDowngradeConfig();
-        setFeedback("ai-downgrade-config-feedback", "自动降级配置已保存。", "is-success");
+        setFeedback("ai-downgrade-config-feedback", "AI Provider 配置已保存。", "is-success");
     } catch (error) {
         if (saveVersion !== state.aiProviderDowngradeSaveVersion) {
             return;
@@ -200,6 +207,8 @@ function renderAiProviderDowngradeConfig() {
     setAiProviderDowngradeEnabled(Boolean(config.autoDowngradeEnabled));
     document.getElementById("ai-auto-downgrade-failure-threshold").value = config.autoDowngradeFailureThreshold || 3;
     document.getElementById("ai-share-summary-timeout-multiplier").value = config.shareSummaryTimeoutMultiplier || 1;
+    // 0 is a valid value (unlimited), so only fall back to the default when the field is missing.
+    document.getElementById("ai-title-total-timeout-seconds").value = config.aiTitleTotalTimeoutSeconds ?? config.defaultAiTitleTotalTimeoutSeconds ?? 60;
 }
 
 function setAiProviderDowngradeEnabled(enabled) {

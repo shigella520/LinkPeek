@@ -256,7 +256,8 @@ public class AdminController {
             return aiProviderDowngradeService.saveConfig(
                     downgradeRequest.autoDowngradeEnabled(),
                     downgradeRequest.autoDowngradeFailureThreshold(),
-                    downgradeRequest.shareSummaryTimeoutMultiplier()
+                    downgradeRequest.shareSummaryTimeoutMultiplier(),
+                    downgradeRequest.aiTitleTotalTimeoutSeconds()
             );
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
@@ -489,7 +490,8 @@ public class AdminController {
     public record AiProviderDowngradeRequest(
             Boolean autoDowngradeEnabled,
             Integer autoDowngradeFailureThreshold,
-            Double shareSummaryTimeoutMultiplier
+            Double shareSummaryTimeoutMultiplier,
+            Integer aiTitleTotalTimeoutSeconds
     ) {
     }
 

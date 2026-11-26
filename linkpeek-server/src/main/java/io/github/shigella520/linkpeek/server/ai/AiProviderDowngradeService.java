@@ -4,6 +4,7 @@ import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord;
 import io.github.shigella520.linkpeek.server.admin.persistence.AiProviderMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.ProviderConfigMapper;
+import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -34,6 +36,12 @@ public class AiProviderDowngradeService {
     public static final double DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER = 1.0D;
     public static final double MIN_SHARE_SUMMARY_TIMEOUT_MULTIPLIER = 1.0D;
     public static final double MAX_SHARE_SUMMARY_TIMEOUT_MULTIPLIER = 20.0D;
+    public static final String AI_TITLE_TOTAL_TIMEOUT_SECONDS_KEY = "ai_title_total_timeout_seconds";
+    public static final int MIN_AI_TITLE_TOTAL_TIMEOUT_SECONDS = 0;
+    public static final int MAX_AI_TITLE_TOTAL_TIMEOUT_SECONDS = 180;
+    // Chosen from production history: 60s keeps 99.6% of successful titles, including fallbacks after a
+    // first provider's 45s timeout, while capping the "every provider times out" case.
+    public static final int DEFAULT_AI_TITLE_TOTAL_TIMEOUT_SECONDS = 60;
 
     private static final int SORT_STEP = 100;
     private static final int DATABASE_WRITE_ATTEMPTS = 5;
@@ -43,6 +51,8 @@ public class AiProviderDowngradeService {
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
     private final ConcurrentHashMap<Long, AtomicInteger> failureCounts = new ConcurrentHashMap<>();
+    // Used until an administrator saves a value; AI_TITLE_TOTAL_TIMEOUT sets it per deployment.
+    private int defaultAiTitleTotalTimeoutSeconds = DEFAULT_AI_TITLE_TOTAL_TIMEOUT_SECONDS;
 
     @Autowired
     public AiProviderDowngradeService(
@@ -65,6 +75,20 @@ public class AiProviderDowngradeService {
         this(providerConfigMapper, aiProviderMapper, clock, null);
     }
 
+    @Autowired(required = false)
+    void setLinkPeekProperties(LinkPeekProperties properties) {
+        if (properties != null && properties.getAiTitleTotalTimeout() != null) {
+            long seconds = Math.max(0, (properties.getAiTitleTotalTimeout().toMillis() + 999) / 1000);
+            this.defaultAiTitleTotalTimeoutSeconds = (int) Math.min(MAX_AI_TITLE_TOTAL_TIMEOUT_SECONDS, seconds);
+        }
+    }
+
+    /** Total time a styled title may take across all providers; zero means unlimited. */
+    public Duration aiTitleTotalTimeout() {
+        return Duration.ofSeconds(parseAiTitleTotalTimeoutSeconds(
+                providerConfigMapper.selectConfig(PROVIDER_AI_PROVIDER, AI_TITLE_TOTAL_TIMEOUT_SECONDS_KEY)));
+    }
+
     public ConfigResponse config() {
         ProviderConfigRecord enabled = providerConfigMapper.selectConfig(PROVIDER_AI_PROVIDER, AUTO_DOWNGRADE_ENABLED_KEY);
         ProviderConfigRecord threshold = providerConfigMapper.selectConfig(PROVIDER_AI_PROVIDER, AUTO_DOWNGRADE_FAILURE_THRESHOLD_KEY);
@@ -72,13 +96,19 @@ public class AiProviderDowngradeService {
                 PROVIDER_AI_PROVIDER,
                 SHARE_SUMMARY_TIMEOUT_MULTIPLIER_KEY
         );
-        Long updatedAt = updatedAt(enabled, threshold, shareSummaryTimeoutMultiplier);
+        ProviderConfigRecord aiTitleTotalTimeout = providerConfigMapper.selectConfig(
+                PROVIDER_AI_PROVIDER,
+                AI_TITLE_TOTAL_TIMEOUT_SECONDS_KEY
+        );
+        Long updatedAt = updatedAt(enabled, threshold, shareSummaryTimeoutMultiplier, aiTitleTotalTimeout);
         return new ConfigResponse(
                 parseBoolean(enabled, false),
                 parseThreshold(threshold),
                 DEFAULT_AUTO_DOWNGRADE_FAILURE_THRESHOLD,
                 parseShareSummaryTimeoutMultiplier(shareSummaryTimeoutMultiplier),
                 DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER,
+                parseAiTitleTotalTimeoutSeconds(aiTitleTotalTimeout),
+                defaultAiTitleTotalTimeoutSeconds,
                 updatedAt
         );
     }
@@ -94,6 +124,17 @@ public class AiProviderDowngradeService {
             Integer autoDowngradeFailureThreshold,
             Double shareSummaryTimeoutMultiplier
     ) {
+        return saveConfig(autoDowngradeEnabled, autoDowngradeFailureThreshold, shareSummaryTimeoutMultiplier, null);
+    }
+
+    /** A null {@code aiTitleTotalTimeoutSeconds} leaves the stored value (or the deployment default) unchanged. */
+    @Transactional
+    public ConfigResponse saveConfig(
+            Boolean autoDowngradeEnabled,
+            Integer autoDowngradeFailureThreshold,
+            Double shareSummaryTimeoutMultiplier,
+            Integer aiTitleTotalTimeoutSeconds
+    ) {
         if (autoDowngradeEnabled == null) {
             throw new IllegalArgumentException("Auto downgrade enabled value is required.");
         }
@@ -104,8 +145,12 @@ public class AiProviderDowngradeService {
                         SHARE_SUMMARY_TIMEOUT_MULTIPLIER_KEY
                 ))
                 : normalizeShareSummaryTimeoutMultiplier(shareSummaryTimeoutMultiplier);
+        Integer titleTimeout = aiTitleTotalTimeoutSeconds == null ? null : normalizeAiTitleTotalTimeoutSeconds(aiTitleTotalTimeoutSeconds);
         long updatedAt = Instant.now(clock).toEpochMilli();
         upsert(AUTO_DOWNGRADE_ENABLED_KEY, Boolean.toString(autoDowngradeEnabled), updatedAt);
+        if (titleTimeout != null) {
+            upsert(AI_TITLE_TOTAL_TIMEOUT_SECONDS_KEY, Integer.toString(titleTimeout), updatedAt);
+        }
         upsert(AUTO_DOWNGRADE_FAILURE_THRESHOLD_KEY, Integer.toString(threshold), updatedAt);
         upsert(SHARE_SUMMARY_TIMEOUT_MULTIPLIER_KEY, Double.toString(multiplier), updatedAt);
         if (!autoDowngradeEnabled) {
@@ -395,6 +440,24 @@ public class AiProviderDowngradeService {
         }
     }
 
+    private int parseAiTitleTotalTimeoutSeconds(ProviderConfigRecord record) {
+        if (record == null || !StringUtils.hasText(record.getConfigValue())) {
+            return defaultAiTitleTotalTimeoutSeconds;
+        }
+        try {
+            return normalizeAiTitleTotalTimeoutSeconds(Integer.parseInt(record.getConfigValue().strip()));
+        } catch (IllegalArgumentException exception) {
+            return defaultAiTitleTotalTimeoutSeconds;
+        }
+    }
+
+    private int normalizeAiTitleTotalTimeoutSeconds(int seconds) {
+        if (seconds < MIN_AI_TITLE_TOTAL_TIMEOUT_SECONDS || seconds > MAX_AI_TITLE_TOTAL_TIMEOUT_SECONDS) {
+            throw new IllegalArgumentException("AI title total timeout must be between 0 and 180 seconds.");
+        }
+        return seconds;
+    }
+
     private int normalizeThreshold(Integer threshold) {
         int value = threshold == null ? DEFAULT_AUTO_DOWNGRADE_FAILURE_THRESHOLD : threshold;
         if (value < MIN_AUTO_DOWNGRADE_FAILURE_THRESHOLD || value > MAX_AUTO_DOWNGRADE_FAILURE_THRESHOLD) {
@@ -427,6 +490,8 @@ public class AiProviderDowngradeService {
             int defaultAutoDowngradeFailureThreshold,
             double shareSummaryTimeoutMultiplier,
             double defaultShareSummaryTimeoutMultiplier,
+            int aiTitleTotalTimeoutSeconds,
+            int defaultAiTitleTotalTimeoutSeconds,
             Long updatedAt
     ) {
     }

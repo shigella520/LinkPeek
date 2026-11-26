@@ -49,7 +49,7 @@ linkpeek:
   admin-cookie-secure: ${ADMIN_COOKIE_SECURE:auto}
   service-log-path: ${LOG_FILE_PATH:/data/logs/linkpeek.log}
   download-timeout: ${DOWNLOAD_TIMEOUT:120s}
-  ai-title-total-timeout: ${AI_TITLE_TOTAL_TIMEOUT:30s}
+  ai-title-total-timeout: ${AI_TITLE_TOTAL_TIMEOUT:60s}
   log-level: ${LOG_LEVEL:INFO}
   video-max-quality: ${VIDEO_MAX_QUALITY:480}
   preview-warmup-enabled: ${PREVIEW_WARMUP_ENABLED:true}
