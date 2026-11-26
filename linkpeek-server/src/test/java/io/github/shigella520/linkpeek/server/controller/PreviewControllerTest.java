@@ -302,7 +302,7 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("/admin/styles.css?v=20261125-report-workspace")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
                 .andExpect(content().string(containsString("brand-text")))
-                .andExpect(content().string(containsString("/admin/app.js?v=20261125-report-workspace")))
+                .andExpect(content().string(containsString("<script type=\"module\" src=\"/admin/js/main.js\"></script>")))
                 .andExpect(content().string(containsString("id=\"share-summary-image-viewer\"")))
                 .andExpect(content().string(containsString("share-summary-image-viewer-stage")))
                 .andExpect(content().string(containsString("share-summary-image-viewer-img")))
@@ -390,27 +390,28 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString(".provider-actions button")))
                 .andExpect(content().string(containsString(".ai-provider-table .ai-provider-base-url-cell::before")));
 
-        mockMvc.perform(get("/admin/app.js"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("application/javascript")))
-                .andExpect(content().string(containsString("/api/admin/logs")))
-                .andExpect(content().string(containsString("openAdminNavigationFromHover")))
-                .andExpect(content().string(containsString("adminNavHoverOpen")))
-                .andExpect(content().string(containsString("isAdminNavigationPointerInside")))
-                .andExpect(content().string(containsString("admin-nav-hover-open")))
-                .andExpect(content().string(containsString("/api/admin/ai-title-config")))
-                .andExpect(content().string(containsString("/api/admin/preview-events")))
-                .andExpect(content().string(containsString("/api/admin/share-summary")))
-                .andExpect(content().string(containsString("openShareSummaryImageViewer")))
-                .andExpect(content().string(containsString("updateShareSummaryImageViewerLayout")))
-                .andExpect(content().string(containsString("data-view-share-image")))
-                .andExpect(content().string(not(containsString("requestFullscreen"))))
-                .andExpect(content().string(not(containsString("screen.orientation"))))
-                .andExpect(content().string(containsString("/api/admin/notifications")))
-                .andExpect(content().string(containsString("renderNotificationDeliveryEvent")))
-                .andExpect(content().string(containsString("eventKeyTargetId")))
-                .andExpect(content().string(containsString("providerInputValue")))
-                .andExpect(content().string(containsString("ai-provider-base-url-cell")));
+        // The admin UI is a native ES module graph: every module reachable from the entry point
+        // must be served as JavaScript and revalidated on each load so a deploy never mixes versions.
+        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of("/admin/js/main.js"));
+        java.util.Set<String> served = new java.util.LinkedHashSet<>();
+        java.util.regex.Pattern importPattern = java.util.regex.Pattern.compile("from \"(\\.{1,2}/[^\"]+)\"");
+        while (!pending.isEmpty()) {
+            String path = pending.pop();
+            if (!served.add(path)) {
+                continue;
+            }
+            String module = mockMvc.perform(get(path))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("application/javascript")))
+                    .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache"))
+                    .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            java.util.regex.Matcher imports = importPattern.matcher(module);
+            while (imports.find()) {
+                pending.push(URI.create(path).resolve(imports.group(1)).getPath());
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(served.size() > 10, "Expected the admin module graph, got " + served);
+        mockMvc.perform(get("/admin/app.js")).andExpect(status().isNotFound());
 
         mockMvc.perform(get("/admin/login.js"))
                 .andExpect(status().isOk())

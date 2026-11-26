@@ -1,48 +1,50 @@
-import {readFileSync} from "node:fs";
-import {runInNewContext} from "node:vm";
 import {test} from "node:test";
 import assert from "node:assert/strict";
-
-const source = readFileSync(new URL("../../main/resources/static/admin/app.js", import.meta.url), "utf8");
-function implementation(name) {
-    const start = source.search(new RegExp(`    (?:async )?function ${name}\\(`));
-    assert.ok(start >= 0, name);
-    const rest = source.slice(start + 1);
-    const end = rest.search(/\n    (?:async )?function /);
-    return source.slice(start, start + 1 + end);
-}
+import {installFakeDom, installFakeFetch} from "./support/fake-dom.mjs";
+import {state} from "../../main/resources/static/admin/js/core/state.js";
+import {
+    regenerateShareSummary,
+    renderRegenerationButton,
+    renderShareSummaryAudioActionButton,
+    renderShareSummaryImageActionButton
+} from "../../main/resources/static/admin/js/features/share-summary/runs.js";
 
 test("busy summaries block both regeneration and individual asset actions", () => {
-    const context = {escapeAttribute: String};
-    runInNewContext(["shareSummaryBusy", "renderRegenerationButton", "renderShareSummaryImageActionButton", "renderShareSummaryAudioActionButton"].map(implementation).join("\n"), context);
     for (const regenerationStatus of ["QUEUED", "TEXT", "ASSETS"]) {
         const run = {id: 1, status: "SUCCESS", regenerationStatus};
-        assert.match(context.renderRegenerationButton(run), /disabled/);
-        assert.match(context.renderShareSummaryImageActionButton(run), /disabled/);
-        assert.match(context.renderShareSummaryAudioActionButton(run), /disabled/);
+        assert.match(renderRegenerationButton(run), /disabled/);
+        assert.match(renderShareSummaryImageActionButton(run), /disabled/);
+        assert.match(renderShareSummaryAudioActionButton(run), /disabled/);
     }
     for (const regenerationStatus of ["FAILED", "PARTIAL_FAILED", "SUCCESS"]) {
-        assert.doesNotMatch(context.renderRegenerationButton({id: 1, status: "SUCCESS", regenerationStatus}), /disabled/);
+        assert.doesNotMatch(renderRegenerationButton({id: 1, status: "SUCCESS", regenerationStatus}), /disabled/);
     }
 });
 
 test("double-click submits one operation, sends an idempotency key, and releases the UI guard", async () => {
+    installFakeDom({"share-summary-run-size": {value: "20"}});
     let complete;
-    const pending = new Promise(resolve => { complete = resolve; });
-    const requests = [];
-    const context = {
-        state: {shareSummarySubmitting: false}, document: {querySelectorAll: () => []},
-        crypto: {randomUUID: () => "unique-request"}, encodeURIComponent,
-        fetchJson: (url, options) => { requests.push({url, options}); return pending; },
-        setFeedback() {}, async loadShareSummaryRuns() {}, async openShareSummaryRunDetail() {}
-    };
-    runInNewContext(implementation("regenerateShareSummary"), context);
-    const first = context.regenerateShareSummary(1);
-    await context.regenerateShareSummary(1);
-    assert.equal(requests.length, 1);
-    assert.equal(requests[0].options.headers["Idempotency-Key"], "unique-request");
+    const admission = new Promise(resolve => { complete = resolve; });
+    const calls = installFakeFetch((url, options) => {
+        if (options.method === "POST") return admission;
+        if (url.startsWith("/api/admin/share-summary/runs?")) return {items: [], total: 0, page: 1, totalPages: 0};
+        return {status: 404, body: {message: "not found in test"}};
+    });
+    state.requests = {};
+    state.shareSummaryRuns = {page: 1, items: []};
+    state.shareSummarySubmitting = false;
+    state.activeShareSummaryRunId = null;
+    const posts = () => calls.filter(call => call.options.method === "POST");
+
+    const first = regenerateShareSummary(1);
+    await regenerateShareSummary(1);
+    assert.equal(posts().length, 1);
+    const key = posts()[0].options.headers["Idempotency-Key"];
+    assert.match(key, /^[0-9a-f-]{36}$/);
+
     complete({}); await first;
-    assert.equal(context.state.shareSummarySubmitting, false);
-    await context.regenerateShareSummary(1, 2);
-    assert.equal(requests[1].url, "/api/admin/share-summary/runs/1/versions/2/retry");
+    assert.equal(state.shareSummarySubmitting, false);
+    await regenerateShareSummary(1, 2);
+    assert.equal(posts()[1].url, "/api/admin/share-summary/runs/1/versions/2/retry");
+    assert.notEqual(posts()[1].options.headers["Idempotency-Key"], key);
 });
