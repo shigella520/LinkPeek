@@ -16,8 +16,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
 @Service
@@ -27,7 +25,8 @@ public class PreviewService {
     private final PreviewProviderRegistry providerRegistry;
     private final DiskCacheManager cacheManager;
     private final AiTitleService aiTitleService;
-    private final ConcurrentHashMap<String, ReentrantLock> metadataLocks = new ConcurrentHashMap<>();
+    private final KeyedLocks metadataLocks = new KeyedLocks();
+    private final KeyedLocks thumbnailLocks = new KeyedLocks();
 
     public PreviewService(
             PreviewProviderRegistry providerRegistry,
@@ -91,9 +90,7 @@ public class PreviewService {
             );
         }
 
-        ReentrantLock lock = metadataLockFor(styledPreviewKey);
-        lock.lock();
-        try {
+        try (KeyedLocks.Handle ignored = metadataLocks.lock(styledPreviewKey.value())) {
             cachedStyled = cacheManager.getMetadata(styledPreviewKey);
             if (cachedStyled.isPresent()) {
                 markFreestyleSelectionSucceededIfNeeded(requestedStyle, resolvedPreview, stylePrompt);
@@ -139,8 +136,6 @@ public class PreviewService {
             return baseResult.withAiStats(true, false)
                     .withStyleStats(requestedStyle, stylePrompt.style())
                     .withAiAttemptStats(styledResult.providerNames(), styledResult.durationMs());
-        } finally {
-            lock.unlock();
         }
     }
 
@@ -160,9 +155,7 @@ public class PreviewService {
             return new PreviewLoadResult(resolvedPreview, cached.get(), true);
         }
 
-        ReentrantLock lock = metadataLockFor(resolvedPreview.previewKey());
-        lock.lock();
-        try {
+        try (KeyedLocks.Handle ignored = metadataLocks.lock(resolvedPreview.previewKey().value())) {
             cached = cacheManager.getMetadata(resolvedPreview.previewKey());
             if (cached.isPresent()) {
                 return new PreviewLoadResult(resolvedPreview, cached.get(), true);
@@ -173,13 +166,11 @@ public class PreviewService {
             long crawlDurationMs = elapsedMillis(startedAt);
             cacheManager.storeMetadata(resolvedPreview.previewKey(), metadata);
             return new PreviewLoadResult(resolvedPreview, metadata, false).withCrawlDuration(crawlDurationMs);
-        } finally {
-            lock.unlock();
         }
     }
 
-    private ReentrantLock metadataLockFor(PreviewKey previewKey) {
-        return metadataLocks.computeIfAbsent(previewKey.value(), ignored -> new ReentrantLock());
+    int activeLockCount() {
+        return metadataLocks.size() + thumbnailLocks.size();
     }
 
     public Optional<PreviewLoadResult> getCachedPreview(ResolvedPreview resolvedPreview) {
@@ -214,16 +205,14 @@ public class PreviewService {
             return new ThumbnailResult(cached.get(), true, cacheManager.getMetadata(previewKey).orElse(null));
         }
 
-        ReentrantLock lock = cacheManager.lockFor(previewKey, normalizedVersion);
-        lock.lock();
-        try {
+        String lockKey = normalizedVersion == null || normalizedVersion.isBlank()
+                ? previewKey.value() : previewKey.value() + ":" + normalizedVersion.strip();
+        try (KeyedLocks.Handle ignored = thumbnailLocks.lock(lockKey)) {
             Optional<Path> lockedCached = cacheManager.getThumbnailPath(previewKey, normalizedVersion);
             if (lockedCached.isPresent()) {
                 return new ThumbnailResult(lockedCached.get(), true, cacheManager.getMetadata(previewKey).orElse(null));
             }
             return downloadThumbnail(previewKey, normalizedVersion);
-        } finally {
-            lock.unlock();
         }
     }
 

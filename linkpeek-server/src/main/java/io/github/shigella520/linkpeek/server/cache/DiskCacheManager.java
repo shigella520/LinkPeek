@@ -19,8 +19,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Stream;
 
 @Component
@@ -31,7 +29,6 @@ public class DiskCacheManager {
     private final Path cacheDir;
     private final long ttlSeconds;
     private final long maxSizeBytes;
-    private final ConcurrentHashMap<String, ReentrantLock> locks = new ConcurrentHashMap<>();
 
     public DiskCacheManager(ObjectMapper objectMapper, LinkPeekProperties properties) {
         this.objectMapper = objectMapper;
@@ -122,15 +119,6 @@ public class DiskCacheManager {
         deleted += deleteVersionedThumbnails(previewKey);
         deleted += deleteTracked(videoPath(previewKey));
         return new CacheEvictionResult(deleted);
-    }
-
-    public ReentrantLock lockFor(PreviewKey previewKey) {
-        return lockFor(previewKey, null);
-    }
-
-    public ReentrantLock lockFor(PreviewKey previewKey, String version) {
-        String suffix = version == null || version.isBlank() ? "" : ":" + version.strip();
-        return locks.computeIfAbsent(previewKey.value() + suffix, ignored -> new ReentrantLock());
     }
 
     public void evictIfNeeded() throws IOException {
