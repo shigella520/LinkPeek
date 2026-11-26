@@ -362,19 +362,18 @@ class AiTitleServiceTest {
     }
 
     @Test
-    void deploymentDefaultTitleTimeoutAppliesUntilAnAdminSavesOne() {
+    void titleTimeoutDefaultsToSixtySecondsUntilAnAdminSavesOne() {
         AiProviderDowngradeService service = new AiProviderDowngradeService(
                 new FakeProviderConfigMapper(Map.of()), new FakeAiProviderMapper(List.of()), Clock.systemUTC());
         assertEquals(60, service.config().aiTitleTotalTimeoutSeconds());
+        assertEquals(60, service.config().defaultAiTitleTotalTimeoutSeconds());
         assertEquals(java.time.Duration.ofSeconds(60), service.aiTitleTotalTimeout());
 
-        io.github.shigella520.linkpeek.server.config.LinkPeekProperties properties = new io.github.shigella520.linkpeek.server.config.LinkPeekProperties();
-        properties.setAiTitleTotalTimeout(java.time.Duration.ofMillis(1500));
-        service.setLinkPeekProperties(properties);
-        assertEquals(2, service.config().defaultAiTitleTotalTimeoutSeconds(), "rounded up to whole seconds");
-        properties.setAiTitleTotalTimeout(java.time.Duration.ofMinutes(10));
-        service.setLinkPeekProperties(properties);
-        assertEquals(180, service.config().aiTitleTotalTimeoutSeconds(), "clamped to the admin maximum");
+        AiProviderDowngradeService corrupted = new AiProviderDowngradeService(
+                new FakeProviderConfigMapper(Map.of(FakeProviderConfigMapper.key(AiProviderDowngradeService.PROVIDER_AI_PROVIDER,
+                        AiProviderDowngradeService.AI_TITLE_TOTAL_TIMEOUT_SECONDS_KEY), "999")),
+                new FakeAiProviderMapper(List.of()), Clock.systemUTC());
+        assertEquals(java.time.Duration.ofSeconds(60), corrupted.aiTitleTotalTimeout(), "out-of-range stored values fall back to the default");
     }
 
     @Test

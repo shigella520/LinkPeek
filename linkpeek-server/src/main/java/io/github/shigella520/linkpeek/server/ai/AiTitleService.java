@@ -12,7 +12,6 @@ import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.persistence.AdminPromptMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.AiProviderMapper;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
-import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -94,13 +93,6 @@ public class AiTitleService {
         this.aiTitleConfigService = aiTitleConfigService;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
         this.clock = clock == null ? Clock.systemUTC() : clock;
-    }
-
-    @Autowired(required = false)
-    void setLinkPeekProperties(LinkPeekProperties properties) {
-        if (properties != null && properties.getAiTitleTotalTimeout() != null) {
-            this.titleBudget = properties.getAiTitleTotalTimeout();
-        }
     }
 
     void setTitleBudget(Duration titleBudget, LongSupplier nanoTime) {

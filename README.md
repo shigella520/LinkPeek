@@ -313,7 +313,6 @@ AI Provider 按启用和排序 fallback，失败会记录事件并可触发自�
 | `STATS_EVENT_DEDUPE_MAX_ENTRIES` | `10000` | 统计事件去重缓存最大条目数 |
 | `STATS_ADMIN_PASSWORD` | 空 | 管理后台登录密码，配置后启用 `/admin` |
 | `DOWNLOAD_TIMEOUT` | `120s` | 上游内容和媒体请求超时时间 |
-| `AI_TITLE_TOTAL_TIMEOUT` | `60s` | AI 标题跨所有 Provider 的总耗时上限的默认值，需带单位（如 `45s`、`1m`，纯数字按毫秒解析），用尽后使用原标题，`0` 表示不限制；在后台「AI Provider」面板保存后以后台设置为准 |
 | `ADMIN_COOKIE_SECURE` | `auto` | 后台登录 Cookie 的 `Secure` 属性；`auto` 在 `BASE_URL` 为 https 时开启，也可设为 `true`/`false` |
 | `VIDEO_MAX_QUALITY` | `480` | 预留视频能力的最高质量 |
 | `PREVIEW_WARMUP_ENABLED` | `true` | 是否启用普通浏览器打开后的异步元数据预热 |

@@ -4,7 +4,6 @@ import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ProviderConfigRecord;
 import io.github.shigella520.linkpeek.server.admin.persistence.AiProviderMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.ProviderConfigMapper;
-import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -51,8 +50,6 @@ public class AiProviderDowngradeService {
     private final Clock clock;
     private final ApplicationEventPublisher eventPublisher;
     private final ConcurrentHashMap<Long, AtomicInteger> failureCounts = new ConcurrentHashMap<>();
-    // Used until an administrator saves a value; AI_TITLE_TOTAL_TIMEOUT sets it per deployment.
-    private int defaultAiTitleTotalTimeoutSeconds = DEFAULT_AI_TITLE_TOTAL_TIMEOUT_SECONDS;
 
     @Autowired
     public AiProviderDowngradeService(
@@ -73,14 +70,6 @@ public class AiProviderDowngradeService {
             Clock clock
     ) {
         this(providerConfigMapper, aiProviderMapper, clock, null);
-    }
-
-    @Autowired(required = false)
-    void setLinkPeekProperties(LinkPeekProperties properties) {
-        if (properties != null && properties.getAiTitleTotalTimeout() != null) {
-            long seconds = Math.max(0, (properties.getAiTitleTotalTimeout().toMillis() + 999) / 1000);
-            this.defaultAiTitleTotalTimeoutSeconds = (int) Math.min(MAX_AI_TITLE_TOTAL_TIMEOUT_SECONDS, seconds);
-        }
     }
 
     /** Total time a styled title may take across all providers; zero means unlimited. */
@@ -108,7 +97,7 @@ public class AiProviderDowngradeService {
                 parseShareSummaryTimeoutMultiplier(shareSummaryTimeoutMultiplier),
                 DEFAULT_SHARE_SUMMARY_TIMEOUT_MULTIPLIER,
                 parseAiTitleTotalTimeoutSeconds(aiTitleTotalTimeout),
-                defaultAiTitleTotalTimeoutSeconds,
+                DEFAULT_AI_TITLE_TOTAL_TIMEOUT_SECONDS,
                 updatedAt
         );
     }
@@ -442,12 +431,12 @@ public class AiProviderDowngradeService {
 
     private int parseAiTitleTotalTimeoutSeconds(ProviderConfigRecord record) {
         if (record == null || !StringUtils.hasText(record.getConfigValue())) {
-            return defaultAiTitleTotalTimeoutSeconds;
+            return DEFAULT_AI_TITLE_TOTAL_TIMEOUT_SECONDS;
         }
         try {
             return normalizeAiTitleTotalTimeoutSeconds(Integer.parseInt(record.getConfigValue().strip()));
         } catch (IllegalArgumentException exception) {
-            return defaultAiTitleTotalTimeoutSeconds;
+            return DEFAULT_AI_TITLE_TOTAL_TIMEOUT_SECONDS;
         }
     }
 
