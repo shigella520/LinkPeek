@@ -166,7 +166,7 @@
 - `linkpeek-server/src/main/java/io/github/shigella520/linkpeek/server/ai/AiTitleService.java`：首行提取、风格缓存键与模型 fallback。
 - `linkpeek-server/src/main/java/io/github/shigella520/linkpeek/server/service/PreviewService.java`：锁前/锁后缓存判定、缩略图路径。
 - `linkpeek-server/src/main/java/io/github/shigella520/linkpeek/server/cache/DiskCacheManager.java`：缓存枚举、淘汰与锁生命周期。
-- `linkpeek-server/src/main/java/io/github/shigella520/linkpeek/server/admin/service/NotificationService.java`：投递、DNS 验证、重试分类。
+- `linkpeek-server/src/main/java/io/github/shigella520/linkpeek/server/admin/service/NotificationDeliveryService.java`：投递、DNS 验证、重试分类。
 - `linkpeek-server/src/main/java/io/github/shigella520/linkpeek/server/admin/service/ServiceLogService.java`：日志尾读与逐行筛选。
 - `linkpeek-server/src/main/java/io/github/shigella520/linkpeek/server/config/StatisticsConfiguration.java`：旧结构升级。
 - `linkpeek-server/src/main/resources/static/admin/app.js`：列表操作、日志跟随、模块路由。

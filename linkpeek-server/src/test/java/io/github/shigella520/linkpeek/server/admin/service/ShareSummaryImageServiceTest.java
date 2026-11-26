@@ -61,7 +61,7 @@ class ShareSummaryImageServiceTest {
     void preservesExistingSuccessfulImageWhenRegenerationRedirectsToPrivateAddress() {
         FakeImageMapper imageMapper = new FakeImageMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventPublisher notificationService = mock(NotificationEventPublisher.class);
         OpenAiCompatibleImageClient imageClient = new OpenAiCompatibleImageClient(
                 new ImageProviderHttpClient(200, """
                         {"data":[{"url":"http://93.184.216.34/image.png"}]}
@@ -104,7 +104,7 @@ class ShareSummaryImageServiceTest {
     void publishesImageFailedNotificationWhenQueueRejectsGeneration() {
         FakeImageMapper imageMapper = new FakeImageMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventPublisher notificationService = mock(NotificationEventPublisher.class);
         ShareSummaryImageService service = new ShareSummaryImageService(
                 imageMapper,
                 shareSummaryMapper,
@@ -132,7 +132,7 @@ class ShareSummaryImageServiceTest {
     void imageFailureNotificationIncludesErrorTypeAndFallbackMessage() {
         FakeImageMapper imageMapper = new FakeImageMapper(config());
         FakeShareSummaryMapper shareSummaryMapper = new FakeShareSummaryMapper(successfulRun());
-        NotificationService notificationService = mock(NotificationService.class);
+        NotificationEventPublisher notificationService = mock(NotificationEventPublisher.class);
         OpenAiCompatibleImageClient imageClient = mock(OpenAiCompatibleImageClient.class);
         try {
             when(imageClient.generate(any(ShareSummaryImageConfigRecord.class), any(String.class)))

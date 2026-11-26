@@ -50,7 +50,7 @@ class ShareSummaryRegenerationServiceTest {
     OpenAiCompatibleTextClient textClient;
     OpenAiCompatibleImageClient imageClient;
     OpenAiCompatibleAudioClient audioClient;
-    NotificationService notifications;
+    NotificationEventPublisher notifications;
     ShareSummaryLinkMapper links;
     QueueExecutor textQueue = new QueueExecutor(), imageQueue = new QueueExecutor(), audioQueue = new QueueExecutor();
     long rootId;
@@ -89,7 +89,7 @@ class ShareSummaryRegenerationServiceTest {
                 """);
         LinkPeekProperties properties = new LinkPeekProperties();
         properties.setBaseUrl("https://linkpeek.example.com"); properties.setCacheDir(directory);
-        notifications = mock(NotificationService.class);
+        notifications = mock(NotificationEventPublisher.class);
         imageClient = mock(OpenAiCompatibleImageClient.class);
         ByteArrayOutputStream png = new ByteArrayOutputStream();
         ImageIO.write(new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB), "png", png);
@@ -155,8 +155,10 @@ class ShareSummaryRegenerationServiceTest {
             return null;
         }).when(immediateWorker).execute(any(Runnable.class));
         ObjectMapper json = new ObjectMapper();
-        NotificationService realNotifications = new NotificationService(notificationMapper, new NotificationTemplateService(json),
-                json, webhookClient, immediateWorker, new LinkPeekProperties(), clock);
+        LinkPeekProperties webhookProperties = new LinkPeekProperties();
+        NotificationEventPublisher realNotifications = new NotificationEventPublisher(notificationMapper, new NotificationTemplateService(json),
+                json, new NotificationDeliveryService(notificationMapper, json, webhookClient, immediateWorker, webhookProperties, clock),
+                immediateWorker, webhookProperties, clock);
         doAnswer(invocation -> {
             realNotifications.publishShareSummaryImageSuccess(invocation.getArgument(0), invocation.getArgument(1));
             return null;

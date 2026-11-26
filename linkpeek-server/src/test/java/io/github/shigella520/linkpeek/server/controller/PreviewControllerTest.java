@@ -8,7 +8,7 @@ import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
-import io.github.shigella520.linkpeek.server.admin.service.NotificationService;
+import io.github.shigella520.linkpeek.server.admin.service.NotificationEventPublisher;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.OpenAiCompatibleAudioClient;
@@ -134,7 +134,7 @@ class PreviewControllerTest {
     private TestOpenAiCompatibleAudioClient testOpenAiCompatibleAudioClient;
 
     @Autowired
-    private NotificationService notificationService;
+    private NotificationEventPublisher notificationService;
 
     @Autowired
     @Qualifier("notificationWebhookExecutor")
