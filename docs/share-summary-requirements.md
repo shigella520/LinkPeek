@@ -238,7 +238,7 @@ POST   /api/admin/share-summary/runs/{runId}/versions/{versionId}/retry
 - 播放完成后清除该音频的进度，下次从头开始。无效或超出时长的记录会忽略；浏览器存储不可用时仍可正常播放和拖动。
 - 进度仅保存在当前浏览器，不跨设备同步；系统朗读回退模式保持原有行为。
 
-播放器行为测试：`node --test linkpeek-server/src/test/js/share-summary-audio.test.mjs`。
+播放器脚本位于 `static/share-summary/report.js`，行为测试直接导入该模块：`node --test linkpeek-server/src/test/js/share-summary-audio.test.mjs`。
 
 ## 整体重新生成
 
