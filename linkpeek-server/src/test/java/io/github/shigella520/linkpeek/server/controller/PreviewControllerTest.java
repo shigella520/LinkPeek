@@ -422,6 +422,30 @@ class PreviewControllerTest {
     }
 
     @Test
+    void repeatedWrongPasswordsAreThrottledPerClientAndCorrectPasswordWaits() throws Exception {
+        String body = "{\"password\":\"wrong\"}";
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/admin/login").header("X-Real-IP", "203.0.113.9")
+                            .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isForbidden());
+        }
+        mockMvc.perform(post("/api/admin/login").header("X-Real-IP", "203.0.113.9")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"test-admin-password\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "60"))
+                .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+        // Another client behind the same proxy can still log in.
+        mockMvc.perform(post("/api/admin/login").header("X-Real-IP", "203.0.113.10")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"test-admin-password\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")))
+                // The test context uses an https base URL, so the auto mode marks the cookie Secure.
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Secure")));
+    }
+
+    @Test
     void faviconEndpointReturnsConfiguredIcon() throws Exception {
         mockMvc.perform(get("/favicon.ico"))
                 .andExpect(status().isOk())

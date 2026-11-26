@@ -21,6 +21,7 @@ public class LinkPeekProperties {
     private Path serviceLogPath = Path.of("/data/logs/linkpeek.log");
     private Duration downloadTimeout = Duration.ofSeconds(120);
     private Duration aiTitleTotalTimeout = Duration.ofSeconds(30);
+    private String adminCookieSecure = "auto";
     private String logLevel = "INFO";
     private int videoMaxQuality = 480;
     private boolean previewWarmupEnabled = true;
@@ -33,6 +34,14 @@ public class LinkPeekProperties {
             "Twitterbot",
             "Applebot"
     );
+
+    public String getAdminCookieSecure() {
+        return adminCookieSecure;
+    }
+
+    public void setAdminCookieSecure(String adminCookieSecure) {
+        this.adminCookieSecure = adminCookieSecure;
+    }
 
     public Duration getAiTitleTotalTimeout() {
         return aiTitleTotalTimeout;

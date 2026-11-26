@@ -101,8 +101,8 @@ public class AdminController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<SessionResponse> login(@RequestBody LoginRequest request) {
-        AdminAuthService.LoginSession session = adminAuthService.login(request == null ? null : request.password());
+    public ResponseEntity<SessionResponse> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        AdminAuthService.LoginSession session = adminAuthService.login(request == null ? null : request.password(), httpRequest);
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, session.cookieHeader())
                 .body(new SessionResponse(true, true));

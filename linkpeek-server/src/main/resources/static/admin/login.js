@@ -65,6 +65,13 @@
     }
 
     async function errorMessage(response) {
+        if (response.status === 403) {
+            return "密码不正确。";
+        }
+        if (response.status === 429) {
+            const seconds = Number(response.headers.get("Retry-After")) || 60;
+            return `尝试次数过多，请 ${Math.ceil(seconds / 60)} 分钟后再试。`;
+        }
         try {
             const payload = await response.json();
             return payload.message || payload.error || `HTTP ${response.status}`;

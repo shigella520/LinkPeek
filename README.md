@@ -313,6 +313,8 @@ AI Provider 按启用和排序 fallback，失败会记录事件并可触发自�
 | `STATS_EVENT_DEDUPE_MAX_ENTRIES` | `10000` | 统计事件去重缓存最大条目数 |
 | `STATS_ADMIN_PASSWORD` | 空 | 管理后台登录密码，配置后启用 `/admin` |
 | `DOWNLOAD_TIMEOUT` | `120s` | 上游内容和媒体请求超时时间 |
+| `AI_TITLE_TOTAL_TIMEOUT` | `30s` | AI 标题跨所有 Provider 的总耗时上限，用尽后使用原标题；`0` 表示不限制 |
+| `ADMIN_COOKIE_SECURE` | `auto` | 后台登录 Cookie 的 `Secure` 属性；`auto` 在 `BASE_URL` 为 https 时开启，也可设为 `true`/`false` |
 | `VIDEO_MAX_QUALITY` | `480` | 预留视频能力的最高质量 |
 | `PREVIEW_WARMUP_ENABLED` | `true` | 是否启用普通浏览器打开后的异步元数据预热 |
 | `PREVIEW_WARMUP_THREADS` | `2` | 异步预热线程数 |
@@ -328,7 +330,7 @@ AI Provider 按启用和排序 fallback，失败会记录事件并可触发自�
 
 ## 管理后台
 
-访问 `/admin/login` 使用 `STATS_ADMIN_PASSWORD` 登录。后台会签发 HttpOnly Cookie，`GET /api/admin/session` 只用于页面刷新时确认登录状态。
+访问 `/admin/login` 使用 `STATS_ADMIN_PASSWORD` 登录。同一客户端连续输错 5 次后暂停登录 1 分钟，此后每次失败加倍，最长 15 分钟；反向代理后的客户端按 `X-Real-IP` / `X-Forwarded-For` 区分（仅信任来自内网或本机的代理）。后台会签发 HttpOnly Cookie，`GET /api/admin/session` 只用于页面刷新时确认登录状态。
 
 后台主要功能：
 

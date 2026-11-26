@@ -46,6 +46,7 @@ linkpeek:
   stats-event-dedupe-ttl: ${STATS_EVENT_DEDUPE_TTL:2m}
   stats-event-dedupe-max-entries: ${STATS_EVENT_DEDUPE_MAX_ENTRIES:10000}
   stats-admin-password: ${STATS_ADMIN_PASSWORD:}
+  admin-cookie-secure: ${ADMIN_COOKIE_SECURE:auto}
   service-log-path: ${LOG_FILE_PATH:/data/logs/linkpeek.log}
   download-timeout: ${DOWNLOAD_TIMEOUT:120s}
   ai-title-total-timeout: ${AI_TITLE_TOTAL_TIMEOUT:30s}
