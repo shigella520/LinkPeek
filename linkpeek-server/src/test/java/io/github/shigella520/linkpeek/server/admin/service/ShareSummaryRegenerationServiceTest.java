@@ -6,6 +6,7 @@ import io.github.shigella520.linkpeek.server.admin.persistence.*;
 import io.github.shigella520.linkpeek.server.ai.*;
 import io.github.shigella520.linkpeek.server.config.*;
 import io.github.shigella520.linkpeek.server.controller.ShareSummaryPublicController;
+import io.github.shigella520.linkpeek.server.render.ShareSummaryReportPageRenderer;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 import org.mybatis.spring.SqlSessionFactoryBean;
@@ -209,7 +210,7 @@ class ShareSummaryRegenerationServiceTest {
         assertEquals(revision.runId(), page.image().getRunId()); assertEquals(revision.runId(), page.run().getId());
         assertNotNull(images.publicImage(originalImage.getPublicToken(), "png"));
         assertNotNull(audios.publicAudio(versions.audioToken(originalAudio.getId()), "mp3"));
-        String html = new ShareSummaryPublicController(images, audios).report(originalImage.getPublicToken()).getBody();
+        String html = new ShareSummaryPublicController(images, audios, new ShareSummaryReportPageRenderer()).report(originalImage.getPublicToken()).getBody();
         assertTrue(html.contains("new report 1"));
         assertTrue(html.contains(audioMapper.selectLatestSuccessfulAudio(revision.runId()).getAudioUrl()));
         var history = regeneration.history(rootId);

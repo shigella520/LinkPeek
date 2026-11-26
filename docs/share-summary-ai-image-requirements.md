@@ -227,6 +227,8 @@ GET /share-summary/reports/{publicToken}
 
 页面会展示报告标题、描述和报告正文。
 
+页面骨架是 `linkpeek-server/src/main/resources/templates/share-summary/report.html`，由 `ShareSummaryReportPageRenderer` 启动时读取一次并做占位符替换：`{{name}}` 一律 HTML 转义，`{{{name}}}` 只允许用于 Markdown 渲染结果和音频 meta 片段；替换只扫描一次，值里的占位符文本不会被展开。样式和脚本是静态文件 `static/share-summary/report.css`、`report.js`（ES module，从页面 `data-*` 属性读取音频地址等数据）。两者的 URL 带 `?v=` 内容哈希（SHA-256 前 12 位，启动时计算），文件内容变化后 URL 随之变化，反向代理对 `.css`/`.js` 的长缓存不会让新页面拿到旧资源。报告页本身仍为 `Cache-Control: no-store`。
+
 ## 下载与图片安全
 
 如果上游返回图片 URL，服务端下载时会校验：

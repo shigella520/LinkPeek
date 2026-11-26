@@ -1623,8 +1623,11 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "audio/mpeg"));
 
-        mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
+        String reportPage = mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
                 .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().string(not(containsString("<style>"))))
+                .andExpect(content().string(not(containsString("<script>"))))
                 .andExpect(content().string(containsString("og:title")))
                 .andExpect(content().string(containsString("og:image")))
                 .andExpect(content().string(containsString("og:audio")))
@@ -1640,21 +1643,13 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("report-image-viewer-stage")))
                 .andExpect(content().string(containsString("aria-label=\"查看分享图\"")))
                 .andExpect(content().string(containsString("aria-label=\"关闭图片预览\"")))
-                .andExpect(content().string(containsString("--report-image-viewer-mobile-width")))
-                .andExpect(content().string(containsString("updateViewerLayout")))
-                .andExpect(content().string(not(containsString("requestFullscreen"))))
-                .andExpect(content().string(not(containsString("screen.orientation"))))
                 .andExpect(content().string(containsString("data-audio-reader")))
                 .andExpect(content().string(containsString("data-audio-element")))
                 .andExpect(content().string(containsString("/share-summary/audios/")))
                 .andExpect(content().string(containsString("data-audio-status>准备播放</div>")))
-                .andExpect(content().string(containsString("setAudioStatus(\"正在播放\", true)")))
                 .andExpect(content().string(not(containsString("服务端语音"))))
                 .andExpect(content().string(containsString("data-reader")))
-                .andExpect(content().string(containsString("speechSynthesis")))
                 .andExpect(content().string(containsString("data-reader-voice")))
-                .andExpect(content().string(containsString("synth.getVoices()")))
-                .andExpect(content().string(containsString("linkpeek.shareSummary.readerVoice")))
                 .andExpect(content().string(containsString("<option value=\"1.0\">1.0x</option>")))
                 .andExpect(content().string(containsString("<option value=\"1.1\">1.1x</option>")))
                 .andExpect(content().string(containsString("<option value=\"1.2\">1.2x</option>")))
@@ -1663,17 +1658,53 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("<option value=\"1.5\">1.5x</option>")))
                 .andExpect(content().string(containsString("<option value=\"1.8\">1.8x</option>")))
                 .andExpect(content().string(containsString("<option value=\"2.0\">2.0x</option>")))
-                .andExpect(content().string(containsString("function defaultRate()")))
-                .andExpect(content().string(containsString("return viewportWidth <= 520 ? 1.1 : 1.4;")))
-                .andExpect(content().string(containsString("setRate(defaultRate())")))
-                .andExpect(content().string(containsString("createUtterance")))
                 .andExpect(content().string(containsString("准备播放")))
                 .andExpect(content().string(not(containsString("data-reader-action=\"stop\""))))
                 .andExpect(content().string(containsString("<h2>分享总结报告正文</h2>")))
                 .andExpect(content().string(containsString("<li>链接分享增长</li>")))
                 .andExpect(content().string(containsString("<strong>内容洞察</strong>")))
                 .andExpect(content().string(containsString("<a href=\"https://example.com/image\" target=\"_blank\" rel=\"noreferrer\">图片测试标题</a>")))
-                .andExpect(content().string(containsString("<a href=\"https://example.com/plain\" target=\"_blank\" rel=\"noreferrer\">https://example.com/plain</a>")));
+                .andExpect(content().string(containsString("<a href=\"https://example.com/plain\" target=\"_blank\" rel=\"noreferrer\">https://example.com/plain</a>")))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        String styles = fetchVersionedReportAsset(reportPage, "<link rel=\"stylesheet\" href=\"(/share-summary/report\\.css\\?v=[0-9a-f]{12})\">", "text/css");
+        org.junit.jupiter.api.Assertions.assertTrue(styles.contains("--report-image-viewer-mobile-width"));
+        String script = fetchVersionedReportAsset(reportPage, "<script type=\"module\" src=\"(/share-summary/report\\.js\\?v=[0-9a-f]{12})\"></script>", "javascript");
+        for (String expected : List.of(
+                "--report-image-viewer-mobile-width",
+                "updateViewerLayout",
+                "setAudioStatus(\"正在播放\", true)",
+                "speechSynthesis",
+                "synth.getVoices()",
+                "linkpeek.shareSummary.readerVoice",
+                "function defaultRate()",
+                "return viewportWidth <= 520 ? 1.1 : 1.4;",
+                "setRate(defaultRate())",
+                "createUtterance"
+        )) {
+            org.junit.jupiter.api.Assertions.assertTrue(script.contains(expected), expected);
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(script.contains("requestFullscreen"));
+        org.junit.jupiter.api.Assertions.assertFalse(script.contains("screen.orientation"));
+    }
+
+    /**
+     * Finds a report asset URL in the page, fetches it, and checks that its {@code ?v=} is the content hash, so
+     * a deploy that changes the file also changes the URL the long-caching reverse proxy sees.
+     */
+    private String fetchVersionedReportAsset(String page, String tagPattern, String contentTypePart) throws Exception {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(tagPattern).matcher(page);
+        org.junit.jupiter.api.Assertions.assertTrue(matcher.find(), tagPattern);
+        String url = matcher.group(1);
+        MvcResult asset = mockMvc.perform(get(url))
+                .andExpect(status().isOk())
+                // Module scripts need a JavaScript MIME type (text/ or application/javascript both qualify).
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString(contentTypePart)))
+                .andReturn();
+        byte[] body = asset.getResponse().getContentAsByteArray();
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(body));
+        org.junit.jupiter.api.Assertions.assertEquals(url.substring(url.indexOf("?v=") + 3), hash.substring(0, 12));
+        return new String(body, StandardCharsets.UTF_8);
     }
 
     @Test

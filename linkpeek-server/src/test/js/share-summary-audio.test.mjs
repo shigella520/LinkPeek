@@ -1,21 +1,24 @@
-import {readFileSync} from "node:fs";
-import {runInNewContext} from "node:vm";
 import {test} from "node:test";
 import assert from "node:assert/strict";
+import {initAudioPlayer} from "../../main/resources/static/share-summary/report.js";
 
-const source = readFileSync(new URL("../../main/java/io/github/shigella520/linkpeek/server/controller/ShareSummaryPublicController.java", import.meta.url), "utf8");
-const start = source.lastIndexOf("(() => {", source.indexOf('const audioRoot ='));
-const script = source.slice(start, source.indexOf("})();", start) + 5).replaceAll("%%", "%");
+// The player reads browser globals when initialised; install fakes for each page load.
+function installGlobals(globals) {
+    for (const [name, value] of Object.entries(globals)) {
+        Object.defineProperty(globalThis, name, {value, configurable: true, writable: true});
+    }
+}
+
 const key = "linkpeek.shareSummary.audioProgress:/audio.mp3";
 
-function setup({saved, duration = 120, blocked = false, src = "/audio.mp3"} = {}) {
+function setup({saved, duration = 120, blocked = false, src = "/audio.mp3", error = null} = {}) {
     const element = (props = {}) => Object.assign({
         listeners: {}, style: {setProperty(name, value) { this[name] = value; }}, dataset: {}, classList: {toggle() {}},
         addEventListener(name, fn) { (this.listeners[name] ??= []).push(fn); },
         emit(name) { for (const fn of this.listeners[name] || []) fn(); },
         setAttribute(name, value) { this[name] = value; }
     }, props);
-    const audio = element({duration, currentTime: 0, paused: true, ended: false});
+    const audio = element({duration, currentTime: 0, paused: true, ended: false, error});
     const progress = element(), status = element(), time = element(), action = element();
     const nodes = {"[data-audio-element]": audio, "[data-audio-progress]": progress,
         "[data-audio-status]": status, "[data-audio-time]": time, '[data-audio-action="toggle"]': action};
@@ -29,8 +32,9 @@ function setup({saved, duration = 120, blocked = false, src = "/audio.mp3"} = {}
         setItem(k, v) { if (blocked) throw Error("blocked"); storage.set(k, v); },
         removeItem(k) { if (blocked) throw Error("blocked"); storage.delete(k); }
     };
-    runInNewContext(script, {document, window, localStorage, CustomEvent: class {}});
-    return {audio, progress, status, time, storage, window, document};
+    installGlobals({document, window, localStorage});
+    initAudioPlayer();
+    return {audio, root, system, progress, status, time, storage, window, document};
 }
 
 test("restores only after metadata and lets the user seek and persist", () => {
@@ -85,4 +89,17 @@ test("storage failures do not disable seeking", () => {
     p.progress.emit("input");
     assert.equal(p.audio.currentTime, 30);
     p.audio.emit("pause");
+});
+
+test("falls back to the system reader when the audio fails, even before the script runs", () => {
+    const p = setup();
+    assert.equal(p.root.hidden, false);
+    assert.equal(p.system.dataset.readerFallback, undefined);
+    p.audio.emit("error");
+    assert.equal(p.root.hidden, true);
+    assert.equal(p.system.dataset.readerFallback, "true");
+
+    const failedEarly = setup({error: {code: 4}});
+    assert.equal(failedEarly.root.hidden, true);
+    assert.equal(failedEarly.system.dataset.readerFallback, "true");
 });
