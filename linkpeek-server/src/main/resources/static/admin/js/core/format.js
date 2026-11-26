@@ -41,6 +41,14 @@ export function formatBytes(value) {
     return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+// Token counts are null when the provider did not report usage.
+export function formatTokenUsage(inputTokens, outputTokens) {
+    const known = value => value !== null && value !== undefined && Number.isFinite(Number(value));
+    if (!known(inputTokens) && !known(outputTokens)) return "未返回用量";
+    const count = value => known(value) ? Number(value).toLocaleString("zh-CN") : "?";
+    return `输入 ${count(inputTokens)} · 输出 ${count(outputTokens)}`;
+}
+
 export function formatDuration(value) {
     const duration = Number(value || 0);
     if (!Number.isFinite(duration) || duration <= 0) {

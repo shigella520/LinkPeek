@@ -1,6 +1,6 @@
 // Share summary report detail modal, image viewer and report rendering.
 import {fetchJson} from "../../core/api.js";
-import {escapeAttribute, escapeHtml, formatDuration, formatTimestamp, formatWindow} from "../../core/format.js";
+import {escapeAttribute, escapeHtml, formatDuration, formatTimestamp, formatTokenUsage, formatWindow} from "../../core/format.js";
 import {state} from "../../core/state.js";
 import {closeModal, openModal, setFeedback} from "../../core/ui.js";
 import {
@@ -207,6 +207,7 @@ function renderShareSummaryRunDetail(run, images = [], audios = [], versions = [
             <div><b>AI Provider</b><span>${escapeHtml(run.aiProviderNames || "-")}</span></div>
             <div><b>AI 耗时</b><span>${escapeHtml(formatDuration(run.aiDurationMs))}</span></div>
         </div>
+        ${renderShareSummaryStageTimings(run, images, audios)}
         <section class="summary-detail-section">
             <div class="section-title-row">
                 <h4>分享图</h4>
@@ -234,6 +235,47 @@ function renderShareSummaryRunDetail(run, images = [], audios = [], versions = [
             <pre class="summary-report summary-report-prompt">${escapeHtml(run.promptSnapshot || "")}</pre>
         </details>
     `;
+}
+
+function latestAttempt(attempts) {
+    return (Array.isArray(attempts) ? attempts : []).reduce((latest, item) =>
+        !latest || Number(item.id || 0) > Number(latest.id || 0) ? item : latest, null);
+}
+
+// One row per stage of a report: text (AI), share image and audio, plus the span from the
+// report's start to whichever stage finished last.
+export function shareSummaryStageTimings(run, images = [], audios = []) {
+    const image = latestAttempt(images);
+    const audio = latestAttempt(audios);
+    const rows = [{
+        stage: "文字",
+        status: renderRunStatus(run.status),
+        durationMs: run.aiDurationMs,
+        detail: `${run.aiProviderNames || "-"} · ${formatTokenUsage(run.aiInputTokens, run.aiOutputTokens)}`
+    }];
+    if (image) rows.push({stage: "分享图", status: renderImageStatus(image.status), durationMs: image.durationMs,
+        detail: `${image.model || image.providerType || "-"} · 共 ${images.length} 次生成`});
+    if (audio) rows.push({stage: "语音", status: renderAudioStatus(audio.status), durationMs: audio.durationMs,
+        detail: `${audio.voice || audio.model || "-"} · 共 ${audios.length} 次生成`});
+    const finished = [run.finishedAt, image?.finishedAt, audio?.finishedAt].map(Number).filter(value => value > 0);
+    const startedAt = Number(run.startedAt || 0);
+    const totalMs = startedAt > 0 && finished.length ? Math.max(...finished) - startedAt : 0;
+    return {rows, totalMs};
+}
+
+function renderShareSummaryStageTimings(run, images, audios) {
+    const {rows, totalMs} = shareSummaryStageTimings(run, images, audios);
+    return `
+        <section class="summary-detail-section">
+            <h4>阶段耗时</h4>
+            <div class="table-wrap"><table class="summary-stage-table">
+                <thead><tr><th>阶段</th><th>状态</th><th>耗时</th><th>说明</th></tr></thead>
+                <tbody>
+                    ${rows.map(row => `<tr><td>${escapeHtml(row.stage)}</td><td>${row.status}</td><td>${escapeHtml(formatDuration(row.durationMs))}</td><td>${escapeHtml(row.detail)}</td></tr>`).join("")}
+                    <tr><td>整体</td><td></td><td>${escapeHtml(formatDuration(totalMs))}</td><td class="muted">从开始生成到最后一项完成</td></tr>
+                </tbody>
+            </table></div>
+        </section>`;
 }
 
 function renderShareSummaryImageDetail(run, images) {

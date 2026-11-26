@@ -75,3 +75,20 @@ test('modal focus excludes closed-details descendants even when they have layout
     hiddenLink.disabled=true;
     assert.equal(isVisibleModalControl(hiddenLink,modal),false);
 });
+
+test('stage timings show token usage and span from start to the last finished stage', async () => {
+    const {shareSummaryStageTimings} = await import('../../main/resources/static/admin/js/features/share-summary/run-detail.js');
+    const {formatTokenUsage} = await import('../../main/resources/static/admin/js/core/format.js');
+    const run = {status: 'SUCCESS', startedAt: 1_000, finishedAt: 8_000, aiDurationMs: 6_700, aiProviderNames: 'Fast', aiInputTokens: 1234, aiOutputTokens: 56};
+    const images = [{id: 1, status: 'FAILED', durationMs: 2_000, finishedAt: 10_000, model: 'old'}, {id: 2, status: 'SUCCESS', durationMs: 9_000, finishedAt: 20_000, model: 'gpt-image'}];
+    const audios = [{id: 7, status: 'SUCCESS', durationMs: 4_000, finishedAt: 15_000, voice: '苏打'}];
+    const {rows, totalMs} = shareSummaryStageTimings(run, images, audios);
+    assert.deepEqual(rows.map(row => row.stage), ['文字', '分享图', '语音']);
+    assert.match(rows[0].detail, /Fast · 输入 1,234 · 输出 56/);
+    assert.match(rows[1].detail, /gpt-image · 共 2 次生成/);
+    assert.equal(rows[1].durationMs, 9_000);
+    assert.equal(totalMs, 19_000);
+    assert.equal(shareSummaryStageTimings({status: 'RUNNING', startedAt: 1_000}).totalMs, 0);
+    assert.equal(formatTokenUsage(null, undefined), '未返回用量');
+    assert.equal(formatTokenUsage(10, null), '输入 10 · 输出 ?');
+});

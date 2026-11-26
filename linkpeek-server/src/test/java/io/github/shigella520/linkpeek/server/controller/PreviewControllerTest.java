@@ -651,7 +651,8 @@ class PreviewControllerTest {
         );
         Map<String, Object> firstCreatedEvent = jdbcTemplate.queryForMap(
                 """
-                        SELECT source_url, requested_style, actual_style, ai_provider_names, ai_duration_ms, crawl_duration_ms, duration_ms, cache_hit
+                        SELECT source_url, requested_style, actual_style, ai_provider_names, ai_duration_ms, crawl_duration_ms, duration_ms, cache_hit,
+                               ai_input_tokens, ai_output_tokens
                         FROM stats_event
                         WHERE event_type = 'PREVIEW_CREATED'
                         ORDER BY id ASC
@@ -663,6 +664,8 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals("FUN", firstCreatedEvent.get("actual_style"));
         org.junit.jupiter.api.Assertions.assertEquals("local", firstCreatedEvent.get("ai_provider_names"));
         org.junit.jupiter.api.Assertions.assertEquals(12, ((Number) firstCreatedEvent.get("ai_duration_ms")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(120, ((Number) firstCreatedEvent.get("ai_input_tokens")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(18, ((Number) firstCreatedEvent.get("ai_output_tokens")).intValue());
         org.junit.jupiter.api.Assertions.assertTrue(((Number) firstCreatedEvent.get("crawl_duration_ms")).longValue() >= 0);
         org.junit.jupiter.api.Assertions.assertTrue(((Number) firstCreatedEvent.get("duration_ms")).longValue() >= 0);
         org.junit.jupiter.api.Assertions.assertEquals(0, ((Number) firstCreatedEvent.get("cache_hit")).intValue());
@@ -1235,6 +1238,8 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.items[0].actualStyle").value("FUN"))
                 .andExpect(jsonPath("$.items[0].aiProviderNames").value("local"))
                 .andExpect(jsonPath("$.items[0].aiDurationMs").value(12))
+                .andExpect(jsonPath("$.items[0].aiInputTokens").value(120))
+                .andExpect(jsonPath("$.items[0].aiOutputTokens").value(18))
                 .andExpect(jsonPath("$.items[0].metadataCached").value(true))
                 .andExpect(jsonPath("$.items[0].thumbnailCached").value(true));
 
@@ -1360,6 +1365,8 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.promptSnapshot").value("按主题聚合"))
                 .andExpect(jsonPath("$.aiProviderNames").value("local"))
                 .andExpect(jsonPath("$.aiDurationMs").value(34))
+                .andExpect(jsonPath("$.aiInputTokens").value(900))
+                .andExpect(jsonPath("$.aiOutputTokens").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.report").value("分享总结报告"))
                 .andReturn();
         long afterRun = System.currentTimeMillis();
@@ -2678,14 +2685,14 @@ class PreviewControllerTest {
                     blockedRequestRelease.set(null);
                 }
             }
-            return new TitleResult(Optional.ofNullable(generatedTitle.get()), 12);
+            return new TitleResult(Optional.ofNullable(generatedTitle.get()), 12, new TokenUsage(120L, 18L));
         }
 
         @Override
         public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) {
             textRequests.incrementAndGet();
             this.textPrompt.set(prompt);
-            return new TextResult(Optional.ofNullable(generatedText.get()), 34);
+            return new TextResult(Optional.ofNullable(generatedText.get()), 34, new TokenUsage(900L, null));
         }
 
         void blockNextRequest() {

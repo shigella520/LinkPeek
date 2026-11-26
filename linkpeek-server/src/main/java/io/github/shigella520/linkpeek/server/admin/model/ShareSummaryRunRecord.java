@@ -26,6 +26,13 @@ public class ShareSummaryRunRecord {
     private String promptSnapshot;
     private String aiProviderNames;
     private long aiDurationMs;
+    private Long aiInputTokens;
+    private Long aiOutputTokens;
+
+    public Long getAiInputTokens() { return aiInputTokens; }
+    public void setAiInputTokens(Long aiInputTokens) { this.aiInputTokens = aiInputTokens; }
+    public Long getAiOutputTokens() { return aiOutputTokens; }
+    public void setAiOutputTokens(Long aiOutputTokens) { this.aiOutputTokens = aiOutputTokens; }
     private String report;
     private String reportHtml;
 

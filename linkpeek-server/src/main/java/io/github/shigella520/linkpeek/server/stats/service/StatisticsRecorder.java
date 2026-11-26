@@ -9,6 +9,7 @@ import io.github.shigella520.linkpeek.server.stats.model.StatisticsEventType;
 import io.github.shigella520.linkpeek.server.stats.model.StatisticsLinkRecord;
 import io.github.shigella520.linkpeek.server.stats.persistence.StatsEventMapper;
 import io.github.shigella520.linkpeek.server.stats.persistence.StatsLinkMapper;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -75,7 +76,8 @@ public class StatisticsRecorder {
                 result.crawlDurationMs(),
                 durationMs,
                 null,
-                claim
+                claim,
+                result.aiUsage()
         );
     }
 
@@ -132,6 +134,7 @@ public class StatisticsRecorder {
                 0,
                 durationMs,
                 null,
+                null,
                 null
         );
     }
@@ -163,7 +166,8 @@ public class StatisticsRecorder {
                 result.crawlDurationMs(),
                 durationMs,
                 null,
-                null
+                null,
+                result.aiUsage()
         );
     }
 
@@ -216,6 +220,7 @@ public class StatisticsRecorder {
                 0,
                 durationMs,
                 errorCode,
+                null,
                 null
         );
     }
@@ -246,6 +251,7 @@ public class StatisticsRecorder {
                 0,
                 durationMs,
                 null,
+                null,
                 null
         );
     }
@@ -270,7 +276,8 @@ public class StatisticsRecorder {
             long crawlDurationMs,
             long durationMs,
             StatisticsErrorCode errorCode,
-            StatisticsEventDeduplicator.Claim claim
+            StatisticsEventDeduplicator.Claim claim,
+            OpenAiCompatibleTextClient.TokenUsage aiUsage
     ) {
         long occurredAt = Instant.now(clock).toEpochMilli();
         try {
@@ -303,6 +310,10 @@ public class StatisticsRecorder {
                     durationMs,
                     errorCode
             );
+            if (aiUsage != null) {
+                eventRecord.setAiInputTokens(aiUsage.inputTokens());
+                eventRecord.setAiOutputTokens(aiUsage.outputTokens());
+            }
             if (claim != null && !claim.acquired()) {
                 log.debug(
                         "statistics_duplicate_event_skipped eventType={} previewKey={} provider={} clientType={}",

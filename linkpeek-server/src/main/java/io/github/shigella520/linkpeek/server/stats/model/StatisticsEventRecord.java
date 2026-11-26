@@ -15,6 +15,13 @@ public class StatisticsEventRecord {
     private String aiProviderNames;
     private long aiDurationMs;
     private long crawlDurationMs;
+    private Long aiInputTokens;
+    private Long aiOutputTokens;
+
+    public Long getAiInputTokens() { return aiInputTokens; }
+    public void setAiInputTokens(Long aiInputTokens) { this.aiInputTokens = aiInputTokens; }
+    public Long getAiOutputTokens() { return aiOutputTokens; }
+    public void setAiOutputTokens(Long aiOutputTokens) { this.aiOutputTokens = aiOutputTokens; }
     private long durationMs;
     private String clientType;
     private String errorCode;

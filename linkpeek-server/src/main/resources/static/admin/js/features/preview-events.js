@@ -1,6 +1,6 @@
 // Preview request event log.
 import {fetchJson} from "../core/api.js";
-import {escapeAttribute, escapeHtml, formatDuration, formatTimestamp} from "../core/format.js";
+import {escapeAttribute, escapeHtml, formatDuration, formatTimestamp, formatTokenUsage} from "../core/format.js";
 import {state} from "../core/state.js";
 import {confirmDangerAction, resetDangerAction, setFeedback} from "../core/ui.js";
 
@@ -158,6 +158,7 @@ function renderDurationDetails(item) {
             <span><b>AI</b>${formatDuration(item.aiDurationMs)}</span>
             <span><b>爬取</b>${formatDuration(item.crawlDurationMs)}</span>
             <span><b>整体</b>${formatDuration(item.durationMs)}</span>
+            ${item.aiRequested ? `<span><b>Token</b>${escapeHtml(formatTokenUsage(item.aiInputTokens, item.aiOutputTokens))}</span>` : ""}
         </div>
     `;
 }

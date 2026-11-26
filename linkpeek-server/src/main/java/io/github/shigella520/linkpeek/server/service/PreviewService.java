@@ -7,6 +7,7 @@ import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
 import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.core.util.UrlNormalizer;
 import io.github.shigella520.linkpeek.server.ai.AiTitleService;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import io.github.shigella520.linkpeek.server.cache.DiskCacheManager;
 import org.springframework.stereotype.Service;
 
@@ -130,12 +131,13 @@ public class PreviewService {
                         stylePrompt.style(),
                         styledResult.providerNames(),
                         styledResult.durationMs(),
-                        baseResult.crawlDurationMs()
+                        baseResult.crawlDurationMs(),
+                        styledResult.usage()
                 );
             }
             return baseResult.withAiStats(true, false)
                     .withStyleStats(requestedStyle, stylePrompt.style())
-                    .withAiAttemptStats(styledResult.providerNames(), styledResult.durationMs());
+                    .withAiAttemptStats(styledResult.providerNames(), styledResult.durationMs(), styledResult.usage());
         }
     }
 
@@ -262,14 +264,25 @@ public class PreviewService {
             String actualStyle,
             List<String> aiProviderNames,
             long aiDurationMs,
-            long crawlDurationMs
+            long crawlDurationMs,
+            OpenAiCompatibleTextClient.TokenUsage aiUsage
     ) {
+        public PreviewLoadResult(
+                ResolvedPreview resolvedPreview, PreviewMetadata metadata, PreviewKey previewKey, boolean cacheHit,
+                boolean aiRequested, boolean aiSucceeded, String requestedStyle, String actualStyle,
+                List<String> aiProviderNames, long aiDurationMs, long crawlDurationMs
+        ) {
+            this(resolvedPreview, metadata, previewKey, cacheHit, aiRequested, aiSucceeded, requestedStyle, actualStyle,
+                    aiProviderNames, aiDurationMs, crawlDurationMs, OpenAiCompatibleTextClient.TokenUsage.UNKNOWN);
+        }
+
         public PreviewLoadResult(ResolvedPreview resolvedPreview, PreviewMetadata metadata, boolean cacheHit) {
             this(resolvedPreview, metadata, resolvedPreview.previewKey(), cacheHit, false, false, null, null, List.of(), 0, 0);
         }
 
         public PreviewLoadResult {
             aiProviderNames = aiProviderNames == null ? List.of() : List.copyOf(aiProviderNames);
+            aiUsage = aiUsage == null ? OpenAiCompatibleTextClient.TokenUsage.UNKNOWN : aiUsage;
         }
 
         public PreviewLoadResult withAiStats(boolean aiRequested, boolean aiSucceeded) {
@@ -284,7 +297,8 @@ public class PreviewService {
                     actualStyle,
                     aiProviderNames,
                     aiDurationMs,
-                    crawlDurationMs
+                    crawlDurationMs,
+                    aiUsage
             );
         }
 
@@ -300,11 +314,13 @@ public class PreviewService {
                     actualStyle,
                     aiProviderNames,
                     aiDurationMs,
-                    crawlDurationMs
+                    crawlDurationMs,
+                    aiUsage
             );
         }
 
-        public PreviewLoadResult withAiAttemptStats(List<String> providerNames, long durationMs) {
+        public PreviewLoadResult withAiAttemptStats(List<String> providerNames, long durationMs,
+                OpenAiCompatibleTextClient.TokenUsage usage) {
             return new PreviewLoadResult(
                     resolvedPreview,
                     metadata,
@@ -316,7 +332,8 @@ public class PreviewService {
                     actualStyle,
                     providerNames,
                     durationMs,
-                    crawlDurationMs
+                    crawlDurationMs,
+                    usage
             );
         }
 
@@ -332,7 +349,8 @@ public class PreviewService {
                     actualStyle,
                     aiProviderNames,
                     aiDurationMs,
-                    durationMs
+                    durationMs,
+                    aiUsage
             );
         }
     }

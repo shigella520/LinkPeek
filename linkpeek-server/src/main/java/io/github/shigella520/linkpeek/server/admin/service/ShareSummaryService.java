@@ -515,6 +515,8 @@ public class ShareSummaryService {
         run.setStatus(ShareSummaryRunStatus.SUCCESS.name());
         run.setAiProviderNames(String.join("/", result.providerNames()));
         run.setAiDurationMs(result.durationMs());
+        run.setAiInputTokens(result.usage().inputTokens());
+        run.setAiOutputTokens(result.usage().outputTokens());
         run.setReport(result.report());
         run.setErrorMessage(null);
         run.setFinishedAt(now());
@@ -540,6 +542,8 @@ public class ShareSummaryService {
         );
         List<String> providerNames = new ArrayList<>();
         long durationMs = 0;
+        // Failed attempts still consume tokens, so usage is summed over every answered attempt.
+        OpenAiCompatibleTextClient.TokenUsage usage = OpenAiCompatibleTextClient.TokenUsage.UNKNOWN;
         String lastError = "";
         double shareSummaryTimeoutMultiplier = shareSummaryTimeoutMultiplier();
         for (AiProviderRecord provider : providers) {
@@ -551,13 +555,14 @@ public class ShareSummaryService {
                 );
                 long attemptDurationMs = result.durationMs() > 0 ? result.durationMs() : elapsedMillis(startedAt);
                 durationMs += attemptDurationMs;
+                usage = usage.plus(result.usage());
                 providerNames.add(provider.getName());
                 Optional<String> report = result.text()
                         .map(String::strip)
                         .filter(StringUtils::hasText);
                 if (report.isPresent()) {
                     recordAiProviderSuccess(provider);
-                    return new AiSummaryResult(report.get(), providerNames, durationMs);
+                    return new AiSummaryResult(report.get(), providerNames, durationMs, usage);
                 }
                 lastError = "AI provider returned empty summary.";
                 recordAiProviderFailure(provider, attemptDurationMs, new IllegalStateException(lastError));
@@ -854,6 +859,7 @@ public class ShareSummaryService {
     public record Window(long startMillis, long endMillis) {
     }
 
-    private record AiSummaryResult(String report, List<String> providerNames, long durationMs) {
+    private record AiSummaryResult(String report, List<String> providerNames, long durationMs,
+            OpenAiCompatibleTextClient.TokenUsage usage) {
     }
 }
