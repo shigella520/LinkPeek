@@ -8,7 +8,7 @@ import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
-import io.github.shigella520.linkpeek.server.admin.service.NotificationService;
+import io.github.shigella520.linkpeek.server.admin.service.NotificationEventPublisher;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.ProviderConfigService;
 import io.github.shigella520.linkpeek.server.admin.service.OpenAiCompatibleAudioClient;
@@ -23,7 +23,6 @@ import io.github.shigella520.linkpeek.server.stats.model.StatisticsClientType;
 import io.github.shigella520.linkpeek.server.stats.service.StatisticsEventDeduplicator;
 import io.github.shigella520.linkpeek.server.stats.service.StatisticsRecorder;
 import jakarta.servlet.http.Cookie;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -75,6 +74,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
+@org.springframework.test.annotation.DirtiesContext
+@org.springframework.test.context.TestExecutionListeners(listeners = PreviewControllerTest.CleanupListener.class, mergeMode = org.springframework.test.context.TestExecutionListeners.MergeMode.MERGE_WITH_DEFAULTS)
 @AutoConfigureMockMvc
 class PreviewControllerTest {
     private static final Path TEST_CACHE_DIR;
@@ -133,7 +134,7 @@ class PreviewControllerTest {
     private TestOpenAiCompatibleAudioClient testOpenAiCompatibleAudioClient;
 
     @Autowired
-    private NotificationService notificationService;
+    private NotificationEventPublisher notificationService;
 
     @Autowired
     @Qualifier("notificationWebhookExecutor")
@@ -184,7 +185,14 @@ class PreviewControllerTest {
         statisticsEventDeduplicator.clear();
     }
 
-    @AfterAll
+    public static class CleanupListener extends org.springframework.test.context.support.AbstractTestExecutionListener {
+        @Override public int getOrder() { return 1000; }
+        @Override public void afterTestClass(org.springframework.test.context.TestContext context) throws IOException {
+            // Runs after DirtiesContext has stopped schedulers and closed the cached context.
+            cleanUp();
+        }
+    }
+
     static void cleanUp() throws IOException {
         Files.walk(TEST_CACHE_DIR)
                 .sorted(Comparator.reverseOrder())
@@ -256,7 +264,7 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("LinkPeek Dashboard")))
-                .andExpect(content().string(containsString("Copy LinkPeek URL")))
+                .andExpect(result -> org.junit.jupiter.api.Assertions.assertTrue(result.getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8).contains("复制分享链接")))
                 .andExpect(content().string(containsString("link-builder-input")))
                 .andExpect(content().string(containsString("link-builder-style")))
                 .andExpect(content().string(containsString("/dashboard/styles.css?v=20260612-dashboard-mobile-compact-2")))
@@ -291,10 +299,10 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("LinkPeek Admin")))
-                .andExpect(content().string(containsString("/admin/styles.css?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20261125-report-workspace")))
                 .andExpect(content().string(containsString("https://github.com/shigella520/LinkPeek")))
                 .andExpect(content().string(containsString("brand-text")))
-                .andExpect(content().string(containsString("/admin/app.js?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("<script type=\"module\" src=\"/admin/js/main.js\"></script>")))
                 .andExpect(content().string(containsString("id=\"share-summary-image-viewer\"")))
                 .andExpect(content().string(containsString("share-summary-image-viewer-stage")))
                 .andExpect(content().string(containsString("share-summary-image-viewer-img")))
@@ -350,7 +358,7 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.TEXT_HTML))
                 .andExpect(content().string(containsString("login-form")))
-                .andExpect(content().string(containsString("/admin/styles.css?v=20260622-share-summary-image-centered")))
+                .andExpect(content().string(containsString("/admin/styles.css?v=20261125-report-workspace")))
                 .andExpect(content().string(containsString("class=\"login-head brand-mark\"")))
                 .andExpect(content().string(containsString("class=\"brand-text\"")))
                 .andExpect(content().string(not(containsString(">Management<"))))
@@ -382,27 +390,28 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString(".provider-actions button")))
                 .andExpect(content().string(containsString(".ai-provider-table .ai-provider-base-url-cell::before")));
 
-        mockMvc.perform(get("/admin/app.js"))
-                .andExpect(status().isOk())
-                .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("application/javascript")))
-                .andExpect(content().string(containsString("/api/admin/logs")))
-                .andExpect(content().string(containsString("openAdminNavigationFromHover")))
-                .andExpect(content().string(containsString("adminNavHoverOpen")))
-                .andExpect(content().string(containsString("isAdminNavigationPointerInside")))
-                .andExpect(content().string(containsString("admin-nav-hover-open")))
-                .andExpect(content().string(containsString("/api/admin/ai-title-config")))
-                .andExpect(content().string(containsString("/api/admin/preview-events")))
-                .andExpect(content().string(containsString("/api/admin/share-summary")))
-                .andExpect(content().string(containsString("openShareSummaryImageViewer")))
-                .andExpect(content().string(containsString("updateShareSummaryImageViewerLayout")))
-                .andExpect(content().string(containsString("data-view-share-image")))
-                .andExpect(content().string(not(containsString("requestFullscreen"))))
-                .andExpect(content().string(not(containsString("screen.orientation"))))
-                .andExpect(content().string(containsString("/api/admin/notifications")))
-                .andExpect(content().string(containsString("renderNotificationDeliveryEvent")))
-                .andExpect(content().string(containsString("eventKeyTargetId")))
-                .andExpect(content().string(containsString("providerInputValue")))
-                .andExpect(content().string(containsString("ai-provider-base-url-cell")));
+        // The admin UI is a native ES module graph: every module reachable from the entry point
+        // must be served as JavaScript and revalidated on each load so a deploy never mixes versions.
+        java.util.Deque<String> pending = new java.util.ArrayDeque<>(List.of("/admin/js/main.js"));
+        java.util.Set<String> served = new java.util.LinkedHashSet<>();
+        java.util.regex.Pattern importPattern = java.util.regex.Pattern.compile("from \"(\\.{1,2}/[^\"]+)\"");
+        while (!pending.isEmpty()) {
+            String path = pending.pop();
+            if (!served.add(path)) {
+                continue;
+            }
+            String module = mockMvc.perform(get(path))
+                    .andExpect(status().isOk())
+                    .andExpect(content().contentTypeCompatibleWith(org.springframework.http.MediaType.valueOf("application/javascript")))
+                    .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-cache"))
+                    .andReturn().getResponse().getContentAsString(java.nio.charset.StandardCharsets.UTF_8);
+            java.util.regex.Matcher imports = importPattern.matcher(module);
+            while (imports.find()) {
+                pending.push(URI.create(path).resolve(imports.group(1)).getPath());
+            }
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(served.size() > 10, "Expected the admin module graph, got " + served);
+        mockMvc.perform(get("/admin/app.js")).andExpect(status().isNotFound());
 
         mockMvc.perform(get("/admin/login.js"))
                 .andExpect(status().isOk())
@@ -410,6 +419,30 @@ class PreviewControllerTest {
 
         mockMvc.perform(get("/webjars/echarts/5.5.1/dist/echarts.min.js"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    void repeatedWrongPasswordsAreThrottledPerClientAndCorrectPasswordWaits() throws Exception {
+        String body = "{\"password\":\"wrong\"}";
+        for (int i = 0; i < 5; i++) {
+            mockMvc.perform(post("/api/admin/login").header("X-Real-IP", "203.0.113.9")
+                            .contentType(org.springframework.http.MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isForbidden());
+        }
+        mockMvc.perform(post("/api/admin/login").header("X-Real-IP", "203.0.113.9")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"test-admin-password\"}"))
+                .andExpect(status().isTooManyRequests())
+                .andExpect(header().string(HttpHeaders.RETRY_AFTER, "60"))
+                .andExpect(header().doesNotExist(HttpHeaders.SET_COOKIE));
+        // Another client behind the same proxy can still log in.
+        mockMvc.perform(post("/api/admin/login").header("X-Real-IP", "203.0.113.10")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"test-admin-password\"}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("HttpOnly")))
+                // The test context uses an https base URL, so the auto mode marks the cookie Secure.
+                .andExpect(header().string(HttpHeaders.SET_COOKIE, containsString("Secure")));
     }
 
     @Test
@@ -618,7 +651,8 @@ class PreviewControllerTest {
         );
         Map<String, Object> firstCreatedEvent = jdbcTemplate.queryForMap(
                 """
-                        SELECT source_url, requested_style, actual_style, ai_provider_names, ai_duration_ms, crawl_duration_ms, duration_ms, cache_hit
+                        SELECT source_url, requested_style, actual_style, ai_provider_names, ai_duration_ms, crawl_duration_ms, duration_ms, cache_hit,
+                               ai_input_tokens, ai_output_tokens
                         FROM stats_event
                         WHERE event_type = 'PREVIEW_CREATED'
                         ORDER BY id ASC
@@ -630,6 +664,8 @@ class PreviewControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals("FUN", firstCreatedEvent.get("actual_style"));
         org.junit.jupiter.api.Assertions.assertEquals("local", firstCreatedEvent.get("ai_provider_names"));
         org.junit.jupiter.api.Assertions.assertEquals(12, ((Number) firstCreatedEvent.get("ai_duration_ms")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(120, ((Number) firstCreatedEvent.get("ai_input_tokens")).intValue());
+        org.junit.jupiter.api.Assertions.assertEquals(18, ((Number) firstCreatedEvent.get("ai_output_tokens")).intValue());
         org.junit.jupiter.api.Assertions.assertTrue(((Number) firstCreatedEvent.get("crawl_duration_ms")).longValue() >= 0);
         org.junit.jupiter.api.Assertions.assertTrue(((Number) firstCreatedEvent.get("duration_ms")).longValue() >= 0);
         org.junit.jupiter.api.Assertions.assertEquals(0, ((Number) firstCreatedEvent.get("cache_hit")).intValue());
@@ -1202,6 +1238,8 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.items[0].actualStyle").value("FUN"))
                 .andExpect(jsonPath("$.items[0].aiProviderNames").value("local"))
                 .andExpect(jsonPath("$.items[0].aiDurationMs").value(12))
+                .andExpect(jsonPath("$.items[0].aiInputTokens").value(120))
+                .andExpect(jsonPath("$.items[0].aiOutputTokens").value(18))
                 .andExpect(jsonPath("$.items[0].metadataCached").value(true))
                 .andExpect(jsonPath("$.items[0].thumbnailCached").value(true));
 
@@ -1327,6 +1365,8 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.promptSnapshot").value("按主题聚合"))
                 .andExpect(jsonPath("$.aiProviderNames").value("local"))
                 .andExpect(jsonPath("$.aiDurationMs").value(34))
+                .andExpect(jsonPath("$.aiInputTokens").value(900))
+                .andExpect(jsonPath("$.aiOutputTokens").value(org.hamcrest.Matchers.nullValue()))
                 .andExpect(jsonPath("$.report").value("分享总结报告"))
                 .andReturn();
         long afterRun = System.currentTimeMillis();
@@ -1365,7 +1405,8 @@ class PreviewControllerTest {
                         .cookie(cookie))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(runId))
-                .andExpect(jsonPath("$.report").value("分享总结报告"));
+                .andExpect(jsonPath("$.report").value("分享总结报告"))
+                .andExpect(jsonPath("$.reportHtml").value("<p>分享总结报告</p>"));
 
         mockMvc.perform(delete("/api/admin/share-summary/tasks/{taskId}", taskId)
                         .cookie(cookie))
@@ -1613,8 +1654,11 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "audio/mpeg"));
 
-        mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
+        String reportPage = mockMvc.perform(get("/share-summary/reports/{publicToken}", publicToken))
                 .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+                .andExpect(content().string(not(containsString("<style>"))))
+                .andExpect(content().string(not(containsString("<script>"))))
                 .andExpect(content().string(containsString("og:title")))
                 .andExpect(content().string(containsString("og:image")))
                 .andExpect(content().string(containsString("og:audio")))
@@ -1630,21 +1674,13 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("report-image-viewer-stage")))
                 .andExpect(content().string(containsString("aria-label=\"查看分享图\"")))
                 .andExpect(content().string(containsString("aria-label=\"关闭图片预览\"")))
-                .andExpect(content().string(containsString("--report-image-viewer-mobile-width")))
-                .andExpect(content().string(containsString("updateViewerLayout")))
-                .andExpect(content().string(not(containsString("requestFullscreen"))))
-                .andExpect(content().string(not(containsString("screen.orientation"))))
                 .andExpect(content().string(containsString("data-audio-reader")))
                 .andExpect(content().string(containsString("data-audio-element")))
                 .andExpect(content().string(containsString("/share-summary/audios/")))
                 .andExpect(content().string(containsString("data-audio-status>准备播放</div>")))
-                .andExpect(content().string(containsString("setAudioStatus(\"正在播放\", true)")))
                 .andExpect(content().string(not(containsString("服务端语音"))))
                 .andExpect(content().string(containsString("data-reader")))
-                .andExpect(content().string(containsString("speechSynthesis")))
                 .andExpect(content().string(containsString("data-reader-voice")))
-                .andExpect(content().string(containsString("synth.getVoices()")))
-                .andExpect(content().string(containsString("linkpeek.shareSummary.readerVoice")))
                 .andExpect(content().string(containsString("<option value=\"1.0\">1.0x</option>")))
                 .andExpect(content().string(containsString("<option value=\"1.1\">1.1x</option>")))
                 .andExpect(content().string(containsString("<option value=\"1.2\">1.2x</option>")))
@@ -1653,17 +1689,53 @@ class PreviewControllerTest {
                 .andExpect(content().string(containsString("<option value=\"1.5\">1.5x</option>")))
                 .andExpect(content().string(containsString("<option value=\"1.8\">1.8x</option>")))
                 .andExpect(content().string(containsString("<option value=\"2.0\">2.0x</option>")))
-                .andExpect(content().string(containsString("function defaultRate()")))
-                .andExpect(content().string(containsString("return viewportWidth <= 520 ? 1.1 : 1.4;")))
-                .andExpect(content().string(containsString("setRate(defaultRate())")))
-                .andExpect(content().string(containsString("createUtterance")))
                 .andExpect(content().string(containsString("准备播放")))
                 .andExpect(content().string(not(containsString("data-reader-action=\"stop\""))))
                 .andExpect(content().string(containsString("<h2>分享总结报告正文</h2>")))
                 .andExpect(content().string(containsString("<li>链接分享增长</li>")))
                 .andExpect(content().string(containsString("<strong>内容洞察</strong>")))
                 .andExpect(content().string(containsString("<a href=\"https://example.com/image\" target=\"_blank\" rel=\"noreferrer\">图片测试标题</a>")))
-                .andExpect(content().string(containsString("<a href=\"https://example.com/plain\" target=\"_blank\" rel=\"noreferrer\">https://example.com/plain</a>")));
+                .andExpect(content().string(containsString("<a href=\"https://example.com/plain\" target=\"_blank\" rel=\"noreferrer\">https://example.com/plain</a>")))
+                .andReturn().getResponse().getContentAsString(StandardCharsets.UTF_8);
+
+        String styles = fetchVersionedReportAsset(reportPage, "<link rel=\"stylesheet\" href=\"(/share-summary/report\\.css\\?v=[0-9a-f]{12})\">", "text/css");
+        org.junit.jupiter.api.Assertions.assertTrue(styles.contains("--report-image-viewer-mobile-width"));
+        String script = fetchVersionedReportAsset(reportPage, "<script type=\"module\" src=\"(/share-summary/report\\.js\\?v=[0-9a-f]{12})\"></script>", "javascript");
+        for (String expected : List.of(
+                "--report-image-viewer-mobile-width",
+                "updateViewerLayout",
+                "setAudioStatus(\"正在播放\", true)",
+                "speechSynthesis",
+                "synth.getVoices()",
+                "linkpeek.shareSummary.readerVoice",
+                "function defaultRate()",
+                "return viewportWidth <= 520 ? 1.1 : 1.4;",
+                "setRate(defaultRate())",
+                "createUtterance"
+        )) {
+            org.junit.jupiter.api.Assertions.assertTrue(script.contains(expected), expected);
+        }
+        org.junit.jupiter.api.Assertions.assertFalse(script.contains("requestFullscreen"));
+        org.junit.jupiter.api.Assertions.assertFalse(script.contains("screen.orientation"));
+    }
+
+    /**
+     * Finds a report asset URL in the page, fetches it, and checks that its {@code ?v=} is the content hash, so
+     * a deploy that changes the file also changes the URL the long-caching reverse proxy sees.
+     */
+    private String fetchVersionedReportAsset(String page, String tagPattern, String contentTypePart) throws Exception {
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(tagPattern).matcher(page);
+        org.junit.jupiter.api.Assertions.assertTrue(matcher.find(), tagPattern);
+        String url = matcher.group(1);
+        MvcResult asset = mockMvc.perform(get(url))
+                .andExpect(status().isOk())
+                // Module scripts need a JavaScript MIME type (text/ or application/javascript both qualify).
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, containsString(contentTypePart)))
+                .andReturn();
+        byte[] body = asset.getResponse().getContentAsByteArray();
+        String hash = java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(body));
+        org.junit.jupiter.api.Assertions.assertEquals(url.substring(url.indexOf("?v=") + 3), hash.substring(0, 12));
+        return new String(body, StandardCharsets.UTF_8);
     }
 
     @Test
@@ -2088,7 +2160,9 @@ class PreviewControllerTest {
                 .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(3))
                 .andExpect(jsonPath("$.defaultAutoDowngradeFailureThreshold").value(3))
                 .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(1.0))
-                .andExpect(jsonPath("$.defaultShareSummaryTimeoutMultiplier").value(1.0));
+                .andExpect(jsonPath("$.defaultShareSummaryTimeoutMultiplier").value(1.0))
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(60))
+                .andExpect(jsonPath("$.defaultAiTitleTotalTimeoutSeconds").value(60));
 
         mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
                         .cookie(cookie)
@@ -2097,7 +2171,41 @@ class PreviewControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.autoDowngradeEnabled").value(true))
                 .andExpect(jsonPath("$.autoDowngradeFailureThreshold").value(2))
-                .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(4.0));
+                .andExpect(jsonPath("$.shareSummaryTimeoutMultiplier").value(4.0))
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(60));
+
+        mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2,\"shareSummaryTimeoutMultiplier\":4,\"aiTitleTotalTimeoutSeconds\":25}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(25))
+                .andExpect(jsonPath("$.defaultAiTitleTotalTimeoutSeconds").value(60));
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.Duration.ofSeconds(25), aiProviderDowngradeService.aiTitleTotalTimeout());
+
+        // Older clients that omit the field must not reset the saved value.
+        mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(25));
+
+        mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2,\"aiTitleTotalTimeoutSeconds\":181}"))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(put("/api/admin/ai-provider-downgrade-config")
+                        .cookie(cookie)
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"autoDowngradeEnabled\":true,\"autoDowngradeFailureThreshold\":2,\"aiTitleTotalTimeoutSeconds\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.aiTitleTotalTimeoutSeconds").value(0));
+        org.junit.jupiter.api.Assertions.assertEquals(java.time.Duration.ZERO, aiProviderDowngradeService.aiTitleTotalTimeout());
+        // The Spring context is shared with later tests; restore the default budget.
+        aiProviderDowngradeService.saveConfig(true, 2, 4.0, 60);
 
         mockMvc.perform(get("/api/admin/provider-config")
                         .cookie(cookie))
@@ -2596,7 +2704,7 @@ class PreviewControllerTest {
         }
 
         @Override
-        public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) {
+        public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt, java.time.Duration timeout) {
             requests.incrementAndGet();
             this.prompt.set(prompt);
             CountDownLatch started = blockedRequestStarted.get();
@@ -2613,14 +2721,14 @@ class PreviewControllerTest {
                     blockedRequestRelease.set(null);
                 }
             }
-            return new TitleResult(Optional.ofNullable(generatedTitle.get()), 12);
+            return new TitleResult(Optional.ofNullable(generatedTitle.get()), 12, new TokenUsage(120L, 18L));
         }
 
         @Override
         public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) {
             textRequests.incrementAndGet();
             this.textPrompt.set(prompt);
-            return new TextResult(Optional.ofNullable(generatedText.get()), 34);
+            return new TextResult(Optional.ofNullable(generatedText.get()), 34, new TokenUsage(900L, null));
         }
 
         void blockNextRequest() {

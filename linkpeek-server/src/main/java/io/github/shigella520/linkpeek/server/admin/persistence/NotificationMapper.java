@@ -69,5 +69,10 @@ public interface NotificationMapper {
 
     NotificationDeliveryRecord selectDelivery(@Param("id") long id);
 
+    List<NotificationDeliveryRecord> selectPendingDeliveriesCreatedSince(
+            @Param("createdSince") long createdSince,
+            @Param("limit") int limit
+    );
+
     int deleteDelivery(@Param("id") long id);
 }

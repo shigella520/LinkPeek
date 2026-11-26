@@ -27,7 +27,7 @@
   },
   "host_permissions": [
     "https://linux.do/*",
-    "https://bbs.nga.cn/*",
+    "https://*.nga.cn/*",
     "https://nga.178.com/*",
     "https://ngabbs.com/*"
   ],

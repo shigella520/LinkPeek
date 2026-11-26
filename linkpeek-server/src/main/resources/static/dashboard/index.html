@@ -56,13 +56,13 @@
                 <div class="link-builder-head">
                     <div>
                         <p class="link-builder-kicker">Share Builder</p>
-                        <h2 id="link-builder-title">Create a LinkPeek URL</h2>
+                        <h2 id="link-builder-title">生成分享链接</h2>
                     </div>
-                    <span class="link-builder-badge">Copy to clipboard</span>
+                    <span class="link-builder-badge">先检查，再分享</span>
                 </div>
                 <div class="link-builder-form">
                     <label class="link-builder-field" for="link-builder-input">
-                        <span>Source URL</span>
+                        <span>原始链接</span>
                         <input
                             id="link-builder-input"
                             type="url"
@@ -73,18 +73,18 @@
                         >
                     </label>
                     <label class="link-builder-field link-builder-style-field" for="link-builder-style">
-                        <span>Style</span>
+                        <span>标题风格</span>
                         <select id="link-builder-style" disabled></select>
                     </label>
                 </div>
                 <div class="link-builder-actions">
-                    <button id="link-builder-button" type="button" disabled>Copy LinkPeek URL</button>
+                    <button id="link-builder-button" type="button" disabled>复制分享链接</button>
                     <span id="link-builder-feedback" role="status" aria-live="polite">
-                        Paste any http/https URL to generate a share link.
+                        粘贴链接，先检查平台是否支持预览。
                     </span>
                 </div>
                 <div class="link-builder-output" id="link-builder-output">
-                    https://your-linkpeek-host/preview?url=...
+                    等待输入可用链接
                 </div>
             </section>
         </div>
@@ -321,6 +321,6 @@
 </button>
 
 <script src="/webjars/echarts/5.5.1/dist/echarts.min.js"></script>
-<script src="/dashboard/app.js"></script>
+<script type="module" src="/dashboard/app.js?v=20261126-enter"></script>
 </body>
 </html>

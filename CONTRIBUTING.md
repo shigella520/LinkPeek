@@ -2,8 +2,8 @@
 
 ## 开发流程
 
-1. 安装 Java 17。
-2. 在发起 Pull Request 之前运行 `./mvnw -B verify`。
+1. 安装 Java 17 和 Node.js 22 或更新版本。
+2. 在发起 Pull Request 之前运行 `./mvnw -B verify` 和 `node --test linkpeek-server/src/test/js/*.test.mjs extensions/linkpeek-chrome/test/*.test.mjs`。
 3. 平台相关行为应尽量收敛在各自的 provider 模块内，不要泄漏到 `linkpeek-server`。
 
 ## Pull Request 要求

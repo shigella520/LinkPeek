@@ -27,6 +27,17 @@ LinkPeek 是一个面向聊天分享场景的链接预览代理服务。它用 J
 - Webhook 通知：支持图片成功/失败、音频失败、AI Provider 失败/降级、数据抓取失败等内部事件通知。
 - 自动化入口：Raycast Script 和 iOS Shortcut 可以直接生成 LinkPeek 分享链接。
 
+## 最新交互与兼容性说明
+
+- Dashboard 先调用支持判定接口；不支持的平台或无法验证时，可明确选择复制原链接。复制分享链接不代表卡片已生成。
+- 分享总结后台分为“报告”和“定时任务与配置”。报告列表以查看、分享、更多为入口，详情优先展示安全渲染的 Markdown 正文，保留原文、素材和版本记录。
+- AI 文本解析忽略推理/工具内容，拒绝未完成、拒绝或截断响应。标题校验失败使用既有 fallback；已配置风格与提示词不变。生成标题缓存格式升级为 v2，首次访问可能重新生成；旧文件和历史记录不会批量清理。
+- 超过 24 小时、当前进程未在投递的 PENDING 通知显示“过期待处理”。这是只读提示，存储状态仍为 PENDING，不会自动补发；历史重发需要明确确认。完整的持久化队列恢复属于后续增量。
+- 文字模型调用日志保留状态、耗时和 request ID，移除原始请求/响应正文。图片与音频请求正文、图片 curl 示例改为 DEBUG 日志，仅在需要调试时开启。
+- 日志页可分别控制“自动刷新”和“跟随最新”；向上阅读时停止自动跳底。
+
+实施与验证记录见 [本轮迭代记录](docs/iteration-quality-workspace.md)。
+
 ## 核心能力
 
 ### 链接预览
@@ -72,6 +83,16 @@ LinkPeek 是一个面向聊天分享场景的链接预览代理服务。它用 J
 - `DATA_CRAWL_REQUEST_FAILED`
 
 Webhook 发送使用异步线程池，默认最多尝试 3 次。请求支持自定义 Header、Body 模板、HMAC-SHA256 签名、SSRF 防护、请求体保存、响应摘要和失败重试。
+
+向局域网 BlueBubbles 等服务发送通知时，在 Docker Compose 的 `environment` 下配置环境变量：
+
+```yaml
+WEBHOOK_ALLOWED_PRIVATE_HOSTS: "192.168.31.11"
+```
+
+多个主机用逗号分隔，例如 `192.168.31.11,192.168.31.12`。填写 URL 中的主机 IP 或域名，不含协议、端口、路径，不支持通配符或 CIDR。默认留空，禁止内网目标；白名单仅放行精确匹配的内网主机，回环、link-local、any-local 和 multicast 地址仍禁止访问。保存渠道和发送通知都会校验。
+
+仓库的 Compose 文件也支持从宿主环境或 `.env` 读取此变量，可直接执行 `WEBHOOK_ALLOWED_PRIVATE_HOSTS=192.168.31.11 docker compose up -d --build`。使用 `docker run` 时添加 `-e WEBHOOK_ALLOWED_PRIVATE_HOSTS=192.168.31.11`。修改配置后需重建容器，且容器必须能访问目标地址。
 
 ## 效果预览
 
@@ -292,10 +313,12 @@ AI Provider 按启用和排序 fallback，失败会记录事件并可触发自�
 | `STATS_EVENT_DEDUPE_MAX_ENTRIES` | `10000` | 统计事件去重缓存最大条目数 |
 | `STATS_ADMIN_PASSWORD` | 空 | 管理后台登录密码，配置后启用 `/admin` |
 | `DOWNLOAD_TIMEOUT` | `120s` | 上游内容和媒体请求超时时间 |
+| `ADMIN_COOKIE_SECURE` | `auto` | 后台登录 Cookie 的 `Secure` 属性；`auto` 在 `BASE_URL` 为 https 时开启，也可设为 `true`/`false` |
 | `VIDEO_MAX_QUALITY` | `480` | 预留视频能力的最高质量 |
 | `PREVIEW_WARMUP_ENABLED` | `true` | 是否启用普通浏览器打开后的异步元数据预热 |
 | `PREVIEW_WARMUP_THREADS` | `2` | 异步预热线程数 |
 | `PREVIEW_WARMUP_QUEUE_CAPACITY` | `64` | 异步预热队列上限 |
+| `WEBHOOK_ALLOWED_PRIVATE_HOSTS` | 空 | Webhook 内网主机白名单，逗号分隔的 IP 或域名，精确匹配 URL host |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
 | `LOG_FILE_PATH` | `/data/logs/linkpeek.log` | 服务滚动日志路径，也供后台日志页面读取 |
 | `LOG_FILE_MAX_SIZE` | `10MB` | 单个滚动日志文件上限 |
@@ -306,7 +329,7 @@ AI Provider 按启用和排序 fallback，失败会记录事件并可触发自�
 
 ## 管理后台
 
-访问 `/admin/login` 使用 `STATS_ADMIN_PASSWORD` 登录。后台会签发 HttpOnly Cookie，`GET /api/admin/session` 只用于页面刷新时确认登录状态。
+访问 `/admin/login` 使用 `STATS_ADMIN_PASSWORD` 登录。同一客户端连续输错 5 次后暂停登录 1 分钟，此后每次失败加倍，最长 15 分钟；反向代理后的客户端按 `X-Real-IP` / `X-Forwarded-For` 区分（仅信任来自内网或本机的代理）。后台会签发 HttpOnly Cookie，`GET /api/admin/session` 只用于页面刷新时确认登录状态。
 
 后台主要功能：
 

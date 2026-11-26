@@ -4,9 +4,11 @@ on:
   pull_request:
     branches:
       - main
+      - dev
   push:
     branches:
       - main
+      - dev
   workflow_dispatch:
 
 env:
@@ -23,6 +25,12 @@ jobs:
           distribution: temurin
           java-version: '17'
           cache: maven
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify JavaScript behavior
+        run: node --test linkpeek-server/src/test/js/*.test.mjs extensions/linkpeek-chrome/test/*.test.mjs
+
       - name: Verify
         run: ./mvnw -B verify
 

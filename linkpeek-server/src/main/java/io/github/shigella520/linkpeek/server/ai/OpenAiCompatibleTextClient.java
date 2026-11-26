@@ -14,13 +14,14 @@ import java.net.http.HttpClient;
 import java.net.http.HttpHeaders;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 @Component
 public class OpenAiCompatibleTextClient {
@@ -28,7 +29,6 @@ public class OpenAiCompatibleTextClient {
 
     public static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 45;
     private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(DEFAULT_REQUEST_TIMEOUT_SECONDS);
-    private static final int MAX_BODY_LOG_CHARS = 2_000;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -43,13 +43,18 @@ public class OpenAiCompatibleTextClient {
     }
 
     public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException, InterruptedException {
+        return generateTitleResult(provider, prompt, null);
+    }
+
+    /** {@code timeout} overrides the provider's own request timeout when non-null and positive. */
+    public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt, Duration timeout) throws IOException, InterruptedException {
         AiTextPrompt textPrompt = new AiTextPrompt(
                 prompt.titleFormatPrompt(),
                 prompt.styleMessage(),
                 prompt.rawContentMessage()
         );
-        TextResult result = generateTextResult(provider, textPrompt, "ai_title", null);
-        return new TitleResult(result.text(), result.durationMs());
+        TextResult result = generateTextResult(provider, textPrompt, "ai_title", timeout);
+        return new TitleResult(result.text(), result.durationMs(), result.usage());
     }
 
     public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
@@ -71,15 +76,14 @@ public class OpenAiCompatibleTextClient {
                 ? requestTimeout(provider)
                 : timeout;
         log.info(
-                "{}_request_start providerId={} apiKind={} model={} baseUrl={} timeoutMs={} requestBytes={} requestBody={}",
+                "{}_request_start providerId={} apiKind={} model={} baseUrl={} timeoutMs={} requestBytes={}",
                 operation,
                 provider.getId(),
                 apiKind,
                 provider.getModel(),
                 endpointUri,
                 requestTimeout.toMillis(),
-                body.length,
-                bodySnippet(body)
+                body.length
         );
 
         HttpRequest.Builder builder = HttpRequest.newBuilder(endpointUri)
@@ -94,10 +98,9 @@ public class OpenAiCompatibleTextClient {
         long startedAt = System.nanoTime();
         HttpResponse<byte[]> response = httpClient.send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
         long durationMs = (System.nanoTime() - startedAt) / 1_000_000;
-        if (response.statusCode() >= 400) {
-            String responseBody = bodySnippet(response.body());
+        if (response.statusCode() < 200 || response.statusCode() >= 300) {
             log.warn(
-                    "{}_http_error providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBody={}",
+                    "{}_http_error providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={}",
                     operation,
                     provider.getId(),
                     apiKind,
@@ -105,15 +108,15 @@ public class OpenAiCompatibleTextClient {
                     endpointUri,
                     response.statusCode(),
                     durationMs,
-                    requestId(response.headers()),
-                    responseBody
+                    requestId(response.headers())
             );
-            throw new IOException("AI provider returned HTTP " + response.statusCode() + " body=" + responseBody);
+            throw new IOException("AI provider returned HTTP " + response.statusCode());
         }
 
-        String responseBody = bodySnippet(response.body());
+        JsonNode payload = objectMapper.readTree(response.body());
+        TokenUsage usage = TokenUsage.from(payload.path("usage"));
         log.info(
-                "{}_request_success providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBytes={} responseBody={}",
+                "{}_request_success providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBytes={} inputTokens={} outputTokens={}",
                 operation,
                 provider.getId(),
                 apiKind,
@@ -123,14 +126,14 @@ public class OpenAiCompatibleTextClient {
                 durationMs,
                 requestId(response.headers()),
                 response.body().length,
-                responseBody
+                usage.inputTokens(),
+                usage.outputTokens()
         );
-        JsonNode payload = objectMapper.readTree(response.body());
         Optional<String> title = switch (apiKind) {
             case RESPONSES -> extractResponsesText(payload);
             case CHAT_COMPLETIONS -> extractChatText(payload);
         };
-        return new TextResult(title, durationMs);
+        return new TextResult(title, durationMs, usage);
     }
 
     private byte[] responsesBody(AiProviderRecord provider, AiTextPrompt prompt) throws IOException {
@@ -176,47 +179,113 @@ public class OpenAiCompatibleTextClient {
         return message;
     }
 
-    private Duration requestTimeout(AiProviderRecord provider) {
+    public Duration requestTimeout(AiProviderRecord provider) {
         int timeoutSeconds = provider.getRequestTimeoutSeconds();
         return timeoutSeconds > 0 ? Duration.ofSeconds(timeoutSeconds) : DEFAULT_REQUEST_TIMEOUT;
     }
 
-    private Optional<String> extractResponsesText(JsonNode payload) {
-        String outputText = payload.path("output_text").asText("");
-        if (StringUtils.hasText(outputText)) {
-            return Optional.of(outputText);
-        }
+    // Gateways differ in which optional fields they echo back. Only reject output that is
+    // positively identified as unfinished, refused, or non-final (reasoning, tool calls).
+    private static final Set<String> RESPONSES_FINAL_PART_TYPES = Set.of("output_text", "text");
+    private static final Set<String> RESPONSES_UNFINISHED_STATUSES = Set.of("incomplete", "failed", "cancelled", "in_progress", "queued");
+    private static final Set<String> CHAT_UNUSABLE_FINISH_REASONS = Set.of(
+            "length", "max_tokens", "content_filter", "tool_calls", "function_call", "safety", "recitation", "error");
 
-        JsonNode output = payload.path("output");
-        if (!output.isArray()) {
+    private Optional<String> extractResponsesText(JsonNode payload) {
+        if (isUnfinishedStatus(payload.path("status")) || isPresent(payload.path("error"))
+                || isPresent(payload.path("incomplete_details"))) {
             return Optional.empty();
         }
-        StringBuilder text = new StringBuilder();
-        for (JsonNode item : output) {
-            JsonNode content = item.path("content");
-            if (!content.isArray()) {
-                continue;
-            }
-            for (JsonNode contentItem : content) {
-                String value = contentItem.path("text").asText("");
-                if (StringUtils.hasText(value)) {
-                    if (text.length() > 0) {
-                        text.append('\n');
+        JsonNode output = payload.path("output");
+        boolean typedNonFinalOutput = false;
+        String finalText = null;
+        if (output.isArray()) {
+            for (JsonNode item : output) {
+                String type = item.path("type").asText("message");
+                if (!"message".equals(type)) {
+                    typedNonFinalOutput = true;
+                    continue;
+                }
+                if (!"assistant".equals(item.path("role").asText("assistant"))) {
+                    continue;
+                }
+                if (isUnfinishedStatus(item.path("status"))) {
+                    return Optional.empty();
+                }
+                JsonNode content = item.path("content");
+                List<String> parts = new ArrayList<>();
+                if (content.isTextual() && StringUtils.hasText(content.asText())) {
+                    parts.add(content.asText());
+                } else if (content.isArray()) {
+                    for (JsonNode part : content) {
+                        String partType = part.path("type").asText("text");
+                        if ("refusal".equals(partType)) {
+                            return Optional.empty();
+                        }
+                        if (RESPONSES_FINAL_PART_TYPES.contains(partType)
+                                && part.path("text").isTextual() && StringUtils.hasText(part.path("text").asText())) {
+                            parts.add(part.path("text").asText());
+                        } else if (!RESPONSES_FINAL_PART_TYPES.contains(partType)) {
+                            typedNonFinalOutput = true;
+                        }
                     }
-                    text.append(value);
+                }
+                if (!parts.isEmpty()) {
+                    finalText = String.join("\n", parts);
                 }
             }
         }
-        return text.length() == 0 ? Optional.empty() : Optional.of(text.toString());
+        if (finalText != null) {
+            return Optional.of(finalText);
+        }
+        // The top-level convenience field may concatenate reasoning on some gateways, so only
+        // trust it when the typed output does not contain anything other than final messages.
+        JsonNode text = payload.path("output_text");
+        return !typedNonFinalOutput && text.isTextual() && StringUtils.hasText(text.asText())
+                ? Optional.of(text.asText()) : Optional.empty();
+    }
+
+    private boolean isUnfinishedStatus(JsonNode status) {
+        return status.isTextual() && RESPONSES_UNFINISHED_STATUSES.contains(status.asText().toLowerCase(Locale.ROOT));
+    }
+
+    private boolean isPresent(JsonNode node) {
+        if (node.isMissingNode() || node.isNull()) {
+            return false;
+        }
+        if (node.isTextual()) {
+            return StringUtils.hasText(node.asText());
+        }
+        return !node.isContainerNode() || !node.isEmpty();
     }
 
     private Optional<String> extractChatText(JsonNode payload) {
         JsonNode choices = payload.path("choices");
-        if (!choices.isArray() || choices.isEmpty()) {
+        if (!choices.isArray() || choices.isEmpty() || isPresent(payload.path("error"))) {
             return Optional.empty();
         }
-        String content = choices.get(0).path("message").path("content").asText("");
-        return StringUtils.hasText(content) ? Optional.of(content) : Optional.empty();
+        JsonNode choice = choices.get(0);
+        String finish = choice.path("finish_reason").asText("").toLowerCase(Locale.ROOT);
+        JsonNode message = choice.path("message");
+        if (CHAT_UNUSABLE_FINISH_REASONS.contains(finish) || isPresent(message.path("refusal"))
+                || !"assistant".equals(message.path("role").asText("assistant"))) {
+            return Optional.empty();
+        }
+        JsonNode content = message.path("content");
+        if (content.isTextual()) {
+            return StringUtils.hasText(content.asText()) ? Optional.of(content.asText()) : Optional.empty();
+        }
+        if (!content.isArray()) {
+            return Optional.empty();
+        }
+        List<String> parts = new ArrayList<>();
+        for (JsonNode part : content) {
+            if (RESPONSES_FINAL_PART_TYPES.contains(part.path("type").asText("text"))
+                    && part.path("text").isTextual() && StringUtils.hasText(part.path("text").asText())) {
+                parts.add(part.path("text").asText());
+            }
+        }
+        return parts.isEmpty() ? Optional.empty() : Optional.of(String.join("\n", parts));
     }
 
     private String requestId(HttpHeaders headers) {
@@ -227,24 +296,53 @@ public class OpenAiCompatibleTextClient {
                 .orElse("n/a");
     }
 
-    private String bodySnippet(byte[] body) {
-        if (body == null || body.length == 0) {
-            return "";
+    public record TitleResult(Optional<String> title, long durationMs, TokenUsage usage) {
+        public TitleResult(Optional<String> title, long durationMs) {
+            this(title, durationMs, TokenUsage.UNKNOWN);
         }
-        String text = new String(body, StandardCharsets.UTF_8)
-                .replace('\r', ' ')
-                .replace('\n', ' ')
-                .replaceAll("\\s+", " ")
-                .strip();
-        if (text.length() <= MAX_BODY_LOG_CHARS) {
-            return text;
-        }
-        return text.substring(0, MAX_BODY_LOG_CHARS).stripTrailing() + "...";
     }
 
-    public record TitleResult(Optional<String> title, long durationMs) {
+    public record TextResult(Optional<String> text, long durationMs, TokenUsage usage) {
+        public TextResult(Optional<String> text, long durationMs) {
+            this(text, durationMs, TokenUsage.UNKNOWN);
+        }
     }
 
-    public record TextResult(Optional<String> text, long durationMs) {
+    /**
+     * Token counts reported by the provider; {@code null} when the gateway does not report them.
+     * Chat Completions uses prompt/completion_tokens, Responses uses input/output_tokens.
+     */
+    public record TokenUsage(Long inputTokens, Long outputTokens) {
+        public static final TokenUsage UNKNOWN = new TokenUsage(null, null);
+
+        static TokenUsage from(JsonNode usage) {
+            if (usage == null || !usage.isObject()) {
+                return UNKNOWN;
+            }
+            return new TokenUsage(count(usage, "input_tokens", "prompt_tokens"), count(usage, "output_tokens", "completion_tokens"));
+        }
+
+        private static Long count(JsonNode usage, String primary, String fallback) {
+            JsonNode value = usage.hasNonNull(primary) ? usage.get(primary) : usage.path(fallback);
+            return value.canConvertToLong() && value.asLong() >= 0 ? value.asLong() : null;
+        }
+
+        public TokenUsage plus(TokenUsage other) {
+            if (other == null) {
+                return this;
+            }
+            return new TokenUsage(sum(inputTokens, other.inputTokens), sum(outputTokens, other.outputTokens));
+        }
+
+        private static Long sum(Long a, Long b) {
+            // Plain ifs: a conditional mixing Long and long would unbox null operands.
+            if (a == null) {
+                return b;
+            }
+            if (b == null) {
+                return a;
+            }
+            return a + b;
+        }
     }
 }

@@ -19,6 +19,8 @@
             ai_provider_names,
             ai_duration_ms,
             crawl_duration_ms,
+            ai_input_tokens,
+            ai_output_tokens,
             duration_ms,
             client_type,
             error_code
@@ -38,6 +40,8 @@
             #{aiProviderNames},
             #{aiDurationMs},
             #{crawlDurationMs},
+            #{aiInputTokens},
+            #{aiOutputTokens},
             #{durationMs},
             #{clientType},
             #{errorCode}

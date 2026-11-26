@@ -123,7 +123,7 @@ class OpenAiCompatibleTextClientTest {
     }
 
     @Test
-    void includesResponseBodySnippetWhenProviderReturnsHttpError() {
+    void excludesResponseBodyWhenProviderReturnsHttpError() {
         CapturingHttpClient httpClient = new CapturingHttpClient(503, """
                 {"error":{"message":"upstream overloaded","type":"service_unavailable"}}
                 """);
@@ -138,7 +138,125 @@ class OpenAiCompatibleTextClientTest {
         );
 
         assertTrue(exception.getMessage().contains("HTTP 503"));
-        assertTrue(exception.getMessage().contains("upstream overloaded"));
+        assertTrue(!exception.getMessage().contains("upstream overloaded"));
+    }
+
+    @Test
+    void extractsOnlyFinalAssistantTextAndNeverReasoning() throws Exception {
+        String response = """
+                {"status":"completed","output":[
+                  {"type":"reasoning","content":[{"type":"reasoning_text","text":"synthetic internal notes"}]},
+                  {"type":"function_call","content":[{"type":"output_text","text":"tool output"}]},
+                  {"type":"message","role":"user","content":[{"type":"output_text","text":"user input"}]},
+                  {"type":"message","role":"assistant","status":"completed","content":[{"type":"output_text","text":"最终标题"}]}
+                ]}
+                """;
+        assertEquals(Optional.of("最终标题"), parseResponse(response, "RESPONSES"));
+    }
+
+    @Test
+    void rejectsIncompleteRefusedOrReasoningOnlyResponses() throws Exception {
+        for (String response : List.of(
+                "{\"status\":\"incomplete\",\"output_text\":\"截断结果\"}",
+                "{\"status\":\"failed\",\"output_text\":\"错误结果\"}",
+                "{\"incomplete_details\":{\"reason\":\"max_output_tokens\"},\"output_text\":\"截断结果\"}",
+                "{\"output\":[{\"type\":\"reasoning\",\"content\":[{\"type\":\"reasoning_text\",\"text\":\"notes\"}]}]}",
+                "{\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{\"type\":\"refusal\",\"refusal\":\"no\"}]}]}",
+                // Convenience text is not trusted once typed output shows reasoning, since some gateways concatenate it.
+                "{\"output\":[{\"type\":\"reasoning\",\"summary\":[]}],\"output_text\":\"notes plus title\"}",
+                "{}")) {
+            assertEquals(Optional.empty(), parseResponse(response, "RESPONSES"));
+        }
+    }
+
+    @Test
+    void acceptsResponsesShapesReturnedByCompatibleGateways() throws Exception {
+        for (String response : List.of(
+                // Content parts without a type field.
+                "{\"output\":[{\"content\":[{\"text\":\"网关标题\"}]}]}",
+                // Plain "text" part type and a status field echoed in a different case.
+                "{\"status\":\"COMPLETED\",\"output\":[{\"type\":\"message\",\"content\":[{\"type\":\"text\",\"text\":\"网关标题\"}]}]}",
+                // Content as a bare string.
+                "{\"output\":[{\"type\":\"message\",\"role\":\"assistant\",\"content\":\"网关标题\"}]}",
+                // Empty typed output with the convenience field filled.
+                "{\"output\":[],\"output_text\":\"网关标题\"}",
+                // Null or empty placeholders for error fields.
+                "{\"error\":null,\"incomplete_details\":{},\"output_text\":\"网关标题\"}")) {
+            assertEquals(Optional.of("网关标题"), parseResponse(response, "RESPONSES"), response);
+        }
+    }
+
+    @Test
+    void acceptsChatShapesReturnedByCompatibleGateways() throws Exception {
+        for (String finish : List.of("stop", "STOP", "eos", "end_turn", "")) {
+            assertEquals(Optional.of("网关标题"), parseResponse("{\"choices\":[{\"finish_reason\":\"" + finish
+                    + "\",\"message\":{\"role\":\"assistant\",\"content\":\"网关标题\"}}]}", "CHAT_COMPLETIONS"), finish);
+        }
+        assertEquals(Optional.of("网关标题"), parseResponse(
+                "{\"choices\":[{\"message\":{\"content\":[{\"type\":\"text\",\"text\":\"网关标题\"}]}}]}", "CHAT_COMPLETIONS"));
+        // DeepSeek-style separate reasoning field must not leak into the title.
+        assertEquals(Optional.of("网关标题"), parseResponse(
+                "{\"choices\":[{\"message\":{\"reasoning_content\":\"notes\",\"content\":\"网关标题\",\"refusal\":null}}]}",
+                "CHAT_COMPLETIONS"));
+    }
+
+    @Test
+    void acceptsConvenienceTextAndUsesLastAssistantMessage() throws Exception {
+        assertEquals(Optional.of("标题"), parseResponse("{\"output_text\":\"标题\"}", "RESPONSES"));
+        assertEquals(Optional.of("最终回答"), parseResponse("""
+                {"output":[
+                  {"type":"message","role":"assistant","content":[{"type":"output_text","text":"前一条回答"}]},
+                  {"type":"message","role":"assistant","content":[{"type":"output_text","text":"最终回答"}]}
+                ]}
+                """, "RESPONSES"));
+    }
+
+    @Test
+    void rejectsTruncatedAndFilteredChatCompletions() throws Exception {
+        for (String finish : List.of("length", "content_filter", "tool_calls")) {
+            assertEquals(Optional.empty(), parseResponse("{\"choices\":[{\"finish_reason\":\"" + finish
+                    + "\",\"message\":{\"content\":\"不完整回答\"}}]}", "CHAT_COMPLETIONS"));
+        }
+    }
+
+    @Test
+    void reportsTokenUsageForBothApiFormatsAndToleratesMissingUsage() throws Exception {
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(120L, 18L), usage(
+                "{\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":18,\"total_tokens\":138},\"choices\":[{\"message\":{\"content\":\"标题\"}}]}",
+                "CHAT_COMPLETIONS"));
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(300L, 42L), usage(
+                "{\"usage\":{\"input_tokens\":300,\"output_tokens\":42},\"output_text\":\"标题\"}", "RESPONSES"));
+        assertEquals(OpenAiCompatibleTextClient.TokenUsage.UNKNOWN, usage("{\"output_text\":\"标题\"}", "RESPONSES"));
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(null, 7L), usage(
+                "{\"usage\":{\"prompt_tokens\":\"n/a\",\"completion_tokens\":7},\"choices\":[{\"message\":{\"content\":\"标题\"}}]}",
+                "CHAT_COMPLETIONS"));
+    }
+
+    @Test
+    void addingUsageKeepsUnknownCountsUnknown() {
+        OpenAiCompatibleTextClient.TokenUsage unknown = OpenAiCompatibleTextClient.TokenUsage.UNKNOWN;
+        assertEquals(unknown, unknown.plus(unknown));
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(5L, null), unknown.plus(new OpenAiCompatibleTextClient.TokenUsage(5L, null)));
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(8L, 2L),
+                new OpenAiCompatibleTextClient.TokenUsage(5L, 2L).plus(new OpenAiCompatibleTextClient.TokenUsage(3L, null)));
+    }
+
+    @Test
+    void explicitTimeoutOverridesProviderTimeout() throws Exception {
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "{\"output_text\":\"标题\"}");
+        new OpenAiCompatibleTextClient(httpClient, objectMapper).generateTitleResult(
+                provider("https://api.example.com/v1", "RESPONSES", "model", "", ""), prompt(), Duration.ofSeconds(7));
+        assertEquals(Optional.of(Duration.ofSeconds(7)), httpClient.lastRequestTimeout);
+    }
+
+    private OpenAiCompatibleTextClient.TokenUsage usage(String body, String apiKind) throws Exception {
+        return new OpenAiCompatibleTextClient(new CapturingHttpClient(200, body), objectMapper)
+                .generateTitleResult(provider("https://api.example.com/v1", apiKind, "model", "", ""), prompt()).usage();
+    }
+
+    private Optional<String> parseResponse(String body, String apiKind) throws Exception {
+        return new OpenAiCompatibleTextClient(new CapturingHttpClient(200, body), objectMapper)
+                .generateTitle(provider("https://api.example.com/v1", apiKind, "model", "", ""), prompt());
     }
 
     private AiProviderRecord provider(String baseUrl, String apiKind, String model, String effort, String apiKey) {

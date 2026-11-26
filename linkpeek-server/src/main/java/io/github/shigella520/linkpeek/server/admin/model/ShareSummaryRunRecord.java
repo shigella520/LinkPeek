@@ -1,6 +1,17 @@
 package io.github.shigella520.linkpeek.server.admin.model;
 
 public class ShareSummaryRunRecord {
+    private Long publishedRunId;
+    private String regenerationStatus;
+    private Long regenerationRunId;
+
+    public Long getPublishedRunId() { return publishedRunId; }
+    public void setPublishedRunId(Long value) { publishedRunId = value; }
+    public String getRegenerationStatus() { return regenerationStatus; }
+    public void setRegenerationStatus(String value) { regenerationStatus = value; }
+    public Long getRegenerationRunId() { return regenerationRunId; }
+    public void setRegenerationRunId(Long value) { regenerationRunId = value; }
+
     private Long id;
     private long taskId;
     private String taskName;
@@ -15,7 +26,19 @@ public class ShareSummaryRunRecord {
     private String promptSnapshot;
     private String aiProviderNames;
     private long aiDurationMs;
+    private Long aiInputTokens;
+    private Long aiOutputTokens;
+
+    public Long getAiInputTokens() { return aiInputTokens; }
+    public void setAiInputTokens(Long aiInputTokens) { this.aiInputTokens = aiInputTokens; }
+    public Long getAiOutputTokens() { return aiOutputTokens; }
+    public void setAiOutputTokens(Long aiOutputTokens) { this.aiOutputTokens = aiOutputTokens; }
     private String report;
+    private String reportHtml;
+
+    @com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+    public String getReportHtml() { return reportHtml; }
+    public void setReportHtml(String value) { reportHtml = value; }
     private String errorMessage;
     private long startedAt;
     private Long finishedAt;

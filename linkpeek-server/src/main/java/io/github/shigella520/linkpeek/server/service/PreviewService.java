@@ -7,6 +7,7 @@ import io.github.shigella520.linkpeek.core.model.PreviewMetadata;
 import io.github.shigella520.linkpeek.core.provider.PreviewProvider;
 import io.github.shigella520.linkpeek.core.util.UrlNormalizer;
 import io.github.shigella520.linkpeek.server.ai.AiTitleService;
+import io.github.shigella520.linkpeek.server.ai.OpenAiCompatibleTextClient;
 import io.github.shigella520.linkpeek.server.cache.DiskCacheManager;
 import org.springframework.stereotype.Service;
 
@@ -16,8 +17,6 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.regex.Pattern;
 
 @Service
@@ -27,7 +26,8 @@ public class PreviewService {
     private final PreviewProviderRegistry providerRegistry;
     private final DiskCacheManager cacheManager;
     private final AiTitleService aiTitleService;
-    private final ConcurrentHashMap<String, ReentrantLock> metadataLocks = new ConcurrentHashMap<>();
+    private final KeyedLocks metadataLocks = new KeyedLocks();
+    private final KeyedLocks thumbnailLocks = new KeyedLocks();
 
     public PreviewService(
             PreviewProviderRegistry providerRegistry,
@@ -91,9 +91,7 @@ public class PreviewService {
             );
         }
 
-        ReentrantLock lock = metadataLockFor(styledPreviewKey);
-        lock.lock();
-        try {
+        try (KeyedLocks.Handle ignored = metadataLocks.lock(styledPreviewKey.value())) {
             cachedStyled = cacheManager.getMetadata(styledPreviewKey);
             if (cachedStyled.isPresent()) {
                 markFreestyleSelectionSucceededIfNeeded(requestedStyle, resolvedPreview, stylePrompt);
@@ -133,14 +131,13 @@ public class PreviewService {
                         stylePrompt.style(),
                         styledResult.providerNames(),
                         styledResult.durationMs(),
-                        baseResult.crawlDurationMs()
+                        baseResult.crawlDurationMs(),
+                        styledResult.usage()
                 );
             }
             return baseResult.withAiStats(true, false)
                     .withStyleStats(requestedStyle, stylePrompt.style())
-                    .withAiAttemptStats(styledResult.providerNames(), styledResult.durationMs());
-        } finally {
-            lock.unlock();
+                    .withAiAttemptStats(styledResult.providerNames(), styledResult.durationMs(), styledResult.usage());
         }
     }
 
@@ -160,9 +157,7 @@ public class PreviewService {
             return new PreviewLoadResult(resolvedPreview, cached.get(), true);
         }
 
-        ReentrantLock lock = metadataLockFor(resolvedPreview.previewKey());
-        lock.lock();
-        try {
+        try (KeyedLocks.Handle ignored = metadataLocks.lock(resolvedPreview.previewKey().value())) {
             cached = cacheManager.getMetadata(resolvedPreview.previewKey());
             if (cached.isPresent()) {
                 return new PreviewLoadResult(resolvedPreview, cached.get(), true);
@@ -173,13 +168,11 @@ public class PreviewService {
             long crawlDurationMs = elapsedMillis(startedAt);
             cacheManager.storeMetadata(resolvedPreview.previewKey(), metadata);
             return new PreviewLoadResult(resolvedPreview, metadata, false).withCrawlDuration(crawlDurationMs);
-        } finally {
-            lock.unlock();
         }
     }
 
-    private ReentrantLock metadataLockFor(PreviewKey previewKey) {
-        return metadataLocks.computeIfAbsent(previewKey.value(), ignored -> new ReentrantLock());
+    int activeLockCount() {
+        return metadataLocks.size() + thumbnailLocks.size();
     }
 
     public Optional<PreviewLoadResult> getCachedPreview(ResolvedPreview resolvedPreview) {
@@ -214,16 +207,14 @@ public class PreviewService {
             return new ThumbnailResult(cached.get(), true, cacheManager.getMetadata(previewKey).orElse(null));
         }
 
-        ReentrantLock lock = cacheManager.lockFor(previewKey, normalizedVersion);
-        lock.lock();
-        try {
+        String lockKey = normalizedVersion == null || normalizedVersion.isBlank()
+                ? previewKey.value() : previewKey.value() + ":" + normalizedVersion.strip();
+        try (KeyedLocks.Handle ignored = thumbnailLocks.lock(lockKey)) {
             Optional<Path> lockedCached = cacheManager.getThumbnailPath(previewKey, normalizedVersion);
             if (lockedCached.isPresent()) {
                 return new ThumbnailResult(lockedCached.get(), true, cacheManager.getMetadata(previewKey).orElse(null));
             }
             return downloadThumbnail(previewKey, normalizedVersion);
-        } finally {
-            lock.unlock();
         }
     }
 
@@ -273,14 +264,25 @@ public class PreviewService {
             String actualStyle,
             List<String> aiProviderNames,
             long aiDurationMs,
-            long crawlDurationMs
+            long crawlDurationMs,
+            OpenAiCompatibleTextClient.TokenUsage aiUsage
     ) {
+        public PreviewLoadResult(
+                ResolvedPreview resolvedPreview, PreviewMetadata metadata, PreviewKey previewKey, boolean cacheHit,
+                boolean aiRequested, boolean aiSucceeded, String requestedStyle, String actualStyle,
+                List<String> aiProviderNames, long aiDurationMs, long crawlDurationMs
+        ) {
+            this(resolvedPreview, metadata, previewKey, cacheHit, aiRequested, aiSucceeded, requestedStyle, actualStyle,
+                    aiProviderNames, aiDurationMs, crawlDurationMs, OpenAiCompatibleTextClient.TokenUsage.UNKNOWN);
+        }
+
         public PreviewLoadResult(ResolvedPreview resolvedPreview, PreviewMetadata metadata, boolean cacheHit) {
             this(resolvedPreview, metadata, resolvedPreview.previewKey(), cacheHit, false, false, null, null, List.of(), 0, 0);
         }
 
         public PreviewLoadResult {
             aiProviderNames = aiProviderNames == null ? List.of() : List.copyOf(aiProviderNames);
+            aiUsage = aiUsage == null ? OpenAiCompatibleTextClient.TokenUsage.UNKNOWN : aiUsage;
         }
 
         public PreviewLoadResult withAiStats(boolean aiRequested, boolean aiSucceeded) {
@@ -295,7 +297,8 @@ public class PreviewService {
                     actualStyle,
                     aiProviderNames,
                     aiDurationMs,
-                    crawlDurationMs
+                    crawlDurationMs,
+                    aiUsage
             );
         }
 
@@ -311,11 +314,13 @@ public class PreviewService {
                     actualStyle,
                     aiProviderNames,
                     aiDurationMs,
-                    crawlDurationMs
+                    crawlDurationMs,
+                    aiUsage
             );
         }
 
-        public PreviewLoadResult withAiAttemptStats(List<String> providerNames, long durationMs) {
+        public PreviewLoadResult withAiAttemptStats(List<String> providerNames, long durationMs,
+                OpenAiCompatibleTextClient.TokenUsage usage) {
             return new PreviewLoadResult(
                     resolvedPreview,
                     metadata,
@@ -327,7 +332,8 @@ public class PreviewService {
                     actualStyle,
                     providerNames,
                     durationMs,
-                    crawlDurationMs
+                    crawlDurationMs,
+                    usage
             );
         }
 
@@ -343,7 +349,8 @@ public class PreviewService {
                     actualStyle,
                     aiProviderNames,
                     aiDurationMs,
-                    durationMs
+                    durationMs,
+                    aiUsage
             );
         }
     }

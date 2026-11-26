@@ -42,6 +42,8 @@
             COALESCE(event.ai_provider_names, '') AS ai_provider_names,
             event.ai_duration_ms,
             event.crawl_duration_ms,
+            event.ai_input_tokens,
+            event.ai_output_tokens,
             event.duration_ms,
             event.cache_hit
         FROM stats_event event

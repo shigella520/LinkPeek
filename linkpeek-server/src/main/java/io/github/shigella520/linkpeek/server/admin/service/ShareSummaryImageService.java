@@ -4,7 +4,6 @@ import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageConfig
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageProviderType;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryImageStatus;
-import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryPeriodType;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunRecord;
 import io.github.shigella520.linkpeek.server.admin.model.ShareSummaryRunStatus;
 import io.github.shigella520.linkpeek.server.admin.persistence.ShareSummaryImageMapper;
@@ -17,8 +16,6 @@ import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.util.StringUtils;
 
 import javax.imageio.ImageIO;
@@ -34,15 +31,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.WeekFields;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -59,10 +51,8 @@ public class ShareSummaryImageService {
     private static final int MAX_IMAGE_REDIRECTS = 5;
     private static final int DEFAULT_REQUEST_TIMEOUT_SECONDS = 300;
     private static final int MAX_REQUEST_TIMEOUT_SECONDS = 1800;
-    private static final long STALE_ACTIVE_BUFFER_MILLIS = 60_000L;
     private static final int DEFAULT_WIDTH = 1200;
     private static final int DEFAULT_HEIGHT = 630;
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
     private static final Set<String> OPENAI_IMAGE_SIZES = Set.of("auto", "1024x1024", "1536x1024", "1024x1536");
     private static final String DEFAULT_STYLE_PROMPT = "现代数据报告封面，清晰、有层次，科技感但不过度炫光，适合产品运营和内容分析场景，画面干净，色彩专业。";
 
@@ -71,9 +61,10 @@ public class ShareSummaryImageService {
     private final OpenAiCompatibleImageClient imageClient;
     private final HttpClient httpClient;
     private final ExecutorService executor;
-    private final NotificationService notificationService;
-    private final LinkPeekProperties properties;
+    private final NotificationEventPublisher notificationService;
     private final Clock clock;
+    private final ShareSummaryAssetStorage storage;
+    private final ShareSummaryReportTitles titles;
     private final SecureRandom secureRandom = new SecureRandom();
 
     public ShareSummaryImageService(
@@ -82,7 +73,7 @@ public class ShareSummaryImageService {
             OpenAiCompatibleImageClient imageClient,
             @Qualifier("shareSummaryImageHttpClient") HttpClient httpClient,
             @Qualifier("shareSummaryImageExecutor") ExecutorService executor,
-            NotificationService notificationService,
+            NotificationEventPublisher notificationService,
             LinkPeekProperties properties,
             Clock clock
     ) {
@@ -92,8 +83,9 @@ public class ShareSummaryImageService {
         this.httpClient = httpClient;
         this.executor = executor;
         this.notificationService = notificationService;
-        this.properties = properties;
         this.clock = clock;
+        this.storage = new ShareSummaryAssetStorage(properties, "image", log);
+        this.titles = new ShareSummaryReportTitles(clock);
     }
 
     public ConfigResponse config() {
@@ -120,12 +112,28 @@ public class ShareSummaryImageService {
         return ConfigResponse.fromRecord(normalized);
     }
 
+    private ShareSummaryVersionStore versions;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setVersionStore(ShareSummaryVersionStore versions) { this.versions = versions; }
+
+    public ShareSummaryImageConfigRecord readyConfig() {
+        ShareSummaryImageConfigRecord config = configRecord();
+        validateReadyConfig(config);
+        return config;
+    }
+
     public ImageResponse generateImage(long runId, boolean regenerate) {
+        if (versions != null) return versions.assetOperation(runId, id -> generateImageForVersion(id, regenerate));
+        return generateImageForVersion(runId, regenerate);
+    }
+
+    ImageResponse generateImageForVersion(long runId, boolean regenerate) {
         ShareSummaryRunRecord run = existingRun(runId);
         if (!ShareSummaryRunStatus.SUCCESS.name().equals(run.getStatus())) {
             throw new IllegalArgumentException("Only successful share summary runs can generate images.");
         }
-        ShareSummaryImageConfigRecord config = configRecord();
+        ShareSummaryImageConfigRecord config = versions == null ? configRecord() : versions.imageConfig(runId, configRecord());
         validateReadyConfig(config);
         markStaleActiveImagesFailed();
         ShareSummaryImageRecord active = imageMapper.selectActiveImage(runId);
@@ -141,7 +149,7 @@ public class ShareSummaryImageService {
 
         ShareSummaryImageRecord image = createPendingImage(run, config);
         imageMapper.insertImage(image);
-        submitImageGeneration(image.getId());
+        ShareSummaryVersionStore.afterCommit(() -> submitImageGeneration(image.getId()));
         return ImageResponse.fromRecord(imageMapper.selectImage(image.getId()));
     }
 
@@ -161,6 +169,7 @@ public class ShareSummaryImageService {
     }
 
     public List<ImageResponse> images(long runId) {
+        if (versions != null) runId = versions.displayRunId(runId);
         existingRun(runId);
         return imageMapper.selectImagesForRun(runId).stream()
                 .map(ImageResponse::fromRecord)
@@ -174,15 +183,15 @@ public class ShareSummaryImageService {
         }
         List<ShareSummaryImageRecord> images = imageMapper.selectImagesForRun(runId);
         int deleted = imageMapper.deleteImagesForRun(runId);
-        deleteStoredImagesAfterCommit(images);
+        storage.deleteAfterCommit(images, ShareSummaryImageRecord::getId, ShareSummaryImageRecord::getStorageKey);
         return deleted;
     }
 
     public int markStaleActiveImagesFailed() {
         ShareSummaryImageConfigRecord config = configRecord();
         long now = now();
-        long threshold = now - staleActiveTimeoutMillis(config.getRequestTimeoutSeconds());
-        int updated = imageMapper.markStaleActiveImagesFailed(threshold, now, "GENERATION timeout exceeded.");
+        long threshold = ShareSummaryAssetLifecycle.staleActiveThreshold(now, config.getRequestTimeoutSeconds());
+        int updated = imageMapper.markStaleActiveImagesFailed(threshold, now, ShareSummaryAssetLifecycle.STALE_ACTIVE_ERROR_MESSAGE);
         if (updated > 0) {
             log.warn("share_summary_image_stale_active_marked_failed count={} threshold={}", updated, threshold);
         }
@@ -212,10 +221,8 @@ public class ShareSummaryImageService {
         if (StringUtils.hasText(ext) && StringUtils.hasText(expectedExt) && !expectedExt.equalsIgnoreCase(ext)) {
             throw new IllegalArgumentException("Share summary image extension does not match.");
         }
-        Path path = storageRoot().resolve(image.getStorageKey()).normalize();
-        if (!path.startsWith(storageRoot()) || !Files.isRegularFile(path)) {
-            throw new IllegalArgumentException("Share summary image file was not found.");
-        }
+        Path path = storage.existingFile(image.getStorageKey())
+                .orElseThrow(() -> new IllegalArgumentException("Share summary image file was not found."));
         MediaType mediaType = "jpg".equalsIgnoreCase(image.getOutputFormat()) || "jpeg".equalsIgnoreCase(image.getOutputFormat())
                 ? MediaType.IMAGE_JPEG
                 : MediaType.IMAGE_PNG;
@@ -224,14 +231,24 @@ public class ShareSummaryImageService {
 
     public PublicReport publicReport(String publicToken) {
         ShareSummaryImageRecord image = existingPublicImage(publicToken);
-        ShareSummaryRunRecord run = existingRun(image.getRunId());
+        long runId = image.getRunId();
+        if (versions != null) {
+            long rootId = versions.rootRunId(runId);
+            long publishedId = versions.publishedRunId(rootId);
+            if (versions.latest(rootId) != null) {
+                image = imageMapper.selectLatestSuccessfulImage(publishedId);
+                if (image == null) throw new IllegalArgumentException("Share summary is not published.");
+                runId = publishedId;
+                String stableUrl = versions.shareUrl(rootId);
+                if (StringUtils.hasText(stableUrl)) image.setOgPageUrl(stableUrl);
+            }
+        }
+        ShareSummaryRunRecord run = existingRun(runId);
         return new PublicReport(image, run);
     }
 
     private void submitImageGeneration(long imageId) {
-        try {
-            executor.execute(() -> generateImageNow(imageId));
-        } catch (RejectedExecutionException exception) {
+        ShareSummaryAssetLifecycle.submit(executor, () -> generateImageNow(imageId), versions, () -> {
             ShareSummaryImageRecord image = imageMapper.selectImage(imageId);
             if (image != null) {
                 image.setStatus(ShareSummaryImageStatus.FAILED.name());
@@ -240,7 +257,7 @@ public class ShareSummaryImageService {
                 imageMapper.updateImage(image);
                 publishImageFailed(image, RejectedExecutionException.class.getSimpleName(), "IMAGE_QUEUE_FULL");
             }
-        }
+        });
     }
 
     private void generateImageNow(long imageId) {
@@ -251,9 +268,9 @@ public class ShareSummaryImageService {
         long startedAt = now();
         image.setStatus(ShareSummaryImageStatus.GENERATING.name());
         image.setStartedAt(startedAt);
-        imageMapper.updateImage(image);
+        if (imageMapper.updateImage(image) == 0) return;
         try {
-            ShareSummaryImageConfigRecord config = configRecord();
+            ShareSummaryImageConfigRecord config = versions == null ? configRecord() : versions.imageConfig(image.getRunId(), configRecord());
             OpenAiCompatibleImageClient.ImageGenerationResult result = imageClient.generate(config, image.getPromptSnapshot());
             byte[] sourceBytes = StringUtils.hasText(result.base64())
                     ? decodeBase64Image(result.base64())
@@ -269,8 +286,9 @@ public class ShareSummaryImageService {
             image.setStatus(ShareSummaryImageStatus.SUCCESS.name());
             image.setErrorMessage(null);
             image.setFinishedAt(now());
-            imageMapper.updateImage(image);
-            publishImageSuccess(image);
+            if (imageMapper.updateImage(image) == 0) return;
+            ShareSummaryVersionStore.Revision version = versions == null ? null : versions.revision(image.getRunId());
+            if (version == null || "SUCCESS".equals(version.status())) publishImageSuccess(image);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             failImage(image, ShareSummaryImageStatus.FAILED, exception, "Image generation was interrupted.");
@@ -348,11 +366,6 @@ public class ShareSummaryImageService {
         return defaults;
     }
 
-    private long staleActiveTimeoutMillis(int requestTimeoutSeconds) {
-        int seconds = Math.max(1, requestTimeoutSeconds);
-        return seconds * 2_000L + STALE_ACTIVE_BUFFER_MILLIS;
-    }
-
     private void validateReadyConfig(ShareSummaryImageConfigRecord config) {
         if (!config.isEnabled()) {
             throw new IllegalArgumentException("Share summary AI image generation is disabled.");
@@ -397,36 +410,19 @@ public class ShareSummaryImageService {
                 - 不要包含真实个人信息、密钥、二维码或水印。
                 """.formatted(
                 ogTitle(run),
-                dateLabel(run.getWindowStart()),
-                dateLabel(run.getWindowEnd()),
+                titles.dateLabel(run.getWindowStart()),
+                titles.dateLabel(run.getWindowEnd()),
                 report,
                 config.getStylePrompt()
         ).strip();
     }
 
     public String ogTitle(ShareSummaryRunRecord run) {
-        ShareSummaryPeriodType periodType = ShareSummaryPeriodType.fromValue(run.getPeriodType());
-        LocalDate start = millisToDate(run.getWindowStart());
-        LocalDate endExclusive = millisToDate(run.getWindowEnd());
-        return switch (periodType) {
-            case DAILY -> "LinkPeek - " + start.format(DATE_FORMATTER) + " 日报";
-            case WEEKLY -> weeklyTitle(start);
-            case MONTHLY -> "LinkPeek - " + start.getYear() + "年" + start.getMonthValue() + "月月报";
-        };
+        return titles.title(run);
     }
 
-    private String weeklyTitle(LocalDate start) {
-        WeekFields weekFields = WeekFields.ISO;
-        int week = start.get(weekFields.weekOfWeekBasedYear());
-        int year = start.get(weekFields.weekBasedYear());
-        return "LinkPeek - %d年第%02d周周报".formatted(year, week);
-    }
-
-    private String ogDescription(ShareSummaryRunRecord run) {
-        return "本报告汇总了 %s 至 %s 的链接分享与内容洞察。".formatted(
-                dateLabel(run.getWindowStart()),
-                dateLabel(run.getWindowEnd())
-        );
+    public String ogDescription(ShareSummaryRunRecord run) {
+        return titles.description(run);
     }
 
     private byte[] decodeBase64Image(String base64) {
@@ -536,29 +532,20 @@ public class ShareSummaryImageService {
 
     private String saveImageBytes(ShareSummaryImageRecord image, byte[] bytes) throws IOException {
         String storageKey = "share-summary/images/%d/%d.%s".formatted(image.getRunId(), image.getId(), image.getOutputFormat());
-        Path path = storageRoot().resolve(storageKey).normalize();
-        if (!path.startsWith(storageRoot())) {
-            throw new IOException("Image storage path is invalid.");
-        }
-        Path parent = path.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-        Files.write(path, bytes);
-        return storageKey;
+        return storage.save(storageKey, bytes);
     }
 
     private void failImage(ShareSummaryImageRecord image, ShareSummaryImageStatus status, Throwable exception, String fallbackMessage) {
         image.setStatus(status.name());
-        image.setErrorMessage(errorMessage(exception, fallbackMessage, "Image generation failed."));
+        image.setErrorMessage(ShareSummaryAssetErrors.errorMessage(exception, fallbackMessage, "Image generation failed."));
         image.setFinishedAt(now());
         imageMapper.updateImage(image);
         if (status == ShareSummaryImageStatus.FAILED) {
-            publishImageFailed(image, errorType(exception, "ImageGenerationException"), image.getErrorMessage());
+            publishImageFailed(image, ShareSummaryAssetErrors.errorType(exception, "ImageGenerationException"), image.getErrorMessage());
         }
     }
 
-    private void publishImageSuccess(ShareSummaryImageRecord image) {
+    void publishImageSuccess(ShareSummaryImageRecord image) {
         if (notificationService == null) {
             return;
         }
@@ -580,36 +567,6 @@ public class ShareSummaryImageService {
         } catch (RuntimeException exception) {
             log.warn("share_summary_image_failed_notification_failed imageId={} runId={} message={}", image.getId(), image.getRunId(), exception.getMessage(), exception);
         }
-    }
-
-    private void deleteStoredImage(ShareSummaryImageRecord image) {
-        if (image == null || !StringUtils.hasText(image.getStorageKey())) {
-            return;
-        }
-        try {
-            Path path = storageRoot().resolve(image.getStorageKey()).normalize();
-            if (!path.startsWith(storageRoot())) {
-                log.warn("share_summary_image_delete_skipped_invalid_path imageId={} storageKey={}", image.getId(), image.getStorageKey());
-                return;
-            }
-            Files.deleteIfExists(path);
-        } catch (IOException exception) {
-            log.warn("share_summary_image_file_delete_failed imageId={} storageKey={} message={}", image.getId(), image.getStorageKey(), exception.getMessage(), exception);
-        }
-    }
-
-    private void deleteStoredImagesAfterCommit(List<ShareSummaryImageRecord> images) {
-        Runnable cleanup = () -> images.forEach(this::deleteStoredImage);
-        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
-            cleanup.run();
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                cleanup.run();
-            }
-        });
     }
 
     private ShareSummaryRunRecord existingRun(long runId) {
@@ -639,27 +596,12 @@ public class ShareSummaryImageService {
         return image;
     }
 
-    private Path storageRoot() {
-        return properties.getCacheDir().toAbsolutePath().normalize();
-    }
-
     private String publicImageUrl(ShareSummaryImageRecord image) {
-        return baseUrl() + "/share-summary/og-images/" + image.getPublicToken() + "." + image.getOutputFormat();
+        return storage.publicBaseUrl() + "/share-summary/og-images/" + image.getPublicToken() + "." + image.getOutputFormat();
     }
 
     private String publicReportUrl(ShareSummaryImageRecord image) {
-        return baseUrl() + "/share-summary/reports/" + image.getPublicToken();
-    }
-
-    private String baseUrl() {
-        String value = properties.getBaseUrl();
-        if (!StringUtils.hasText(value)) {
-            return "";
-        }
-        while (value.endsWith("/")) {
-            value = value.substring(0, value.length() - 1);
-        }
-        return value;
+        return storage.publicBaseUrl() + "/share-summary/reports/" + image.getPublicToken();
     }
 
     private String newPublicToken() {
@@ -708,42 +650,6 @@ public class ShareSummaryImageService {
 
     private String optionalStrip(String value) {
         return StringUtils.hasText(value) ? value.strip() : "";
-    }
-
-    private LocalDate millisToDate(long millis) {
-        ZoneId zone = clock.getZone();
-        return Instant.ofEpochMilli(millis).atZone(zone).toLocalDate();
-    }
-
-    private String dateLabel(long millis) {
-        return millisToDate(millis).format(DATE_FORMATTER);
-    }
-
-    private String errorType(Throwable exception, String fallbackType) {
-        return exception == null ? fallbackType : exception.getClass().getSimpleName();
-    }
-
-    private String errorMessage(Throwable exception, String fallbackMessage, String defaultMessage) {
-        String message = firstErrorMessage(exception);
-        if (!StringUtils.hasText(message)) {
-            message = fallbackMessage;
-        }
-        if (!StringUtils.hasText(message)) {
-            message = defaultMessage;
-        }
-        String stripped = message.strip();
-        return stripped.length() <= 500 ? stripped : stripped.substring(0, 500);
-    }
-
-    private String firstErrorMessage(Throwable exception) {
-        Throwable current = exception;
-        while (current != null) {
-            if (StringUtils.hasText(current.getMessage())) {
-                return current.getMessage();
-            }
-            current = current.getCause();
-        }
-        return "";
     }
 
     private long now() {

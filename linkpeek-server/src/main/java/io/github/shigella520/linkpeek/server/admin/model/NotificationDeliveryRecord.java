@@ -21,6 +21,11 @@ public class NotificationDeliveryRecord {
     private long durationMs;
     private long createdAt;
     private Long finishedAt;
+    private boolean pendingExpired;
+
+    public boolean isPendingExpired() { return pendingExpired; }
+
+    public void setPendingExpired(boolean pendingExpired) { this.pendingExpired = pendingExpired; }
 
     public Long getId() {
         return id;

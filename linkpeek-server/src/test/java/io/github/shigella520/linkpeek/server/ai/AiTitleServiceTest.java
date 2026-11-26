@@ -187,15 +187,222 @@ class AiTitleServiceTest {
     }
 
     @Test
-    void cleanTitleKeepsOnlyOnePlainTitleLine() {
+    void cleanTitleAcceptsOnePlainTitleLine() {
         AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
 
         assertEquals("一个更有点击欲的标题", service.cleanTitle("""
                 ```markdown
                 标题：“一个更有点击欲的标题”
-                解释：这里不应该保留
                 ```
                 """));
+    }
+
+    @Test
+    void cleanTitleRecoversTitleFromCommonModelOutputShapes() {
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
+
+        assertEquals("最终标题", service.cleanTitle("<think>synthetic notes\n第二行</think>\n最终标题"));
+        assertEquals("最终标题", service.cleanTitle("synthetic notes</think>\n最终标题"));
+        assertEquals("最终标题", service.cleanTitle("最终标题\n解释：这里是模型附带的说明"));
+        assertEquals("最终标题", service.cleanTitle("好的，以下是标题：\n最终标题"));
+        assertEquals("最终标题", service.cleanTitle("**标题**：最终标题\n理由：更吸引人"));
+        assertEquals("最终标题", service.cleanTitle("```json\n{\n  \"title\": \"最终标题\"\n}\n```"));
+        assertEquals("引号\"标题\"", service.cleanTitle("[{\"title\":\"\\u5f15\\u53f7\\\"标题\\\"\"}]"));
+        assertEquals("长".repeat(120), service.cleanTitle("长".repeat(130)));
+    }
+
+    @Test
+    void cleanTitleKeepsRealTitlesThatLookLikeOpeners() {
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
+
+        assertEquals("这是我见过最离谱的 Bug", service.cleanTitle("这是我见过最离谱的 Bug"));
+        assertEquals("分析师都看走眼了", service.cleanTitle("分析师都看走眼了"));
+        assertEquals("好的设计胜过一切", service.cleanTitle("好的设计胜过一切"));
+        assertEquals("[独家] 新品发布", service.cleanTitle("[独家] 新品发布"));
+    }
+
+    @Test
+    void cleanTitleRejectsOutputWithoutUsableTitle() {
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
+
+        assertEquals("", service.cleanTitle("<think>reasoning that never finished"));
+        assertEquals("", service.cleanTitle("<think>only reasoning</think>"));
+        assertEquals("", service.cleanTitle("{\"summary\":\"没有标题字段\"}"));
+        assertEquals("", service.cleanTitle("长".repeat(241)));
+    }
+
+    @Test
+    void invalidTitleFallsBackWithoutCountingTowardsDowngrade() {
+        AiProviderRecord first = provider(1L, 100);
+        AiProviderRecord second = provider(2L, 200);
+        FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(first, second));
+        FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+        client.titlesByProvider.put(1L, "<think>never finished");
+        client.title = "备用标题";
+        CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
+        AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                FakeProviderConfigMapper.aiProviderDowngradeConfig(true, 1),
+                mapper,
+                Clock.fixed(Instant.ofEpochMilli(1234L), ZoneOffset.UTC),
+                eventPublisher
+        );
+        AiTitleService service = new AiTitleService(null, mapper, client, null, downgradeService);
+
+        for (int i = 0; i < 3; i++) {
+            Optional<PreviewMetadata> result = service.generateStyledMetadata(generatedTextMetadata(),
+                    new AiTitleService.StylePrompt("fun", "风格", "格式", "hash"));
+            assertEquals("备用标题", result.orElseThrow().title());
+        }
+
+        assertIterableEquals(List.of(1L, 2L, 1L, 2L, 1L, 2L), client.requestedProviderIds);
+        assertEquals(100, first.getSortOrder());
+        assertEquals(0, eventPublisher.events.size());
+    }
+
+    @Test
+    void titleBudgetShortensLaterRequestsAndStopsWhenExhausted() {
+        FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+        client.titlesByProvider.put(1L, "<think>never finished");
+        client.titlesByProvider.put(2L, "<think>never finished");
+        client.elapsedNanosByProvider.put(1L, java.time.Duration.ofSeconds(20).toNanos());
+        client.elapsedNanosByProvider.put(2L, java.time.Duration.ofSeconds(10).toNanos());
+        AiTitleService service = new AiTitleService(null,
+                new FakeAiProviderMapper(List.of(provider(1L, 1), provider(2L, 2), provider(3L, 3))), client, null, null);
+        service.setTitleBudget(java.time.Duration.ofSeconds(30), client.clock::get);
+
+        assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
+                new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isEmpty());
+
+        // Provider timeouts default to 45s, so both requests are capped by what is left of the 30s budget.
+        assertIterableEquals(List.of(1L, 2L), client.requestedProviderIds);
+        assertEquals(List.of(java.time.Duration.ofSeconds(30), java.time.Duration.ofSeconds(10)), client.requestedTimeouts);
+    }
+
+    @Test
+    void timeoutCausedByTitleBudgetDoesNotCountTowardsDowngrade() {
+        AiProviderRecord first = provider(1L, 100);
+        FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(first, provider(2L, 200)));
+        FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+        client.timeoutProviderIds.add(1L);
+        CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
+        AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                FakeProviderConfigMapper.aiProviderDowngradeConfig(true, 1),
+                mapper,
+                Clock.fixed(Instant.ofEpochMilli(1234L), ZoneOffset.UTC),
+                eventPublisher
+        );
+        AiTitleService service = new AiTitleService(null, mapper, client, null, downgradeService);
+        service.setTitleBudget(java.time.Duration.ofSeconds(5), client.clock::get);
+
+        assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
+                new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isEmpty());
+
+        assertIterableEquals(List.of(1L), client.requestedProviderIds);
+        assertEquals(100, first.getSortOrder());
+        assertEquals(0, eventPublisher.events.size());
+    }
+
+    @Test
+    void ownTimeoutWithinBudgetStillCountsAsFailure() {
+        FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(provider(1L, 100), provider(2L, 200)));
+        FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+        client.timeoutProviderIds.add(1L);
+        CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
+        AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                FakeProviderConfigMapper.aiProviderDowngradeConfig(true, 2),
+                mapper,
+                Clock.fixed(Instant.ofEpochMilli(1234L), ZoneOffset.UTC),
+                eventPublisher
+        );
+        AiTitleService service = new AiTitleService(null, mapper, client, null, downgradeService);
+        service.setTitleBudget(java.time.Duration.ofSeconds(120), client.clock::get);
+
+        AiTitleService.StyledMetadataResult result = service.generateStyledMetadataResult(generatedTextMetadata(),
+                new AiTitleService.StylePrompt("fun", "风格", "格式", "hash"));
+
+        assertEquals("AI 标题", result.metadata().orElseThrow().title());
+        assertEquals(java.util.Arrays.asList(null, null), client.requestedTimeouts);
+        assertEquals(1, eventPublisher.events.stream().filter(AiProviderRequestFailedEvent.class::isInstance).count());
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(120L, 18L), result.usage());
+    }
+
+    @Test
+    void disabledTitleBudgetKeepsProviderTimeouts() {
+        FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+        client.elapsedNanosByProvider.put(1L, java.time.Duration.ofMinutes(5).toNanos());
+        client.titlesByProvider.put(1L, "<think>never finished");
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of(provider(1L, 1), provider(2L, 2))), client, null, null);
+        service.setTitleBudget(java.time.Duration.ZERO, client.clock::get);
+
+        assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
+                new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isPresent());
+        assertEquals(java.util.Arrays.asList(null, null), client.requestedTimeouts);
+    }
+
+    @Test
+    void savedAdminTitleTimeoutIsUsedAsBudgetAndZeroDisablesIt() {
+        for (String saved : List.of("5", "0")) {
+            FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(provider(1L, 1)));
+            FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+            AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                    new FakeProviderConfigMapper(Map.of(FakeProviderConfigMapper.key(AiProviderDowngradeService.PROVIDER_AI_PROVIDER,
+                            AiProviderDowngradeService.AI_TITLE_TOTAL_TIMEOUT_SECONDS_KEY), saved)),
+                    mapper, Clock.fixed(Instant.ofEpochMilli(1234L), ZoneOffset.UTC));
+            AiTitleService service = new AiTitleService(null, mapper, client, null, downgradeService);
+
+            assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
+                    new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isPresent());
+            java.time.Duration timeout = client.requestedTimeouts.get(0);
+            if (saved.equals("0")) {
+                assertEquals(null, timeout);
+            } else {
+                assertTrue(timeout.compareTo(java.time.Duration.ofSeconds(5)) <= 0 && timeout.compareTo(java.time.Duration.ofSeconds(4)) > 0, timeout.toString());
+            }
+        }
+    }
+
+    @Test
+    void titleTimeoutDefaultsToSixtySecondsUntilAnAdminSavesOne() {
+        AiProviderDowngradeService service = new AiProviderDowngradeService(
+                new FakeProviderConfigMapper(Map.of()), new FakeAiProviderMapper(List.of()), Clock.systemUTC());
+        assertEquals(60, service.config().aiTitleTotalTimeoutSeconds());
+        assertEquals(60, service.config().defaultAiTitleTotalTimeoutSeconds());
+        assertEquals(java.time.Duration.ofSeconds(60), service.aiTitleTotalTimeout());
+
+        AiProviderDowngradeService corrupted = new AiProviderDowngradeService(
+                new FakeProviderConfigMapper(Map.of(FakeProviderConfigMapper.key(AiProviderDowngradeService.PROVIDER_AI_PROVIDER,
+                        AiProviderDowngradeService.AI_TITLE_TOTAL_TIMEOUT_SECONDS_KEY), "999")),
+                new FakeAiProviderMapper(List.of()), Clock.systemUTC());
+        assertEquals(java.time.Duration.ofSeconds(60), corrupted.aiTitleTotalTimeout(), "out-of-range stored values fall back to the default");
+    }
+
+    @Test
+    void emptyProviderAnswerStillCountsAsFailure() {
+        AiProviderRecord first = provider(1L, 100);
+        FakeAiProviderMapper mapper = new FakeAiProviderMapper(List.of(first));
+        FakeOpenAiCompatibleTextClient client = new FakeOpenAiCompatibleTextClient();
+        client.title = null;
+        CapturingEventPublisher eventPublisher = new CapturingEventPublisher();
+        AiProviderDowngradeService downgradeService = new AiProviderDowngradeService(
+                FakeProviderConfigMapper.aiProviderDowngradeConfig(true, 2),
+                mapper,
+                Clock.fixed(Instant.ofEpochMilli(1234L), ZoneOffset.UTC),
+                eventPublisher
+        );
+        AiTitleService service = new AiTitleService(null, mapper, client, null, downgradeService);
+
+        assertTrue(service.generateStyledMetadata(generatedTextMetadata(),
+                new AiTitleService.StylePrompt("fun", "风格", "格式", "hash")).isEmpty());
+        assertEquals(1, eventPublisher.events.stream().filter(AiProviderRequestFailedEvent.class::isInstance).count());
+    }
+
+    @Test
+    void styledCacheDoesNotReuseLegacyOutputFormat() {
+        AiTitleService service = new AiTitleService(null, new FakeAiProviderMapper(List.of()), new FakeOpenAiCompatibleTextClient(), null, null);
+        URI uri = URI.create("https://example.com/topic/1");
+        var style = new AiTitleService.StylePrompt("SUM", "风格", "格式", "hash");
+        var legacy = io.github.shigella520.linkpeek.core.model.PreviewKey.fromStableValue(uri + "\nlinkpeek-style=SUM\nprompt-sha256=hash");
+        assertNotEquals(legacy, service.styledPreviewKey(uri, style));
     }
 
     @Test
@@ -549,7 +756,12 @@ class AiTitleServiceTest {
         private final List<Long> failProviderIds = new ArrayList<>();
         private final List<Long> requestedProviderIds = new ArrayList<>();
         private final List<AiTitlePrompt> requestedPrompts = new ArrayList<>();
+        private final Map<Long, String> titlesByProvider = new HashMap<>();
         private String title = "AI 标题";
+        private final List<java.time.Duration> requestedTimeouts = new ArrayList<>();
+        private final List<Long> timeoutProviderIds = new ArrayList<>();
+        private final Map<Long, Long> elapsedNanosByProvider = new HashMap<>();
+        private final java.util.concurrent.atomic.AtomicLong clock = new java.util.concurrent.atomic.AtomicLong();
 
         private FakeOpenAiCompatibleTextClient() {
             super(null, null);
@@ -557,17 +769,23 @@ class AiTitleServiceTest {
 
         @Override
         public Optional<String> generateTitle(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException {
-            return generateTitleResult(provider, prompt).title();
+            return generateTitleResult(provider, prompt, null).title();
         }
 
         @Override
-        public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException {
+        public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt, java.time.Duration timeout) throws IOException {
             requestedProviderIds.add(provider.getId());
             requestedPrompts.add(prompt);
+            requestedTimeouts.add(timeout);
+            clock.addAndGet(elapsedNanosByProvider.getOrDefault(provider.getId(), 0L));
+            if (timeoutProviderIds.contains(provider.getId())) {
+                throw new java.net.http.HttpTimeoutException("request timed out");
+            }
             if (failProviderIds.contains(provider.getId())) {
                 throw new IOException("provider failed");
             }
-            return new TitleResult(Optional.ofNullable(title), 25);
+            return new TitleResult(Optional.ofNullable(titlesByProvider.getOrDefault(provider.getId(), title)), 25,
+                    new TokenUsage(120L, 18L));
         }
     }
 

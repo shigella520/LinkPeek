@@ -80,6 +80,9 @@ public class StatisticsConfiguration {
             ensureColumn(jdbcTemplate, "stats_event", "ai_provider_names", "TEXT");
             ensureColumn(jdbcTemplate, "stats_event", "ai_duration_ms", "INTEGER NOT NULL DEFAULT 0");
             ensureColumn(jdbcTemplate, "stats_event", "crawl_duration_ms", "INTEGER NOT NULL DEFAULT 0");
+            // Token counts are nullable: older events and gateways that do not report usage stay unknown.
+            ensureColumn(jdbcTemplate, "stats_event", "ai_input_tokens", "INTEGER");
+            ensureColumn(jdbcTemplate, "stats_event", "ai_output_tokens", "INTEGER");
             ensureColumn(jdbcTemplate, "ai_provider", "request_timeout_seconds", "INTEGER NOT NULL DEFAULT 45");
             deleteLegacyAiProviderTimeoutDowngradeConfig(jdbcTemplate);
             rebuildShareSummaryTablesWithoutDayOfMonth(jdbcTemplate);
@@ -87,6 +90,8 @@ public class StatisticsConfiguration {
             ensureColumn(jdbcTemplate, "share_summary_task", "deleted_at", "INTEGER");
             ensureColumn(jdbcTemplate, "share_summary_task", "min_links", "INTEGER NOT NULL DEFAULT 1");
             ensureColumn(jdbcTemplate, "share_summary_task", "period_selection_mode", "TEXT NOT NULL DEFAULT 'CURRENT'");
+            ensureColumn(jdbcTemplate, "share_summary_run", "ai_input_tokens", "INTEGER");
+            ensureColumn(jdbcTemplate, "share_summary_run", "ai_output_tokens", "INTEGER");
             ensureTable(jdbcTemplate, "share_summary_image_config", """
                     CREATE TABLE IF NOT EXISTS share_summary_image_config (
                         id INTEGER PRIMARY KEY,

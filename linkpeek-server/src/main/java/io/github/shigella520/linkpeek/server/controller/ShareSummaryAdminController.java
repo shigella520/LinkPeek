@@ -6,6 +6,9 @@ import io.github.shigella520.linkpeek.server.admin.service.AdminAuthService;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryAudioService;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryImageService;
 import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryService;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryRegenerationService;
+import io.github.shigella520.linkpeek.server.admin.service.ShareSummaryVersionStore;
+import org.springframework.web.bind.annotation.RequestHeader;
 import io.swagger.v3.oas.annotations.Hidden;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.Resource;
@@ -45,6 +48,47 @@ public class ShareSummaryAdminController {
         this.shareSummaryService = shareSummaryService;
         this.shareSummaryImageService = shareSummaryImageService;
         this.shareSummaryAudioService = shareSummaryAudioService;
+    }
+
+    private ShareSummaryRegenerationService regeneration;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setRegenerationService(ShareSummaryRegenerationService regeneration) { this.regeneration = regeneration; }
+
+    @PostMapping("/runs/{runId}/regenerate")
+    public ResponseEntity<ShareSummaryVersionStore.Revision> regenerate(HttpServletRequest request, @PathVariable long runId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String requestKey) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return ResponseEntity.accepted().body(regeneration.regenerate(runId, requestKey));
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
+    @PostMapping("/runs/{runId}/versions/{versionId}/retry")
+    public ResponseEntity<ShareSummaryVersionStore.Revision> retryVersion(HttpServletRequest request,
+            @PathVariable long runId, @PathVariable long versionId,
+            @RequestHeader(value = "Idempotency-Key", required = false) String requestKey) {
+        adminAuthService.requireAuthenticated(request);
+        try {
+            return ResponseEntity.accepted().body(regeneration.retry(runId, versionId, requestKey));
+        } catch (IllegalStateException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
+    @GetMapping("/runs/{runId}/versions")
+    public List<ShareSummaryRegenerationService.VersionDetail> versions(HttpServletRequest request, @PathVariable long runId) {
+        adminAuthService.requireAuthenticated(request);
+        try { return regeneration.history(runId); }
+        catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
+        }
     }
 
     @GetMapping("/tasks")
@@ -124,7 +168,9 @@ public class ShareSummaryAdminController {
     public ShareSummaryRunRecord run(HttpServletRequest request, @PathVariable long runId) {
         adminAuthService.requireAuthenticated(request);
         try {
-            return shareSummaryService.run(runId);
+            ShareSummaryRunRecord run = shareSummaryService.run(runId);
+            run.setReportHtml(io.github.shigella520.linkpeek.server.render.ShareSummaryMarkdownRenderer.toHtml(run.getReport()));
+            return run;
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, exception.getMessage(), exception);
         }

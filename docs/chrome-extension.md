@@ -59,6 +59,8 @@ Chrome 扩展不能直接替用户写入快捷键。Options 页面会显示当�
 - LinuxDo：读取 `_t`、`cf_clearance`、`_forum_session`，写入 `linuxdo`。其中 `_t` 缺失时会跳过 LinuxDo；`cf_clearance` 和 `_forum_session` 有则同步，缺失时不阻断登录 Cookie 写入。
 - NGA：读取 `ngaPassportUid`、`ngaPassportCid`，写入 `nga` 的 `NGA_PASSPORT_UID`、`NGA_PASSPORT_CID`。
 
+NGA 的登录 Cookie 可以保存在父域 `.nga.cn`，因此扩展申请 `https://*.nga.cn/*` 权限，覆盖父域和子域。更新已有的本地扩展后，需要在 `chrome://extensions` 点击该扩展的重新加载按钮，并在扩展详情页确认允许访问 NGA，再手动同步。只刷新 Options 页面不会更新 manifest 权限。
+
 第一版不修改 LinkPeek 后端。同步时扩展会打开一个非激活的临时 LinkPeek Admin 标签页，在同源上下文里完成登录和保存配置，然后关闭标签页。
 
 如果某个平台缺少任一必需 Cookie，扩展会跳过该平台，不会用空值覆盖 LinkPeek 现有配置。LinuxDo 的 `cf_clearance` 可能是分区 Cookie，扩展会同时读取未分区 Cookie 和 `https://linux.do` 顶级站点下的分区 Cookie。

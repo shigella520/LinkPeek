@@ -20,17 +20,27 @@ public class LinkPeekProperties {
     private String statsAdminPassword;
     private Path serviceLogPath = Path.of("/data/logs/linkpeek.log");
     private Duration downloadTimeout = Duration.ofSeconds(120);
+    private String adminCookieSecure = "auto";
     private String logLevel = "INFO";
     private int videoMaxQuality = 480;
     private boolean previewWarmupEnabled = true;
     private int previewWarmupThreads = 2;
     private int previewWarmupQueueCapacity = 64;
+    private List<String> webhookAllowedPrivateHosts = List.of();
     private List<String> crawlerSignatures = List.of(
             "facebookexternalhit",
             "Facebot",
             "Twitterbot",
             "Applebot"
     );
+
+    public String getAdminCookieSecure() {
+        return adminCookieSecure;
+    }
+
+    public void setAdminCookieSecure(String adminCookieSecure) {
+        this.adminCookieSecure = adminCookieSecure;
+    }
 
     public String getBaseUrl() {
         return baseUrl;
@@ -170,6 +180,14 @@ public class LinkPeekProperties {
 
     public List<String> getCrawlerSignatures() {
         return crawlerSignatures;
+    }
+
+    public List<String> getWebhookAllowedPrivateHosts() {
+        return webhookAllowedPrivateHosts;
+    }
+
+    public void setWebhookAllowedPrivateHosts(List<String> webhookAllowedPrivateHosts) {
+        this.webhookAllowedPrivateHosts = webhookAllowedPrivateHosts == null ? List.of() : webhookAllowedPrivateHosts;
     }
 
     public void setCrawlerSignatures(List<String> crawlerSignatures) {

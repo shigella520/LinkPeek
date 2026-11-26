@@ -46,6 +46,7 @@ linkpeek:
   stats-event-dedupe-ttl: ${STATS_EVENT_DEDUPE_TTL:2m}
   stats-event-dedupe-max-entries: ${STATS_EVENT_DEDUPE_MAX_ENTRIES:10000}
   stats-admin-password: ${STATS_ADMIN_PASSWORD:}
+  admin-cookie-secure: ${ADMIN_COOKIE_SECURE:auto}
   service-log-path: ${LOG_FILE_PATH:/data/logs/linkpeek.log}
   download-timeout: ${DOWNLOAD_TIMEOUT:120s}
   log-level: ${LOG_LEVEL:INFO}
@@ -53,6 +54,7 @@ linkpeek:
   preview-warmup-enabled: ${PREVIEW_WARMUP_ENABLED:true}
   preview-warmup-threads: ${PREVIEW_WARMUP_THREADS:2}
   preview-warmup-queue-capacity: ${PREVIEW_WARMUP_QUEUE_CAPACITY:64}
+  webhook-allowed-private-hosts: ${WEBHOOK_ALLOWED_PRIVATE_HOSTS:}
   crawler-signatures:
     - facebookexternalhit
     - Facebot

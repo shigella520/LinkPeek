@@ -61,7 +61,7 @@ public class MimoTtsAudioProvider implements ShareSummaryAudioProvider {
                 timeout.toMillis(),
                 body.length
         );
-        log.info(
+        log.debug(
                 "share_summary_mimo_audio_request_body model={} voice={} endpoint={} requestBody={}",
                 model,
                 voice,

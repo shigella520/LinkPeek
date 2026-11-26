@@ -101,8 +101,8 @@ public class AdminController {
     }
 
     @PostMapping("/login")
-    public ResponseEntity<SessionResponse> login(@RequestBody LoginRequest request) {
-        AdminAuthService.LoginSession session = adminAuthService.login(request == null ? null : request.password());
+    public ResponseEntity<SessionResponse> login(@RequestBody LoginRequest request, HttpServletRequest httpRequest) {
+        AdminAuthService.LoginSession session = adminAuthService.login(request == null ? null : request.password(), httpRequest);
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, session.cookieHeader())
                 .body(new SessionResponse(true, true));
@@ -256,7 +256,8 @@ public class AdminController {
             return aiProviderDowngradeService.saveConfig(
                     downgradeRequest.autoDowngradeEnabled(),
                     downgradeRequest.autoDowngradeFailureThreshold(),
-                    downgradeRequest.shareSummaryTimeoutMultiplier()
+                    downgradeRequest.shareSummaryTimeoutMultiplier(),
+                    downgradeRequest.aiTitleTotalTimeoutSeconds()
             );
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
@@ -489,7 +490,8 @@ public class AdminController {
     public record AiProviderDowngradeRequest(
             Boolean autoDowngradeEnabled,
             Integer autoDowngradeFailureThreshold,
-            Double shareSummaryTimeoutMultiplier
+            Double shareSummaryTimeoutMultiplier,
+            Integer aiTitleTotalTimeoutSeconds
     ) {
     }
 
