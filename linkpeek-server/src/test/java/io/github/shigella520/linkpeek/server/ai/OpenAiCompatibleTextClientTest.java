@@ -219,6 +219,41 @@ class OpenAiCompatibleTextClientTest {
         }
     }
 
+    @Test
+    void reportsTokenUsageForBothApiFormatsAndToleratesMissingUsage() throws Exception {
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(120L, 18L), usage(
+                "{\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":18,\"total_tokens\":138},\"choices\":[{\"message\":{\"content\":\"标题\"}}]}",
+                "CHAT_COMPLETIONS"));
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(300L, 42L), usage(
+                "{\"usage\":{\"input_tokens\":300,\"output_tokens\":42},\"output_text\":\"标题\"}", "RESPONSES"));
+        assertEquals(OpenAiCompatibleTextClient.TokenUsage.UNKNOWN, usage("{\"output_text\":\"标题\"}", "RESPONSES"));
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(null, 7L), usage(
+                "{\"usage\":{\"prompt_tokens\":\"n/a\",\"completion_tokens\":7},\"choices\":[{\"message\":{\"content\":\"标题\"}}]}",
+                "CHAT_COMPLETIONS"));
+    }
+
+    @Test
+    void addingUsageKeepsUnknownCountsUnknown() {
+        OpenAiCompatibleTextClient.TokenUsage unknown = OpenAiCompatibleTextClient.TokenUsage.UNKNOWN;
+        assertEquals(unknown, unknown.plus(unknown));
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(5L, null), unknown.plus(new OpenAiCompatibleTextClient.TokenUsage(5L, null)));
+        assertEquals(new OpenAiCompatibleTextClient.TokenUsage(8L, 2L),
+                new OpenAiCompatibleTextClient.TokenUsage(5L, 2L).plus(new OpenAiCompatibleTextClient.TokenUsage(3L, null)));
+    }
+
+    @Test
+    void explicitTimeoutOverridesProviderTimeout() throws Exception {
+        CapturingHttpClient httpClient = new CapturingHttpClient(200, "{\"output_text\":\"标题\"}");
+        new OpenAiCompatibleTextClient(httpClient, objectMapper).generateTitleResult(
+                provider("https://api.example.com/v1", "RESPONSES", "model", "", ""), prompt(), Duration.ofSeconds(7));
+        assertEquals(Optional.of(Duration.ofSeconds(7)), httpClient.lastRequestTimeout);
+    }
+
+    private OpenAiCompatibleTextClient.TokenUsage usage(String body, String apiKind) throws Exception {
+        return new OpenAiCompatibleTextClient(new CapturingHttpClient(200, body), objectMapper)
+                .generateTitleResult(provider("https://api.example.com/v1", apiKind, "model", "", ""), prompt()).usage();
+    }
+
     private Optional<String> parseResponse(String body, String apiKind) throws Exception {
         return new OpenAiCompatibleTextClient(new CapturingHttpClient(200, body), objectMapper)
                 .generateTitle(provider("https://api.example.com/v1", apiKind, "model", "", ""), prompt());

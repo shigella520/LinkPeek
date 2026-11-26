@@ -2606,7 +2606,7 @@ class PreviewControllerTest {
         }
 
         @Override
-        public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) {
+        public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt, java.time.Duration timeout) {
             requests.incrementAndGet();
             this.prompt.set(prompt);
             CountDownLatch started = blockedRequestStarted.get();

@@ -43,13 +43,18 @@ public class OpenAiCompatibleTextClient {
     }
 
     public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt) throws IOException, InterruptedException {
+        return generateTitleResult(provider, prompt, null);
+    }
+
+    /** {@code timeout} overrides the provider's own request timeout when non-null and positive. */
+    public TitleResult generateTitleResult(AiProviderRecord provider, AiTitlePrompt prompt, Duration timeout) throws IOException, InterruptedException {
         AiTextPrompt textPrompt = new AiTextPrompt(
                 prompt.titleFormatPrompt(),
                 prompt.styleMessage(),
                 prompt.rawContentMessage()
         );
-        TextResult result = generateTextResult(provider, textPrompt, "ai_title", null);
-        return new TitleResult(result.text(), result.durationMs());
+        TextResult result = generateTextResult(provider, textPrompt, "ai_title", timeout);
+        return new TitleResult(result.text(), result.durationMs(), result.usage());
     }
 
     public TextResult generateTextResult(AiProviderRecord provider, AiTextPrompt prompt) throws IOException, InterruptedException {
@@ -108,8 +113,10 @@ public class OpenAiCompatibleTextClient {
             throw new IOException("AI provider returned HTTP " + response.statusCode());
         }
 
+        JsonNode payload = objectMapper.readTree(response.body());
+        TokenUsage usage = TokenUsage.from(payload.path("usage"));
         log.info(
-                "{}_request_success providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBytes={}",
+                "{}_request_success providerId={} apiKind={} model={} baseUrl={} status={} durationMs={} requestId={} responseBytes={} inputTokens={} outputTokens={}",
                 operation,
                 provider.getId(),
                 apiKind,
@@ -118,14 +125,15 @@ public class OpenAiCompatibleTextClient {
                 response.statusCode(),
                 durationMs,
                 requestId(response.headers()),
-                response.body().length
+                response.body().length,
+                usage.inputTokens(),
+                usage.outputTokens()
         );
-        JsonNode payload = objectMapper.readTree(response.body());
         Optional<String> title = switch (apiKind) {
             case RESPONSES -> extractResponsesText(payload);
             case CHAT_COMPLETIONS -> extractChatText(payload);
         };
-        return new TextResult(title, durationMs);
+        return new TextResult(title, durationMs, usage);
     }
 
     private byte[] responsesBody(AiProviderRecord provider, AiTextPrompt prompt) throws IOException {
@@ -171,7 +179,7 @@ public class OpenAiCompatibleTextClient {
         return message;
     }
 
-    private Duration requestTimeout(AiProviderRecord provider) {
+    public Duration requestTimeout(AiProviderRecord provider) {
         int timeoutSeconds = provider.getRequestTimeoutSeconds();
         return timeoutSeconds > 0 ? Duration.ofSeconds(timeoutSeconds) : DEFAULT_REQUEST_TIMEOUT;
     }
@@ -288,9 +296,53 @@ public class OpenAiCompatibleTextClient {
                 .orElse("n/a");
     }
 
-    public record TitleResult(Optional<String> title, long durationMs) {
+    public record TitleResult(Optional<String> title, long durationMs, TokenUsage usage) {
+        public TitleResult(Optional<String> title, long durationMs) {
+            this(title, durationMs, TokenUsage.UNKNOWN);
+        }
     }
 
-    public record TextResult(Optional<String> text, long durationMs) {
+    public record TextResult(Optional<String> text, long durationMs, TokenUsage usage) {
+        public TextResult(Optional<String> text, long durationMs) {
+            this(text, durationMs, TokenUsage.UNKNOWN);
+        }
+    }
+
+    /**
+     * Token counts reported by the provider; {@code null} when the gateway does not report them.
+     * Chat Completions uses prompt/completion_tokens, Responses uses input/output_tokens.
+     */
+    public record TokenUsage(Long inputTokens, Long outputTokens) {
+        public static final TokenUsage UNKNOWN = new TokenUsage(null, null);
+
+        static TokenUsage from(JsonNode usage) {
+            if (usage == null || !usage.isObject()) {
+                return UNKNOWN;
+            }
+            return new TokenUsage(count(usage, "input_tokens", "prompt_tokens"), count(usage, "output_tokens", "completion_tokens"));
+        }
+
+        private static Long count(JsonNode usage, String primary, String fallback) {
+            JsonNode value = usage.hasNonNull(primary) ? usage.get(primary) : usage.path(fallback);
+            return value.canConvertToLong() && value.asLong() >= 0 ? value.asLong() : null;
+        }
+
+        public TokenUsage plus(TokenUsage other) {
+            if (other == null) {
+                return this;
+            }
+            return new TokenUsage(sum(inputTokens, other.inputTokens), sum(outputTokens, other.outputTokens));
+        }
+
+        private static Long sum(Long a, Long b) {
+            // Plain ifs: a conditional mixing Long and long would unbox null operands.
+            if (a == null) {
+                return b;
+            }
+            if (b == null) {
+                return a;
+            }
+            return a + b;
+        }
     }
 }

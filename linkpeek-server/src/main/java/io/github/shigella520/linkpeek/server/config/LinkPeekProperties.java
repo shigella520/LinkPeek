@@ -20,6 +20,7 @@ public class LinkPeekProperties {
     private String statsAdminPassword;
     private Path serviceLogPath = Path.of("/data/logs/linkpeek.log");
     private Duration downloadTimeout = Duration.ofSeconds(120);
+    private Duration aiTitleTotalTimeout = Duration.ofSeconds(30);
     private String logLevel = "INFO";
     private int videoMaxQuality = 480;
     private boolean previewWarmupEnabled = true;
@@ -32,6 +33,14 @@ public class LinkPeekProperties {
             "Twitterbot",
             "Applebot"
     );
+
+    public Duration getAiTitleTotalTimeout() {
+        return aiTitleTotalTimeout;
+    }
+
+    public void setAiTitleTotalTimeout(Duration aiTitleTotalTimeout) {
+        this.aiTitleTotalTimeout = aiTitleTotalTimeout;
+    }
 
     public String getBaseUrl() {
         return baseUrl;

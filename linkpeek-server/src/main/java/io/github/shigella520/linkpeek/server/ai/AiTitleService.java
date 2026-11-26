@@ -12,6 +12,7 @@ import io.github.shigella520.linkpeek.server.admin.model.AiProviderRecord;
 import io.github.shigella520.linkpeek.server.admin.persistence.AdminPromptMapper;
 import io.github.shigella520.linkpeek.server.admin.persistence.AiProviderMapper;
 import io.github.shigella520.linkpeek.server.admin.service.AiTitleConfigService;
+import io.github.shigella520.linkpeek.server.config.LinkPeekProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +24,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
+import java.time.Duration;
+import java.util.function.LongSupplier;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
@@ -48,6 +51,7 @@ public class AiTitleService {
     private static final long FREESTYLE_PENDING_CLEANUP_MILLIS = 3_600_000;
     private static final Pattern STYLE_PATTERN = Pattern.compile("^[A-Za-z0-9._-]{1,64}$");
     private static final int MAX_TITLE_CODE_POINTS = 120;
+    public static final Duration DEFAULT_TITLE_BUDGET = Duration.ofSeconds(30);
     private static final Pattern REASONING_BLOCK = Pattern.compile(
             "(?is)<(think|thinking|analysis|reasoning)(?:\\s[^>]*)?>.*?</\\1\\s*>");
     private static final Pattern REASONING_OPEN = Pattern.compile("(?i)<(?:think|thinking|analysis|reasoning)(?:\\s[^>]*)?>");
@@ -68,6 +72,9 @@ public class AiTitleService {
     private final AiProviderDowngradeService aiProviderDowngradeService;
     private final Clock clock;
     private final ConcurrentHashMap<String, FreestyleSelection> freestyleSelections = new ConcurrentHashMap<>();
+    // Total time a styled title may take across all providers; zero or negative disables the budget.
+    private Duration titleBudget = DEFAULT_TITLE_BUDGET;
+    private LongSupplier nanoTime = System::nanoTime;
 
     @Autowired
     public AiTitleService(
@@ -84,6 +91,18 @@ public class AiTitleService {
         this.aiTitleConfigService = aiTitleConfigService;
         this.aiProviderDowngradeService = aiProviderDowngradeService;
         this.clock = clock == null ? Clock.systemUTC() : clock;
+    }
+
+    @Autowired(required = false)
+    void setLinkPeekProperties(LinkPeekProperties properties) {
+        if (properties != null && properties.getAiTitleTotalTimeout() != null) {
+            this.titleBudget = properties.getAiTitleTotalTimeout();
+        }
+    }
+
+    void setTitleBudget(Duration titleBudget, LongSupplier nanoTime) {
+        this.titleBudget = titleBudget;
+        this.nanoTime = nanoTime;
     }
 
     public AiTitleService(
@@ -253,12 +272,29 @@ public class AiTitleService {
         AiTitlePrompt prompt = buildPrompt(stylePrompt.prompt(), metadata.rawContent(), stylePrompt.titleFormatPrompt());
         List<AiProviderRecord> providers = aiProviderMapper.selectEnabledProviders();
         AiAttemptStats attemptStats = new AiAttemptStats();
+        boolean budgeted = titleBudget != null && !titleBudget.isZero() && !titleBudget.isNegative();
+        long deadline = budgeted ? nanoTime.getAsLong() + titleBudget.toNanos() : Long.MAX_VALUE;
         for (AiProviderRecord provider : providers) {
             long startedAt = System.nanoTime();
+            // A request cut short by the shared budget says nothing about the provider's health.
+            boolean truncatedByBudget = false;
             try {
-                OpenAiCompatibleTextClient.TitleResult result = textClient.generateTitleResult(provider, prompt);
+                Duration timeout = null;
+                if (budgeted) {
+                    long remainingMs = (deadline - nanoTime.getAsLong()) / 1_000_000;
+                    if (remainingMs <= 0) {
+                        log.warn("ai_title_budget_exhausted style={} budgetMs={} attemptedProviders={}",
+                                stylePrompt.style(), titleBudget.toMillis(), attemptStats.providerNames.size());
+                        break;
+                    }
+                    if (remainingMs < textClient.requestTimeout(provider).toMillis()) {
+                        timeout = Duration.ofMillis(remainingMs);
+                        truncatedByBudget = true;
+                    }
+                }
+                OpenAiCompatibleTextClient.TitleResult result = textClient.generateTitleResult(provider, prompt, timeout);
                 long durationMs = result.durationMs() > 0 ? result.durationMs() : elapsedMillis(startedAt);
-                attemptStats.record(provider, durationMs);
+                attemptStats.record(provider, durationMs, result.usage());
                 Optional<String> generated = result.title()
                         .map(this::cleanTitle)
                         .filter(StringUtils::hasText);
@@ -289,6 +325,11 @@ public class AiTitleService {
             } catch (RuntimeException | java.io.IOException exception) {
                 long durationMs = elapsedMillis(startedAt);
                 attemptStats.record(provider, durationMs);
+                if (truncatedByBudget && exception instanceof java.net.http.HttpTimeoutException) {
+                    log.warn("ai_title_budget_timeout providerId={} style={} budgetMs={}",
+                            provider.getId(), stylePrompt.style(), titleBudget.toMillis());
+                    break;
+                }
                 log.warn(
                         "ai_title_request_failed providerId={} style={} baseUrl={} message={}",
                         provider.getId(),
@@ -514,7 +555,16 @@ public class AiTitleService {
         }
     }
 
-    public record StyledMetadataResult(Optional<PreviewMetadata> metadata, List<String> providerNames, long durationMs) {
+    public record StyledMetadataResult(
+            Optional<PreviewMetadata> metadata,
+            List<String> providerNames,
+            long durationMs,
+            OpenAiCompatibleTextClient.TokenUsage usage
+    ) {
+        public StyledMetadataResult(Optional<PreviewMetadata> metadata, List<String> providerNames, long durationMs) {
+            this(metadata, providerNames, durationMs, OpenAiCompatibleTextClient.TokenUsage.UNKNOWN);
+        }
+
         private static StyledMetadataResult empty() {
             return new StyledMetadataResult(Optional.empty(), List.of(), 0);
         }
@@ -523,6 +573,12 @@ public class AiTitleService {
     private static final class AiAttemptStats {
         private final java.util.LinkedHashSet<String> providerNames = new java.util.LinkedHashSet<>();
         private long durationMs;
+        private OpenAiCompatibleTextClient.TokenUsage usage = OpenAiCompatibleTextClient.TokenUsage.UNKNOWN;
+
+        private void record(AiProviderRecord provider, long durationMs, OpenAiCompatibleTextClient.TokenUsage attemptUsage) {
+            record(provider, durationMs);
+            usage = usage.plus(attemptUsage);
+        }
 
         private void record(AiProviderRecord provider, long durationMs) {
             if (provider != null && StringUtils.hasText(provider.getName())) {
@@ -534,7 +590,7 @@ public class AiTitleService {
         }
 
         private StyledMetadataResult result(Optional<PreviewMetadata> metadata) {
-            return new StyledMetadataResult(metadata, List.copyOf(providerNames), durationMs);
+            return new StyledMetadataResult(metadata, List.copyOf(providerNames), durationMs, usage);
         }
     }
 }
