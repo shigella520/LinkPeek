@@ -20,6 +20,8 @@ import io.github.shigella520.linkpeek.server.notification.DataCrawlRequestFailed
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionPhase;
@@ -84,6 +86,8 @@ public class NotificationService {
     private final Clock clock;
     private final Set<Long> activeDeliveries = ConcurrentHashMap.newKeySet();
     private static final long PENDING_REVIEW_AGE_MS = Duration.ofHours(24).toMillis();
+    private static final int PENDING_RECOVERY_LIMIT = 500;
+    static final String DELIVERY_ID_HEADER = "X-LinkPeek-Delivery-Id";
 
     public NotificationService(
             NotificationMapper notificationMapper,
@@ -159,7 +163,7 @@ public class NotificationService {
                     channel.getBodyTemplate(),
                     messageBody
             );
-            SendResult result = sendWebhook(channel, NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS.name(), now(), body);
+            SendResult result = sendWebhook(null, channel, NotificationEventType.SHARE_SUMMARY_IMAGE_SUCCESS.name(), now(), body);
             return new TestResponse(
                     result.success(),
                     result.success() ? "测试成功。" : "测试失败。",
@@ -257,6 +261,47 @@ public class NotificationService {
             throw new IllegalArgumentException("Notification delivery was not found.");
         }
         return new DeleteResponse(notificationMapper.deleteDelivery(deliveryId));
+    }
+
+    /**
+     * Re-submits deliveries left PENDING by a restart (the send queue lives in memory only).
+     * Deliveries older than the review age are left for manual confirmation in the admin UI,
+     * so a long outage never silently replays stale messages. Receivers can de-duplicate a
+     * delivery that was sent but not recorded by the {@value #DELIVERY_ID_HEADER} header.
+     */
+    @EventListener(ApplicationReadyEvent.class)
+    public synchronized int recoverPendingDeliveries() {
+        List<NotificationDeliveryRecord> pending;
+        try {
+            pending = notificationMapper.selectPendingDeliveriesCreatedSince(now() - PENDING_REVIEW_AGE_MS, PENDING_RECOVERY_LIMIT);
+        } catch (RuntimeException exception) {
+            log.warn("notification_pending_recovery_query_failed message={}", exception.getMessage(), exception);
+            return 0;
+        }
+        int resubmitted = 0;
+        for (NotificationDeliveryRecord delivery : pending) {
+            if (activeDeliveries.contains(delivery.getId())) {
+                continue;
+            }
+            try {
+                NotificationChannelRecord channel = notificationMapper.selectChannel(delivery.getChannelId());
+                if (channel == null || !channel.isEnabled()) {
+                    delivery.setStatus(NotificationDeliveryStatus.FAILED.name());
+                    delivery.setErrorMessage("NOTIFICATION_CHANNEL_UNAVAILABLE");
+                    delivery.setFinishedAt(now());
+                    databaseWrite(() -> notificationMapper.updateDelivery(delivery));
+                    continue;
+                }
+                submitDelivery(delivery.getId(), channel, delivery.getEventType(), now(), retryRequestBody(delivery));
+                resubmitted++;
+            } catch (RuntimeException exception) {
+                log.warn("notification_pending_recovery_failed deliveryId={} message={}", delivery.getId(), exception.getMessage());
+            }
+        }
+        if (!pending.isEmpty()) {
+            log.info("notification_pending_recovered found={} resubmitted={}", pending.size(), resubmitted);
+        }
+        return resubmitted;
     }
 
     public synchronized NotificationDeliveryRecord retryDelivery(long deliveryId) {
@@ -486,7 +531,7 @@ public class NotificationService {
         SendResult result = null;
         do {
             attempts++;
-            result = sendWebhook(channel, eventType, occurredAt, body);
+            result = sendWebhook(deliveryId, channel, eventType, occurredAt, body);
             if (result.success() || !result.retryable()) {
                 break;
             }
@@ -531,7 +576,7 @@ public class NotificationService {
         return false;
     }
 
-    private SendResult sendWebhook(NotificationChannelRecord channel, String eventType, long occurredAt, String body) {
+    private SendResult sendWebhook(Long deliveryId, NotificationChannelRecord channel, String eventType, long occurredAt, String body) {
         long startedAt = System.nanoTime();
         try {
             URI uri = URI.create(channel.getUrl());
@@ -542,6 +587,9 @@ public class NotificationService {
                     .header("User-Agent", "LinkPeek-Webhook/1.0")
                     .header("X-LinkPeek-Event", eventType)
                     .header("X-LinkPeek-Timestamp", String.valueOf(occurredAt));
+            if (deliveryId != null) {
+                builder.header(DELIVERY_ID_HEADER, String.valueOf(deliveryId));
+            }
             applyHeaders(builder, channel.getHeadersJson());
             if (StringUtils.hasText(channel.getSecret())) {
                 builder.header("X-LinkPeek-Signature", signature(channel.getSecret(), occurredAt, body));
@@ -551,16 +599,24 @@ public class NotificationService {
                     HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
             );
             boolean success = response.statusCode() >= 200 && response.statusCode() < 300;
-            boolean retryable = response.statusCode() >= 500;
+            boolean retryable = isRetryableStatus(response.statusCode());
             return new SendResult(success, retryable, response.statusCode(), response.body(), success ? null : "Webhook returned HTTP " + response.statusCode(), elapsedMillis(startedAt));
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
             return new SendResult(false, true, null, null, "Webhook delivery was interrupted.", elapsedMillis(startedAt));
+        } catch (JsonProcessingException exception) {
+            // Malformed channel header configuration: retrying cannot fix it.
+            return new SendResult(false, false, null, null, "Webhook headers JSON is invalid.", elapsedMillis(startedAt));
         } catch (IOException exception) {
             return new SendResult(false, true, null, null, exception.getMessage(), elapsedMillis(startedAt));
         } catch (RuntimeException exception) {
             return new SendResult(false, false, null, null, exception.getMessage(), elapsedMillis(startedAt));
         }
+    }
+
+    /** Server errors, timeouts and rate limiting are transient; other 4xx mean the request itself is wrong. */
+    static boolean isRetryableStatus(int statusCode) {
+        return statusCode >= 500 || statusCode == 408 || statusCode == 425 || statusCode == 429;
     }
 
     private void applyHeaders(HttpRequest.Builder builder, String headersJson) throws JsonProcessingException {
@@ -1055,7 +1111,7 @@ public class NotificationService {
         return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
-    private void sleepBeforeRetry(int attempts) {
+    void sleepBeforeRetry(int attempts) {
         try {
             Thread.sleep(switch (attempts) {
                 case 1 -> 1_000L;

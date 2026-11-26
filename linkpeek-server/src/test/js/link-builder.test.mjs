@@ -42,3 +42,45 @@ test('network errors and malformed responses never claim preview support', async
         assert.deepEqual(builder.value, {kind:'error', copyUrl:'https://example.com'});
     }
 });
+
+test('typing is debounced into one support request; Enter skips the delay', async () => {
+    const calls = [];
+    const timers = [];
+    const changes = [];
+    const builder = createLinkBuilder({
+        checkSupport: async url => { calls.push(url); return true; },
+        buildPreviewUrl: (url, style) => `/preview?${new URLSearchParams({url, style})}`,
+        onChange: value => changes.push(value),
+        debounceMs: 250,
+        wait: () => new Promise(resolve => timers.push(resolve))
+    });
+    const typing = ['https://a.test/1', 'https://a.test/12', 'https://a.test/123'].map(url => builder.update(url, 'SUM'));
+    assert.equal(builder.value.kind, 'checking');
+    timers.forEach(release => release());
+    await Promise.all(typing);
+    assert.deepEqual(calls, ['https://a.test/123']);
+    assert.equal(builder.value.kind, 'supported');
+
+    await builder.update('https://b.test/now', 'SUM', {immediate: true});
+    assert.equal(timers.length, 3);
+    assert.deepEqual(calls.at(-1), 'https://b.test/now');
+});
+
+test('changing only the style reuses the previous support answer', async () => {
+    const calls = [];
+    const {builder} = setup(async url => { calls.push(url); return true; });
+    await builder.update('https://supported.test/a', 'SUM');
+    await builder.update('https://supported.test/a', 'FUN');
+    assert.equal(calls.length, 1);
+    assert.equal(new URLSearchParams(builder.value.copyUrl.split('?')[1]).get('style'), 'FUN');
+});
+
+test('a failed support check is not cached', async () => {
+    let fail = true;
+    const {builder} = setup(async () => { if (fail) throw new Error('network'); return true; });
+    await builder.update('https://supported.test/a', 'SUM');
+    assert.equal(builder.value.kind, 'error');
+    fail = false;
+    await builder.update('https://supported.test/a', 'SUM');
+    assert.equal(builder.value.kind, 'supported');
+});

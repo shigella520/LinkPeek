@@ -333,6 +333,15 @@
         WHERE id = #{id}
     </select>
 
+    <select id="selectPendingDeliveriesCreatedSince" resultType="io.github.shigella520.linkpeek.server.admin.model.NotificationDeliveryRecord">
+        SELECT <include refid="deliveryColumns"/>
+        FROM notification_delivery
+        WHERE status = 'PENDING'
+          AND created_at &gt;= #{createdSince}
+        ORDER BY created_at ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
     <delete id="deleteDelivery">
         DELETE FROM notification_delivery
         WHERE id = #{id}

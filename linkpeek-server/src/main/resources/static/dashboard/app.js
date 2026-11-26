@@ -1,4 +1,4 @@
-import {createLinkBuilder, checkPreviewSupport} from "./link-builder.mjs";
+import {createLinkBuilder, checkPreviewSupport} from "./link-builder.mjs?v=20261126-enter";
 
 (function () {
     const RANGE_VALUES = ["7d", "30d", "90d", "180d"];
@@ -81,6 +81,7 @@ import {createLinkBuilder, checkPreviewSupport} from "./link-builder.mjs";
         const builder = createLinkBuilder({
             checkSupport: checkPreviewSupport,
             buildPreviewUrl,
+            debounceMs: 250,
             onChange(result) {
                 output.textContent = result.copyUrl || "等待输入可用链接";
                 output.classList.toggle("is-ready", Boolean(result.copyUrl));
@@ -92,6 +93,13 @@ import {createLinkBuilder, checkPreviewSupport} from "./link-builder.mjs";
         const refresh = () => builder.update(input.value, styleSelect.value);
         input.addEventListener("input", refresh);
         styleSelect.addEventListener("change", refresh);
+        // Enter copies right away: skip the typing delay, then copy whatever the check decided.
+        input.addEventListener("keydown", async (event) => {
+            if (event.key !== "Enter" || event.isComposing) return;
+            event.preventDefault();
+            if (!builder.value.copyUrl) await builder.update(input.value, styleSelect.value, {immediate: true});
+            if (builder.value.copyUrl) button.click();
+        });
         button.addEventListener("click", async () => {
             const selected = builder.value;
             if (!selected.copyUrl) return;
