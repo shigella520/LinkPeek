@@ -1,446 +1,297 @@
-# LinkPeek
+<p align="center">
+  <img src="assets/brand/linkpeek-icon.png" width="128" alt="LinkPeek 图标" />
+</p>
 
-LinkPeek 是一个面向聊天分享场景的链接预览代理服务。它用 Java 和 Spring Boot 实现，对外提供统一的 `/preview?url=...` 入口，为受支持的第三方链接生成稳定的 Open Graph 预览页，并提供统计看板、管理后台、AI 标题、分享总结、分享资产和 Webhook 通知能力。
+<h1 align="center">LinkPeek</h1>
 
-![LinkPeek Dashboard 预览](docs/preview-dashboard.png)
+<p align="center">
+  <strong>让分享到聊天里的链接，都有一张好看的预览卡片。</strong>
+</p>
 
-[在线体验 Live Demo](https://linkpeek.jianyutan.com/dashboard)
+<p align="center">
+  <a href="https://linkpeek.jianyutan.com/dashboard">在线体验</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="docs/chrome-extension.md">Chrome 扩展</a> ·
+  <a href="docs/linkpeek.sh">Raycast 脚本</a> ·
+  <a href="https://www.icloud.com/shortcuts/5cce870e64ff48e0853bd77485191fa7">iOS 快捷指令</a>
+</p>
 
-管理密码：`linkpeek`。在 Dashboard 连续按 3 下 `6` 会显示跳转按钮。
+<p align="center">
+  <a href="https://github.com/shigella520/LinkPeek/actions/workflows/ci.yml"><img src="https://github.com/shigella520/LinkPeek/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="MIT License" /></a>
+  <a href="https://openjdk.org/projects/jdk/17/"><img src="https://img.shields.io/badge/Java-17-ED8B00?logo=openjdk&logoColor=white" alt="Java 17" /></a>
+  <a href="https://spring.io/projects/spring-boot"><img src="https://img.shields.io/badge/Spring_Boot-3.3-6DB33F?logo=springboot&logoColor=white" alt="Spring Boot 3.3" /></a>
+</p>
 
-[Raycast Script](docs/linkpeek.sh)
+很多网站的链接发到 iMessage 等聊天软件里，只显示一个光秃秃的网址，或者预览卡片里是登录页、错误页。LinkPeek 是一个链接预览代理：把原始链接换成 LinkPeek 的分享链接，聊天软件抓取时会得到一张标题清楚、带封面图的预览卡片；朋友点开时，照常跳转到原始页面。
 
-[快捷指令 Shortcut](https://www.icloud.com/shortcuts/5cce870e64ff48e0853bd77485191fa7)
+- **卡片稳定好看**：为 Bilibili、V2EX、NGA、LINUX DO、GapHub 生成标准的 Open Graph 预览，标题、描述、封面一应俱全。
+- **AI 标题**：纯文字帖子可以按你设定的风格，由 AI 改写成一行更吸引人的标题。
+- **分享总结**：按天、周、月把大家分享过的链接汇总成一份 AI 报告，自动配图、生成朗读音频，再推送到群里。
+- **数据看板**：看谁分享了什么、打开了多少次、哪些链接最热门。
+- **随手可用**：Dashboard、Chrome 扩展、Raycast 脚本和 iOS 快捷指令都能一键生成分享链接。
 
-[Chrome 扩展配置文档](docs/chrome-extension.md)
+> 在线体验的管理密码是 `linkpeek`。在 Dashboard 连续按 3 下 `6` 会显示后台入口。
 
-## 功能特点
+## 使用预览
 
-- 统一预览入口：`/preview` 对爬虫返回 Open Graph HTML，对普通浏览器记录打开事件后跳转原始链接。
-- 多平台解析：内置 Bilibili、GapHub、V2EX、NGA、LINUX DO，并通过 provider SPI 扩展新平台。
-- AI 标题生成：文本卡片支持 Style Prompt、`FREESTYLE`、Title Format Prompt、多 AI Provider fallback、独立超时和失败阈值降级。
-- 缓存与预热：磁盘缓存元数据、缩略图和预留视频文件；普通浏览器打开后可异步预热元数据。
-- 数据看板：Dashboard 展示创建、打开、失败、热门链接、AI 渲染占比、AI 成功率和内容洞察。
-- 管理后台：维护 Prompt、AI Provider、Provider 配置、分享总结、图片/TTS 配置、通知渠道、发送记录、服务日志和预览事件。
-- 分享总结：支持每日、每周、每月任务，按数据库中的分享记录生成 AI 报告。
-- 分享资产：成功报告可自动或手动生成 AI 分享图、Open Graph 分享页和 TTS 音频。
-- Webhook 通知：支持图片成功/失败、音频失败、AI Provider 失败/降级、数据抓取失败等内部事件通知。
-- 自动化入口：Raycast Script 和 iOS Shortcut 可以直接生成 LinkPeek 分享链接。
+![LinkPeek Dashboard](docs/preview-dashboard.png)
 
-## 最新交互与兼容性说明
+![LinkPeek 在 iMessage 中的预览卡片](docs/preview-usage.png)
 
-- Dashboard 先调用支持判定接口；不支持的平台或无法验证时，可明确选择复制原链接。复制分享链接不代表卡片已生成。
-- 分享总结后台分为“报告”和“定时任务与配置”。报告列表以查看、分享、更多为入口，详情优先展示安全渲染的 Markdown 正文，保留原文、素材和版本记录。
-- AI 文本解析忽略推理/工具内容，拒绝未完成、拒绝或截断响应。标题校验失败使用既有 fallback；已配置风格与提示词不变。生成标题缓存格式升级为 v2，首次访问可能重新生成；旧文件和历史记录不会批量清理。
-- 超过 24 小时、当前进程未在投递的 PENDING 通知显示“过期待处理”。这是只读提示，存储状态仍为 PENDING，不会自动补发；历史重发需要明确确认。完整的持久化队列恢复属于后续增量。
-- 文字模型调用日志保留状态、耗时和 request ID，移除原始请求/响应正文。图片与音频请求正文、图片 curl 示例改为 DEBUG 日志，仅在需要调试时开启。
-- 日志页可分别控制“自动刷新”和“跟随最新”；向上阅读时停止自动跳底。
+![LinkPeek 分享总结配图](docs/report-image.png)
 
-实施与验证记录见 [本轮迭代记录](docs/iteration-quality-workspace.md)。
+## 支持的平台
 
-## 核心能力
+| 平台 | 预览卡片 |
+| --- | --- |
+| Bilibili | 视频封面、标题和简介；可在后台开启 AI 标题 |
+| V2EX | 话题标题卡片，支持 AI 标题 |
+| NGA | 帖子标题卡片，支持 AI 标题；可在后台配置登录态 |
+| LINUX DO | 主题标题卡片，支持 AI 标题；可在后台配置 Cookie |
+| GapHub | 主题标题卡片，支持 AI 标题 |
 
-### 链接预览
+其他平台可以按[新增平台](#新增平台)的方式扩展。
 
-`/preview` 先校验 URL，再通过 provider registry 选择内容 provider。provider 负责 URL 支持判定、canonical 化、元数据解析和可选媒体下载。爬虫请求会得到 Open Graph HTML；普通浏览器请求会记录打开事件并跳转原始链接。
+## 如何工作
 
-支持判定接口 `/api/preview/support?url=...` 只执行快速 URL 形态判断，不访问上游、不写缓存、不记录统计。Raycast 脚本也依赖这个接口，因此新增 provider 后脚本不需要同步更新平台规则。
-
-### AI 标题生成
-
-文本卡片 provider 可以提供 `rawContent`，LinkPeek 会根据后台配置的 Style Prompt 生成更适合分享场景的一行标题。Bilibili 这类真实图片卡片默认保留原图预览，Bilibili 的 AI 标题能力可在 Provider 配置中开关。
-
-- Style Key 保存和匹配都会统一转大写。
-- `FREESTYLE` 是系统保留模式，会从已有 Style Prompt 中随机选择一个。
-- Title Format Prompt 作为格式要求，Raw Content 作为独立 user message 放在最后。
-- AI Provider 按启用状态和排序依次 fallback。
-- 每个 AI Provider 有独立请求超时；分享总结请求会按全局倍数放大超时。
-- 自动降级开启后，Provider 连续失败达到阈值会被移动到列表最后，并触发通知事件。
-- Styled 预览使用 `canonical URL + style + prompt hash` 生成独立 `PreviewKey`，避免不同风格污染缓存。
-
-### 分享总结与分享资产
-
-分享总结任务支持每日、每周、每月。每条任务可以配置周期选择模式、执行时间、Prompt、最大链接数和最小链接数。任务执行时从 SQLite 的分享事件和链接维表读取标题，不依赖 Meta 磁盘缓存。
-
-任务成功后可以自动触发两类分享资产：
-
-- AI 分享图：调用 OpenAI-compatible 图片接口，解析 `data[0].b64_json` 或 `data[0].url`，下载/解码后标准化为 `1200x630`，保存到 LinkPeek 自己的存储路径，并生成公开 `og:image` URL 和报告分享页。
-- TTS 音频：调用 OpenAI-compatible 或 MiMo TTS 接口，保存音频文件并生成公开音频 URL。
-
-分享图成功后会触发 `SHARE_SUMMARY_IMAGE_SUCCESS` 事件，可通过 Webhook 自动推送到外部系统，例如 BlueBubbles Server。
-
-### Webhook 通知
-
-通知系统由事件 Schema、通知渠道、通知任务和发送记录组成。通知任务选择事件类型后，只能使用该事件支持的占位符；服务端在保存和发送前都会校验模板。
-
-当前事件包括：
-
-- `SHARE_SUMMARY_IMAGE_SUCCESS`
-- `SHARE_SUMMARY_IMAGE_FAILED`
-- `SHARE_SUMMARY_AUDIO_FAILED`
-- `AI_PROVIDER_REQUEST_FAILED`
-- `AI_PROVIDER_AUTO_DOWNGRADED`
-- `DATA_CRAWL_REQUEST_FAILED`
-
-Webhook 发送使用异步线程池，默认最多尝试 3 次。请求支持自定义 Header、Body 模板、HMAC-SHA256 签名、SSRF 防护、请求体保存、响应摘要和失败重试。
-
-向局域网 BlueBubbles 等服务发送通知时，在 Docker Compose 的 `environment` 下配置环境变量：
-
-```yaml
-WEBHOOK_ALLOWED_PRIVATE_HOSTS: "192.168.31.11"
-```
-
-多个主机用逗号分隔，例如 `192.168.31.11,192.168.31.12`。填写 URL 中的主机 IP 或域名，不含协议、端口、路径，不支持通配符或 CIDR。默认留空，禁止内网目标；白名单仅放行精确匹配的内网主机，回环、link-local、any-local 和 multicast 地址仍禁止访问。保存渠道和发送通知都会校验。
-
-仓库的 Compose 文件也支持从宿主环境或 `.env` 读取此变量，可直接执行 `WEBHOOK_ALLOWED_PRIVATE_HOSTS=192.168.31.11 docker compose up -d --build`。使用 `docker run` 时添加 `-e WEBHOOK_ALLOWED_PRIVATE_HOSTS=192.168.31.11`。修改配置后需重建容器，且容器必须能访问目标地址。
-
-## 效果预览
-
-![LinkPeek Usage](docs/preview-usage.png)
-
-![LinkPeek Report Image](docs/report-image.png)
-
-## 安装（Docker）
-
-### 方式一：使用 `docker compose`
-
-仓库包含可直接启动的 `docker-compose.yml`：
-
-```bash
-docker compose up -d --build
-```
-
-默认监听 `8080` 端口。
-
-建议生产环境至少配置：
-
-- `BASE_URL`：服务对外可访问的地址，例如 `https://preview.example.com`
-- `TZ`：容器时区，建议设为 `Asia/Shanghai`
-- `STATS_ADMIN_PASSWORD`：管理后台登录密码，配置后启用 `/admin`
-- `/data` 持久化挂载：保存缓存、SQLite 数据库、分享资产和日志
-
-### 方式二：使用 `docker run`
-
-```bash
-docker build -t linkpeek .
-
-docker run --rm \
-  -p 8080:8080 \
-  -e BASE_URL=https://preview.example.com \
-  -e TZ=Asia/Shanghai \
-  -e STATS_ADMIN_PASSWORD=change-me \
-  -e WEB_ICON_PATH=/data/favicon.svg \
-  -e CACHE_DIR=/data/cache \
-  -e STATS_DB_PATH=/data/stats/linkpeek.db \
-  -e CACHE_MAX_SIZE_GB=10 \
-  -e PREVIEW_WARMUP_THREADS=2 \
-  -e PREVIEW_WARMUP_QUEUE_CAPACITY=64 \
-  -v "$PWD/data:/data" \
-  linkpeek
-```
-
-### 生产部署建议
-
-- 预览服务建议通过公网 HTTPS 暴露，提高即时通讯软件抓取成功率。
-- 建议在前面放 Nginx 做 TLS、访问日志和基础限流。
-- `/data` 目录建议整体持久化，避免容器重建后缓存、统计库、分享图片、音频和日志丢失。
-- 管理后台、SQLite 文件、日志和 `/data` 挂载目录都应按生产权限保护，因为其中保存 Cookie、Prompt、AI Key 和 Webhook Secret。
+1. 把原始链接交给 LinkPeek，得到 `https://你的域名/preview?url=<原始链接>` 形式的分享链接。
+2. 聊天软件的抓取器访问这个链接时，LinkPeek 解析原始页面，返回带标题、描述和封面的 Open Graph 页面，聊天里就显示出预览卡片。结果会缓存，同一个链接不会反复抓取。
+3. 真人点开链接时，LinkPeek 记录一次打开，然后跳转到原始页面。
+4. 如果带了 `style` 参数，纯文字帖子会按对应风格由 AI 生成标题；AI 失败时自动退回原始标题，卡片照常可用。
 
 ## 快速开始
 
 ### 启动
 
+使用 GHCR 上的镜像：
+
+```bash
+docker run -d --name linkpeek \
+  -p 8080:8080 \
+  -e BASE_URL=https://preview.example.com \
+  -e TZ=Asia/Shanghai \
+  -e STATS_ADMIN_PASSWORD=换成你的管理密码 \
+  -v linkpeek-data:/data \
+  ghcr.io/shigella520/linkpeek:latest
+```
+
+也可以用仓库里的 `docker-compose.yml` 从源码构建：
+
 ```bash
 docker compose up -d --build
 ```
 
-生产部署时，把 `BASE_URL` 配置成服务公网地址，例如 `https://preview.example.com`。
+`BASE_URL` 必须是聊天软件能访问到的公网地址，建议使用 HTTPS。`/data` 保存缓存、数据库、分享资产和日志，需要持久化。
 
-### 生成预览链接
+### 生成分享链接
 
-把原始链接 URL 编码后放到 `url` 参数：
+最简单的方式是打开 `/dashboard`，粘贴原始链接，复制生成的分享链接。Dashboard 会先判断链接是否支持；不支持的链接可以直接复制原链接。
+
+也可以自己拼：把原始链接 URL 编码后放到 `url` 参数里：
 
 ```text
 https://preview.example.com/preview?url=https%3A%2F%2Fwww.v2ex.com%2Ft%2F1206093
 ```
 
-文本卡片可以追加 `style` 触发 AI 标题生成：
+想让 AI 改写标题，追加 `style` 参数。`style` 对应后台配置的风格；`FREESTYLE` 表示随机挑一种：
 
 ```text
 https://preview.example.com/preview?url=https%3A%2F%2Fwww.v2ex.com%2Ft%2F1206093&style=FREESTYLE
 ```
 
-常用入口：
+### 其他入口
+
+- **Chrome 扩展**：在网页上按快捷键（macOS 默认 `Command+Shift+L`）生成当前页面的分享链接，还可以把登录 Cookie 同步给 LinkPeek。安装和配置见 [Chrome 扩展配置文档](docs/chrome-extension.md)。
+- **Raycast 脚本**：[linkpeek.sh](docs/linkpeek.sh)。复制原始链接后运行，分享链接会直接放回剪贴板。自部署时改脚本开头的 `base_url`。
+- **iOS 快捷指令**：[安装快捷指令](https://www.icloud.com/shortcuts/5cce870e64ff48e0853bd77485191fa7)。在 App 的分享菜单里点“LinkPeek 分享”，生成链接后直接打开 iMessage。
+
+<p align="center"><img src="docs/快捷指令使用指南.png" width="420" alt="iOS 快捷指令使用指南" /></p>
+
+### 常用地址
 
 | 地址 | 用途 |
 | --- | --- |
-| `/dashboard` | 统计看板和分享链接生成器 |
+| `/dashboard` | 数据看板和分享链接生成器 |
 | `/admin/login` | 管理后台 |
+| `/preview?url=...&style=...` | 分享链接 |
+| `/api/preview/support?url=...` | 判断链接是否支持预览 |
+| `/api/preview/styles` | 查询可用的风格 |
 | `/api/health` | 健康检查 |
-| `/api/preview/support?url=...` | 判断当前链接是否支持预览 |
-| `/api/preview/styles` | 查询可用 Style Key |
-| `/doc.html` | OpenAPI 文档 |
-| `/share-summary/reports/{publicToken}` | 分享总结公开报告页 |
-| `/share-summary/og-images/{publicToken}.{ext}` | 分享总结公开 OG 图片 |
-| `/share-summary/audios/{publicToken}.{ext}` | 分享总结公开音频 |
+| `/doc.html` | 接口文档 |
 
-支持判定示例：
+## 功能说明
 
-```bash
-curl -G --data-urlencode "url=https://www.v2ex.com/t/1206093" \
-  https://preview.example.com/api/preview/support
+### AI 标题
+
+在后台的“提示词设置”里，为每种风格写一段提示词（例如“标题党”“新闻腔”“文艺”），再在“AI 服务配置”里添加一个或多个 AI 服务。
+
+- 分享链接带上 `style=风格名` 就会使用对应风格；`FREESTYLE` 会随机选一种。
+- 多个 AI 服务按顺序依次尝试，前一个失败自动换下一个；可开启自动降级，把连续失败的服务挪到最后。
+- 不同风格的标题分开缓存，互不影响。
+- Bilibili 这类本身有封面的卡片默认使用原始标题和封面，可在后台单独开启 AI 标题。
+
+### 分享总结
+
+在后台“分享总结”里创建每日、每周或每月任务。到点后，LinkPeek 汇总这段时间大家分享过的链接，由 AI 写成一份报告。每份报告可以：
+
+- 自动生成一张 AI 分享图，并配一个公开的报告分享页，发到聊天里也是带封面的卡片；
+- 自动生成朗读音频，分享页上可以直接播放；
+- 通过 Webhook 推送出去，例如发到 BlueBubbles，让机器人自动发到群里。
+
+报告可以重新生成，分享链接保持不变。
+
+### Webhook 通知
+
+在后台“通知管理”里配置通知渠道和通知任务，事件发生时向外部系统发送请求。可选事件：
+
+| 事件 | 触发时机 |
+| --- | --- |
+| `SHARE_SUMMARY_IMAGE_SUCCESS` | 分享总结配图生成成功 |
+| `SHARE_SUMMARY_IMAGE_FAILED` | 分享总结配图生成失败 |
+| `SHARE_SUMMARY_AUDIO_FAILED` | 分享总结音频生成失败 |
+| `AI_PROVIDER_REQUEST_FAILED` | AI 服务请求失败 |
+| `AI_PROVIDER_AUTO_DOWNGRADED` | AI 服务被自动降级 |
+| `DATA_CRAWL_REQUEST_FAILED` | 抓取原始页面失败 |
+
+请求支持自定义 Header 和 Body 模板（只能使用该事件提供的占位符）、HMAC-SHA256 签名，失败自动重试，最多 3 次，发送记录可在后台查看和重发。
+
+为了安全，默认不允许向内网地址发送。如果要发给局域网里的 BlueBubbles 等服务，设置环境变量放行对应主机：
+
+```yaml
+WEBHOOK_ALLOWED_PRIVATE_HOSTS: "192.168.31.11"
 ```
 
-模拟抓取器请求：
+多个主机用逗号分隔，填 IP 或域名，不含协议、端口和路径，不支持通配符或网段。修改后需要重建容器。
 
-```bash
-curl -A "facebookexternalhit/1.1" \
-  "https://preview.example.com/preview?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1xx411c7mD"
-```
+### 管理后台
 
-## 项目结构
+访问 `/admin/login`，用 `STATS_ADMIN_PASSWORD` 登录（不设置这个变量时后台关闭）。后台包括：
 
-```text
-LinkPeek/
-├── linkpeek-core/
-│   └── 通用领域模型、错误模型、URL 规范化、provider SPI
-├── linkpeek-provider-bilibili/
-│   └── Bilibili URL 识别、短链解析、元数据抓取、缩略图下载
-├── linkpeek-provider-gaphub/
-│   └── GapHub 主题 URL 识别、HTML 元数据抓取、标题卡片生成
-├── linkpeek-provider-linuxdo/
-│   └── LINUX DO 主题 URL 识别、HTML 元数据抓取、标题卡片生成
-├── linkpeek-provider-nga/
-│   └── NGA 帖子 URL 识别、页面抓取、GBK 解码、标题卡片生成
-├── linkpeek-provider-v2ex/
-│   └── V2EX 话题 URL 识别、canonical 化、元数据抓取、标题卡片生成
-├── linkpeek-provider-template/
-│   └── provider 开发模板
-├── linkpeek-server/
-│   └── Spring Boot 服务、路由、缓存、HTML 渲染、管理后台、统计、分享总结、分享资产和通知
-├── docs/
-│   └── 工程文档、自动化脚本和截图资源
-├── .github/workflows/
-│   └── CI 和 DEV 镜像发布 workflow
-├── Dockerfile
-├── docker-compose.yml
-├── mvnw
-├── mvnw.cmd
-└── pom.xml
-```
+- **提示词设置**：标题格式要求和各个风格的提示词。
+- **AI 服务配置**：AI 服务、模型、超时、排序、连通性测试和自动降级。
+- **平台配置**：Bilibili 的 AI 标题开关、LINUX DO 的 Cookie、NGA 的登录态。
+- **分享总结**：报告列表、定时任务、配图和朗读的服务配置。
+- **通知管理**：通知渠道、通知任务、发送记录。
+- **服务日志和预览事件**：查看日志、清理缓存、查看和清理统计数据。
 
-各模块职责：
-
-- `linkpeek-core`：定义 `PreviewProvider`、`PreviewMetadata`、`PreviewKey` 等核心抽象。
-- `linkpeek-provider-*`：封装各平台 URL 判断、canonical 化、元数据解析、AI 标题上下文补齐和媒体下载逻辑。
-- `linkpeek-provider-template`：提供新增 provider 的最小骨架示例。
-- `linkpeek-server`：负责 HTTP 接口、爬虫识别、缓存、统计、Dashboard、管理后台、AI 标题、分享总结、图片/TTS 生成和 Webhook 通知。
-
-## 核心流程
-
-```text
-/preview?url=<目标链接>&style=<可选风格>
-        |
-        v
-校验 URL -> provider registry -> canonical URL -> 基础 PreviewKey
-        |
-        v
-解析 style：空值走基础预览；普通 style 转大写匹配 Style Prompt；FREESTYLE 随机选择 Style Prompt
-        |
-        v
-命中 Style Prompt 时生成 styled PreviewKey（canonical URL + style + prompt hash）
-        |
-        +-------------------------------+
-        |                               |
-        v                               v
-     爬虫请求                         普通浏览器请求
-        |                               |
-        v                               v
-缓存 / 单飞锁 / 抓取元数据              记录打开事件并 302 跳转原始链接
-        |                               |
-        |                               +--> 本地无元数据时投递有界异步预热
-        v
-文本卡片 + Style Prompt -> 调用 AI Provider 生成标题
-        |
-        v
-AI Provider 按启用和排序 fallback，失败会记录事件并可触发自动降级
-        |
-        v
-成功则缓存 styled 元数据；失败、空返回或真实图片卡片则回退基础元数据
-        |
-        v
-渲染 Open Graph HTML，记录创建事件、AI 请求/成功、Provider、耗时、style 等统计字段
-```
-
-分享总结链路：
-
-```text
-定时扫描 / 手动执行
-        |
-        v
-根据任务周期和 period_selection_mode 计算窗口
-        |
-        v
-读取 stats_event + stats_link 中的 PREVIEW_CREATED 标题
-        |
-        v
-达到 min_links 后调用 AI Provider 生成报告
-        |
-        v
-保存 share_summary_run
-        |
-        +--> 自动生成分享图 -> 公开 OG 图片 / 分享页 -> Webhook 通知
-        |
-        +--> 自动生成 TTS 音频 -> 公开音频 URL
-```
+连续输错密码会被暂时锁定，时间逐次加倍，最长 15 分钟。
 
 ## 配置项
 
-部署级配置通过环境变量提供；Prompt、论坛 Cookie、AI Provider、分享总结、图片/TTS 和通知配置通过 `/admin` 写入 SQLite。
+部署相关的配置通过环境变量设置；提示词、AI 服务、平台 Cookie、分享总结和通知都在管理后台配置。
 
 | 变量名 | 默认值 | 说明 |
 | --- | --- | --- |
-| `PORT` | `8080` | HTTP 服务监听端口 |
-| `BASE_URL` | `http://localhost:8080` | 生成公开资源绝对地址时使用的服务基础地址 |
-| `TZ` | 系统时区 | 容器时区，影响统计窗口、分享总结窗口和日期展示 |
-| `WEB_ICON_PATH` | 空 | 可选网页 favicon 文件路径 |
-| `CACHE_DIR` | `/data/cache` | 缓存和分享资产根目录 |
+| `BASE_URL` | `http://localhost:8080` | 服务对外地址，分享链接和图片地址都用它 |
+| `PORT` | `8080` | 监听端口 |
+| `TZ` | 系统时区 | 时区，影响统计和分享总结的日期 |
+| `STATS_ADMIN_PASSWORD` | 空 | 管理后台密码，设置后启用后台 |
+| `ADMIN_COOKIE_SECURE` | `auto` | 后台登录 Cookie 的 Secure 属性；`auto` 在 `BASE_URL` 为 https 时开启 |
+| `CACHE_DIR` | `/data/cache` | 缓存和分享资产目录 |
 | `STATS_DB_PATH` | `/data/stats/linkpeek.db` | SQLite 数据库路径 |
-| `CACHE_TTL_SECONDS` | `86400` | 元数据和缩略图缓存有效期 |
+| `CACHE_TTL_SECONDS` | `86400` | 预览信息和封面的缓存时间（秒） |
 | `CACHE_MAX_SIZE_GB` | `10` | 缓存空间上限 |
-| `STATS_RETENTION_DAYS` | `180` | 统计事件保留天数 |
-| `STATS_EVENT_DEDUPE_TTL` | `2m` | 统计事件内存去重 TTL |
-| `STATS_EVENT_DEDUPE_MAX_ENTRIES` | `10000` | 统计事件去重缓存最大条目数 |
-| `STATS_ADMIN_PASSWORD` | 空 | 管理后台登录密码，配置后启用 `/admin` |
-| `DOWNLOAD_TIMEOUT` | `120s` | 上游内容和媒体请求超时时间 |
-| `ADMIN_COOKIE_SECURE` | `auto` | 后台登录 Cookie 的 `Secure` 属性；`auto` 在 `BASE_URL` 为 https 时开启，也可设为 `true`/`false` |
-| `VIDEO_MAX_QUALITY` | `480` | 预留视频能力的最高质量 |
-| `PREVIEW_WARMUP_ENABLED` | `true` | 是否启用普通浏览器打开后的异步元数据预热 |
-| `PREVIEW_WARMUP_THREADS` | `2` | 异步预热线程数 |
-| `PREVIEW_WARMUP_QUEUE_CAPACITY` | `64` | 异步预热队列上限 |
-| `WEBHOOK_ALLOWED_PRIVATE_HOSTS` | 空 | Webhook 内网主机白名单，逗号分隔的 IP 或域名，精确匹配 URL host |
+| `STATS_RETENTION_DAYS` | `180` | 统计数据保留天数 |
+| `DOWNLOAD_TIMEOUT` | `120s` | 抓取原始页面和下载图片的超时 |
+| `PREVIEW_WARMUP_ENABLED` | `true` | 真人打开链接后，是否在后台提前抓取预览信息 |
+| `PREVIEW_WARMUP_THREADS` | `2` | 提前抓取的线程数 |
+| `PREVIEW_WARMUP_QUEUE_CAPACITY` | `64` | 提前抓取的队列上限 |
+| `WEBHOOK_ALLOWED_PRIVATE_HOSTS` | 空 | 允许 Webhook 访问的内网主机，逗号分隔 |
+| `WEB_ICON_PATH` | 空 | 自定义网页图标文件路径 |
 | `LOG_LEVEL` | `INFO` | 日志级别 |
-| `LOG_FILE_PATH` | `/data/logs/linkpeek.log` | 服务滚动日志路径，也供后台日志页面读取 |
-| `LOG_FILE_MAX_SIZE` | `10MB` | 单个滚动日志文件上限 |
-| `LOG_FILE_MAX_HISTORY` | `14` | 滚动日志保留文件数量 |
-| `LOG_FILE_TOTAL_SIZE_CAP` | `200MB` | 滚动日志总大小上限 |
+| `LOG_FILE_PATH` | `/data/logs/linkpeek.log` | 日志文件路径，后台日志页也读取它 |
+| `LOG_FILE_MAX_SIZE` | `10MB` | 单个日志文件上限 |
+| `LOG_FILE_MAX_HISTORY` | `14` | 日志文件保留数量 |
+| `LOG_FILE_TOTAL_SIZE_CAP` | `200MB` | 日志总大小上限 |
+| `STATS_EVENT_DEDUPE_TTL` | `2m` | 统计事件去重时间窗口 |
+| `STATS_EVENT_DEDUPE_MAX_ENTRIES` | `10000` | 统计事件去重的最大条目数 |
+| `VIDEO_MAX_QUALITY` | `480` | 预留的视频能力最高清晰度 |
 
-`crawler-signatures` 当前在配置文件中内置为 `facebookexternalhit`、`Facebot`、`Twitterbot`、`Applebot`。
+## 部署建议
 
-## 管理后台
+- 通过公网 HTTPS 提供服务，聊天软件抓取预览的成功率更高。
+- 前面放一层 Nginx 等反向代理，负责 TLS、访问日志和基础限流。
+- 整个 `/data` 目录持久化，避免重建容器后缓存、数据库、分享图片、音频和日志丢失。
+- 管理后台、数据库、日志和 `/data` 目录按生产权限保护：里面有 Cookie、AI Key 和 Webhook 密钥。
 
-访问 `/admin/login` 使用 `STATS_ADMIN_PASSWORD` 登录。同一客户端连续输错 5 次后暂停登录 1 分钟，此后每次失败加倍，最长 15 分钟；反向代理后的客户端按 `X-Real-IP` / `X-Forwarded-For` 区分（仅信任来自内网或本机的代理）。后台会签发 HttpOnly Cookie，`GET /api/admin/session` 只用于页面刷新时确认登录状态。
+## 新增平台
 
-后台主要功能：
+每个平台是一个独立模块，实现 `PreviewProvider` 接口：
 
-- 提示词设置：维护 Title Format Prompt 和 `Style Key -> Style Prompt`。
-- AI 服务配置：维护 AI Provider、启用状态、排序、API 类型、模型、effort、超时、连通性测试和自动降级配置。
-- Provider 配置：维护 Bilibili AI 标题开关、LinuxDo Cookie 和 NGA 登录态。
-- 分享总结：维护任务、查看执行记录、手动执行、删除记录。
-- 分享资产：维护 AI 生图配置、TTS 配置，生成/重新生成图片和音频。
-- 通知管理：维护 Webhook 渠道、通知任务、事件占位符、发送记录、重试和删除。
-- 服务日志和预览事件：查看日志、清理缓存、查看预览事件和清理统计数据。
+1. 实现 `supports()`（只做快速的网址判断，Dashboard 和 Raycast 脚本都靠它判断是否支持）、`canonicalize()` 和 `resolve()`。
+2. 想支持 AI 标题，提供 `rawContent` 或覆盖 `enrichForAiTitle()` / `supportsAiTitle()`。
+3. 需要封面等媒体时，覆盖 `downloadThumbnail()` 或 `downloadVideo()`。
+4. 在 `linkpeek-server` 中注册为 Spring Bean，并为网址匹配、规范化、解析和媒体下载补上测试。
 
-## 新增 provider
+可以从 [TemplatePreviewProvider](./linkpeek-provider-template/src/main/java/io/github/shigella520/linkpeek/provider/template/TemplatePreviewProvider.java) 开始，详细说明见 [Provider 开发指南](./docs/provider-development.md)。
 
-扩展新平台时：
+## 本地开发
 
-1. 在独立模块中实现 `PreviewProvider`
-2. 补齐 `supports()`、`canonicalize()`、`resolve()`
-3. 如支持 AI 标题，补齐 `rawContent` 或覆盖 `enrichForAiTitle()` / `supportsAiTitle()`
-4. 如支持媒体，覆盖 `downloadThumbnail()` 或 `downloadVideo()`
-5. 在 `linkpeek-server` 中注册为 Spring Bean
-6. 为 URL 匹配、canonical 化、上游映射和媒体下载补测试
+```bash
+./mvnw -B verify    # 构建并运行测试
 
-`supports()` 是 `/api/preview/support` 和 Raycast 脚本的唯一支持判定来源，必须只做快速 URL 形态判断。
+./scripts/start-dev.sh   # 启动本地服务，管理密码 test，数据放在 .cache/linkpeek-dev
+```
 
-参考：
+项目结构：
+
+| 模块 | 内容 |
+| --- | --- |
+| `linkpeek-core` | 核心模型、网址规范化和平台扩展接口 |
+| `linkpeek-provider-*` | 各平台的网址识别、解析和封面下载 |
+| `linkpeek-provider-template` | 新增平台的模板 |
+| `linkpeek-server` | Spring Boot 服务：预览、缓存、统计、Dashboard、管理后台、AI 标题、分享总结和通知 |
+| `extensions/linkpeek-chrome` | Chrome 扩展 |
+
+更多文档：
 
 - [架构说明](./docs/architecture.md)
 - [数据库表结构](./docs/database-schema.md)
 - [Provider 开发指南](./docs/provider-development.md)
 - [DEV 镜像发布指南](./docs/publish-dev-image-workflow.md)
-- [TemplatePreviewProvider](./linkpeek-provider-template/src/main/java/io/github/shigella520/linkpeek/provider/template/TemplatePreviewProvider.java)
-
-## 本地开发
-
-本地构建与测试：
-
-```bash
-./mvnw -B verify
-```
-
-本地启动服务：
-
-```bash
-CACHE_DIR=$PWD/.cache/linkpeek \
-STATS_DB_PATH=$PWD/.data/linkpeek/stats.db \
-./mvnw -pl linkpeek-server -am spring-boot:run
-```
-
-指定端口：
-
-```bash
-CACHE_DIR=$PWD/.cache/linkpeek \
-STATS_DB_PATH=$PWD/.data/linkpeek/stats.db \
-./mvnw -pl linkpeek-server -am spring-boot:run \
-  -Dspring-boot.run.arguments=--server.port=8080
-```
 
 ## 常见问题：`PKIX path building failed`
 
-如果本地日志出现：
+如果日志里出现：
 
 ```text
 javax.net.ssl.SSLHandshakeException: PKIX path building failed
 ```
 
-这通常不是 LinkPeek 业务逻辑问题，而是 Java 运行时不信任当前 HTTPS 证书链。常见场景：
+一般不是 LinkPeek 的问题，而是 Java 不信任当前的 HTTPS 证书链。常见原因是开着公司或校园网代理，或者 Clash、Surge、Charles 之类的 HTTPS 代理和抓包工具（`curl` 用系统证书，Java 用自己的证书库，所以 `curl` 正常而 Java 报错）。
 
-- 开着公司/校园网代理
-- 开着 Clash、Surge、Charles、Fiddler 等 HTTPS 代理或抓包工具
-- `curl` 走系统证书，而 Java 17 走独立 truststore
+按顺序尝试：
 
-建议按顺序处理：
+1. 关掉系统代理、抓包工具或 HTTPS 中间人代理后重试。
+2. 必须经过代理时，把代理的根证书导出为 `ca.crt`，导入 JDK 证书库（默认密码通常是 `changeit`）：
 
-1. 关闭系统代理、抓包工具或 HTTPS 中间人代理后重试。
-2. 如果必须经过代理，把代理根证书导出为 `ca.crt`，导入当前 JDK truststore：
+   ```bash
+   keytool -importcert \
+     -alias local-proxy-ca \
+     -file /path/to/ca.crt \
+     -keystore "$JAVA_HOME/lib/security/cacerts"
+   ```
 
-```bash
-keytool -importcert \
-  -alias local-proxy-ca \
-  -file /path/to/ca.crt \
-  -keystore "$JAVA_HOME/lib/security/cacerts"
-```
+3. 不想改全局 JDK 时，启动时单独指定证书库：
 
-默认密码通常是 `changeit`。
+   ```bash
+   ./mvnw -pl linkpeek-server -am spring-boot:run \
+     -Dspring-boot.run.jvmArguments='-Djavax.net.ssl.trustStore=/path/to/truststore.jks -Djavax.net.ssl.trustStorePassword=changeit'
+   ```
 
-3. 如果不想改全局 JDK，可以单独给本次启动指定 truststore：
+4. 验证是否恢复：
 
-```bash
-CACHE_DIR=$PWD/.cache/linkpeek ./mvnw -pl linkpeek-server -am spring-boot:run \
-  -Dspring-boot.run.arguments=--server.port=8080 \
-  -Dspring-boot.run.jvmArguments='-Djavax.net.ssl.trustStore=/path/to/truststore.jks -Djavax.net.ssl.trustStorePassword=changeit'
-```
+   ```bash
+   curl -A "facebookexternalhit/1.1" \
+     "http://localhost:8080/preview?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1McSQBEE71"
+   ```
 
-4. 导入证书后验证 Java 侧是否恢复：
-
-```bash
-curl -A "facebookexternalhit/1.1" \
-  "http://localhost:8080/preview?url=https%3A%2F%2Fwww.bilibili.com%2Fvideo%2FBV1McSQBEE71"
-```
-
-页面不再返回 `Preview Error` 即说明证书链问题已解决。
+   不再返回 `Preview Error` 就说明解决了。
 
 ## 许可证
 
-本项目使用 [MIT License](./LICENSE)。
-
-这意味着：
-
-- 允许自由使用、修改、分发和商用
-- 只需保留原始版权声明和许可证文本
-- 适合个人项目、开源项目和商业内部项目使用
+LinkPeek 使用 [MIT License](LICENSE) 开源，可自由使用、修改、分发和商用，但需保留原始版权声明和许可证文本。
 
 ## 友情链接
 
